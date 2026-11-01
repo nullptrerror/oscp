@@ -290,6 +290,27 @@ textarea:focus, input[type="text"]:focus, input[type="password"]:focus { border-
 .result-card pre { max-height: 360px; margin: 0; padding: 13px; overflow: auto; border-top: 1px solid #202a23; color: #d9f2cb; font-family: var(--mono); font-size: 0.72rem; white-space: pre-wrap; overflow-wrap: anywhere; }
 .result-card > p { margin: 0; padding: 0 13px 13px; text-transform: uppercase; }
 
+.backup-hero { max-width: 900px; padding-bottom: 34px; }
+.notice { margin-bottom: 16px; padding: 13px 16px; border: 1px solid #486133; border-radius: 7px; color: #dff6c6; background: #172313; font-size: 0.82rem; }
+.notice.error { border-color: #713b3b; color: #ffc1c1; background: #241212; }
+.backup-card { display: flex; flex-direction: column; justify-content: space-between; padding: 24px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+.backup-card h2 { margin: 0 0 9px; font-size: 1.35rem; }
+.backup-card p:not(.eyebrow):not(.timestamp) { margin: 0; color: var(--muted); font-size: 0.84rem; line-height: 1.6; }
+.primary-backup-card { min-height: 200px; display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 30px; border-color: #52683f; background: linear-gradient(135deg, #141c13, #0d120f); }
+.primary-backup-card > div:first-child { max-width: 650px; }
+.primary-backup-card h2 { font-size: clamp(1.8rem, 4vw, 3.5rem); letter-spacing: -0.04em; }
+.backup-actions { display: flex; gap: 9px; }
+.backup-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 18px; }
+.finding-section-head.no-border { padding: 0 0 20px; border: 0; }
+.stat-list { margin: 0; }
+.stat-list div { display: flex; justify-content: space-between; padding: 10px 0; border-top: 1px solid var(--line); }
+.stat-list dt { color: var(--muted); font-size: 0.78rem; }
+.stat-list dd { margin: 0; color: var(--text); font-family: var(--mono); font-size: 0.8rem; }
+.timestamp { margin: 16px 0 0; color: var(--muted); font-family: var(--mono); font-size: 0.66rem; }
+.warning-card { min-height: 300px; border-color: #4c3930; }
+.warning-card .eyebrow { color: var(--amber); }
+.reset-button { align-self: flex-start; padding: 0; }
+
 @media (max-width: 760px) {
   .topbar { padding: 12px 18px 0; grid-template-columns: 1fr auto; gap: 12px; }
   .topbar nav { grid-column: 1 / -1; overflow-x: auto; order: 3; }
@@ -315,4 +336,6 @@ textarea:focus, input[type="text"]:focus, input[type="password"]:focus { border-
   .record-actions { width: 100%; justify-content: space-between; }
   .target-card-grid { grid-template-columns: 1fr 1fr; }
   .finding-columns, .results-grid { grid-template-columns: 1fr; }
+  .primary-backup-card, .backup-grid { grid-template-columns: 1fr; }
+  .backup-actions { align-items: stretch; flex-direction: column; }
 }

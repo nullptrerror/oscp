@@ -3,6 +3,7 @@ import { WorkspaceProvider, useWorkspace } from "./context/WorkspaceContext";
 import ChecklistPage from "./pages/ChecklistPage";
 import TargetsPage from "./pages/TargetsPage";
 import FindingsPage from "./pages/FindingsPage";
+import BackupPage from "./pages/BackupPage";
 
 const pages = [
   { to: "/", label: "Checklist" },
@@ -10,16 +11,6 @@ const pages = [
   { to: "/vault", label: "Findings" },
   { to: "/backup", label: "Backup" },
 ];
-
-function Placeholder({ eyebrow, title, copy }) {
-  return (
-    <main className="page-shell placeholder">
-      <p className="eyebrow">{eyebrow}</p>
-      <h1>{title}</h1>
-      <p>{copy}</p>
-    </main>
-  );
-}
 
 function AppRoutes() {
   const { saveState } = useWorkspace();
@@ -58,13 +49,7 @@ function AppRoutes() {
         />
         <Route
           path="/backup"
-          element={
-            <Placeholder
-              eyebrow="Portable state"
-              title="Leave no notes behind."
-              copy="Import and export will make this workspace portable."
-            />
-          }
+          element={<BackupPage />}
         />
       </Routes>
     </div>
