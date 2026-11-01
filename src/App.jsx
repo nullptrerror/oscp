@@ -1,4 +1,6 @@
 import { NavLink, Route, Routes } from "react-router";
+import { WorkspaceProvider, useWorkspace } from "./context/WorkspaceContext";
+import ChecklistPage from "./pages/ChecklistPage";
 
 const pages = [
   { to: "/", label: "Checklist" },
@@ -17,7 +19,8 @@ function Placeholder({ eyebrow, title, copy }) {
   );
 }
 
-export default function App() {
+function AppRoutes() {
+  const { saveState } = useWorkspace();
   return (
     <div className="app-shell">
       <header className="topbar">
@@ -33,21 +36,15 @@ export default function App() {
             </NavLink>
           ))}
         </nav>
-        <div className="storage-status" title="Saved in this browser">
-          <span aria-hidden="true" /> Local
+        <div className={`storage-status ${saveState.status}`} title={saveState.message}>
+          <span aria-hidden="true" /> {saveState.status === "error" ? "Storage error" : "Local"}
         </div>
       </header>
 
       <Routes>
         <Route
           path="/"
-          element={
-            <Placeholder
-              eyebrow="Operator checklist"
-              title="Keep the methodology close."
-              copy="The checklist workspace is being assembled here."
-            />
-          }
+          element={<ChecklistPage />}
         />
         <Route
           path="/targets"
@@ -81,5 +78,13 @@ export default function App() {
         />
       </Routes>
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <WorkspaceProvider>
+      <AppRoutes />
+    </WorkspaceProvider>
   );
 }
