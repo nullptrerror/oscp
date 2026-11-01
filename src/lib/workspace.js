@@ -1,4 +1,4 @@
-import { DEFAULT_VARIABLES } from "../data/checklist";
+import { DEFAULT_VARIABLES } from "../data/checklist.js";
 
 export const STORAGE_KEY = "fieldnotes.oscp.workspace.v1";
 export const WORKSPACE_VERSION = 1;
