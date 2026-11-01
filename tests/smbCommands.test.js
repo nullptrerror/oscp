@@ -17,6 +17,30 @@ test("SMB commands always include guest and add one command per credential", () 
   assert.match(commands[1].value, /recurse ON; prompt OFF; mget \*/);
 });
 
+test("SMB commands include the current command-context credential", () => {
+  const commands = buildSmbDownloadCommands([], {
+    domain: "active.htb",
+    user: "SVC_TGS",
+    password: "GPPstillStandingStrong2k18",
+  });
+
+  assert.equal(commands.length, 2);
+  assert.match(commands[1].label, /active\.htb\\SVC_TGS/);
+  assert.match(commands[1].value, /active\.htb\/SVC_TGS%GPPstillStandingStrong2k18/);
+  assert.match(commands[1].value, /loot\/smb\/active\.htb_SVC_TGS/);
+});
+
+test("SMB commands deduplicate command-context and saved credentials", () => {
+  const account = { domain: "active.htb", username: "SVC_TGS", secret: "Password1!" };
+  const commands = buildSmbDownloadCommands([account], {
+    domain: account.domain,
+    user: account.username,
+    password: account.secret,
+  });
+
+  assert.equal(commands.length, 2);
+});
+
 test("SMB command generation deduplicates credentials and supports NT hashes", () => {
   const hash = "8846f7eaee8fb117ad06bdd830b7586c";
   const account = { domain: "CORP", username: "admin", secret: hash };

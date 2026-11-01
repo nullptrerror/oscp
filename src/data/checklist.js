@@ -7,10 +7,10 @@ export const DEFAULT_VARIABLES = {
   domain: "corp.local",
   baseDn: "DC=corp,DC=local",
   dc: "dc01.corp.local",
-  user: "student",
-  password: "Password123!",
+  user: "",
+  password: "",
   gppCpassword: "",
-  hash: "NTLM_OR_HASH",
+  hash: "",
   subnet: "172.16.10.0/24",
   interface: "tun0",
   wordlist: "/usr/share/seclists/Discovery/Web-Content/raft-medium-directories.txt",
@@ -117,7 +117,7 @@ export const CHECKLIST = [
       {
         id: "svc-smb",
         title: "SMB / RPC (139, 445)",
-        detail: "The guest command and one all-shares command for every account saved under Findings with a secret are added automatically below. Each identity downloads into its own folder. Run credentials deliberately: repeated bad passwords can lock accounts.",
+        detail: "The guest command, the current command-context credential, and every account saved under Findings with a secret are added automatically below as all-shares commands. Each identity downloads into its own folder. Run credentials deliberately: repeated bad passwords can lock accounts.",
         commands: [
           { label: "Anonymous SMB", value: "nxc smb {{rhost}} -u '' -p '' --shares --users --groups" },
           { label: "Authenticated SMB", value: "nxc smb {{rhost}} -u '{{user}}' -p '{{password}}' --shares --users --groups --sessions" },

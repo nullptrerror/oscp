@@ -20,7 +20,7 @@ const downloadBody = ({ folder, listCommand, downloadCommand }) => [
   'find "$root" -type f -printf "%p\\n"',
 ].join(" ");
 
-export function buildSmbDownloadCommands(accounts = []) {
+export function buildSmbDownloadCommands(accounts = [], variables = {}) {
   const commands = [
     {
       key: "smb-download-guest",
@@ -33,8 +33,16 @@ export function buildSmbDownloadCommands(accounts = []) {
     },
   ];
 
+  const contextAccount = {
+    id: "command-context",
+    domain: variables.domain,
+    username: variables.user,
+    secret: variables.password?.trim() || variables.hash?.trim(),
+  };
+  const credentialAccounts = [contextAccount, ...accounts];
+
   const seen = new Set();
-  for (const account of accounts) {
+  for (const account of credentialAccounts) {
     const username = account.username?.trim();
     const secret = account.secret?.trim();
     const domain = account.domain?.trim() ?? "";

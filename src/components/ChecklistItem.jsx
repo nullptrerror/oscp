@@ -17,9 +17,9 @@ export default function ChecklistItem({ item, searchActive = false }) {
   const resultBytes = useMemo(() => new Blob([result]).size, [result]);
   const commands = useMemo(
     () => item.id === "svc-smb"
-      ? [...item.commands, ...buildSmbDownloadCommands(workspace.accounts)]
+      ? [...item.commands, ...buildSmbDownloadCommands(workspace.accounts, workspace.variables)]
       : item.commands,
-    [item, workspace.accounts],
+    [item, workspace.accounts, workspace.variables],
   );
 
   const saveResult = () => {
