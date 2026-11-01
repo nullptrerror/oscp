@@ -100,7 +100,8 @@ export const CHECKLIST = [
         id: "recon-hostnames",
         title: "Resolve hostnames and virtual hosts",
         commands: [
-          { label: "Certificate names", value: "echo | openssl s_client -connect {{rhost}}:{{rport}} -servername {{rhost}} 2>/dev/null | openssl x509 -noout -subject -ext subjectAltName" },
+          { label: "Certificate names", value: "for port in $(echo '{{rport}}' | tr ',' ' '); do cert=$(echo | timeout 3 openssl s_client -connect {{rhost}}:$port -servername {{rhost}} 2>/dev/null | openssl x509 -noout -subject -ext subjectAltName 2>/dev/null); if [ -n \"$cert\" ]; then printf '\\n[+] Port %s:\\n%s\\n' \"$port\" \"$cert\"; fi; done | tee ~/oscp/{{targetName}}/scans/certificates.txt" },
+          { label: "SSL cert scan", value: "nmap -Pn -n -p {{rport}} --script ssl-cert -oN ~/oscp/{{targetName}}/scans/ssl-certs.txt {{rhost}}" },
           { label: "Hosts entry", value: "echo '{{rhost}} {{targetName}} {{dc}} {{domain}}' | sudo tee -a /etc/hosts" },
         ],
       },
