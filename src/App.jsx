@@ -1,6 +1,7 @@
 import { NavLink, Route, Routes } from "react-router";
 import { WorkspaceProvider, useWorkspace } from "./context/WorkspaceContext";
 import ChecklistPage from "./pages/ChecklistPage";
+import TargetsPage from "./pages/TargetsPage";
 
 const pages = [
   { to: "/", label: "Checklist" },
@@ -48,13 +49,7 @@ function AppRoutes() {
         />
         <Route
           path="/targets"
-          element={
-            <Placeholder
-              eyebrow="Target book"
-              title="One place for every host."
-              copy="Target context and variables will live here."
-            />
-          }
+          element={<TargetsPage />}
         />
         <Route
           path="/vault"

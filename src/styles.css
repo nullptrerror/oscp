@@ -201,6 +201,7 @@ button { color: inherit; }
 textarea, input[type="text"], input[type="password"] { width: 100%; border: 1px solid #334038; border-radius: 6px; outline: 0; color: var(--text); background: #0b0f0c; }
 textarea { padding: 11px 12px; resize: vertical; font-family: var(--mono); font-size: 0.78rem; line-height: 1.55; }
 input[type="text"], input[type="password"] { height: 40px; padding: 0 11px; }
+select { width: 100%; height: 40px; padding: 0 10px; border: 1px solid #334038; border-radius: 6px; outline: 0; color: var(--text); background: #0b0f0c; }
 textarea:focus, input[type="text"]:focus, input[type="password"]:focus { border-color: #68864c; box-shadow: 0 0 0 3px rgba(183, 243, 75, 0.07); }
 .results-panel { padding: 15px; border: 1px solid #2d3a31; border-radius: 8px; background: #0c110e; }
 .results-head { display: flex; align-items: center; justify-content: space-between; gap: 15px; margin-bottom: 11px; }
@@ -234,6 +235,30 @@ textarea:focus, input[type="text"]:focus, input[type="password"]:focus { border-
 .empty-state { padding: 80px 20px; border: 1px dashed var(--line); border-radius: 12px; text-align: center; }
 .empty-state h2 { margin: 0 0 20px; }
 
+.section-hero { display: flex; justify-content: space-between; align-items: end; gap: 30px; padding: 24px 0 42px; }
+.section-hero h1 { margin: 0; font-size: clamp(2.8rem, 5vw, 5rem); letter-spacing: -0.06em; line-height: 0.95; }
+.section-hero > div > p:last-child { max-width: 580px; color: var(--muted); }
+.big-count { color: var(--lime); font-family: var(--mono); font-size: clamp(3.2rem, 7vw, 7rem); font-weight: 800; line-height: 0.8; opacity: 0.32; }
+.records-layout { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 22px; align-items: start; }
+.entry-form { position: sticky; top: 84px; display: grid; gap: 14px; padding: 20px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+.entry-form > label, .form-row label, .target-card-grid label, .card-notes { display: grid; gap: 6px; }
+.entry-form label > span, .target-card label > span { color: var(--muted); font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; }
+.form-row { display: grid; grid-template-columns: 1fr 0.72fr; gap: 10px; }
+.entry-form .button { width: 100%; margin-top: 4px; }
+.record-list { display: grid; gap: 14px; }
+.target-card { padding: 20px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+.target-card.is-active { border-color: #536a40; box-shadow: inset 3px 0 var(--lime); }
+.target-card-head { display: flex; justify-content: space-between; gap: 18px; align-items: start; }
+.target-card h2 { margin: 7px 0 5px; font-size: 1.45rem; }
+.target-card code { color: var(--lime); font-family: var(--mono); font-size: 0.8rem; }
+.record-badges { display: flex; gap: 6px; }
+.record-badges span { padding: 4px 7px; border: 1px solid #3a493e; border-radius: 4px; color: var(--muted); font-family: var(--mono); font-size: 0.63rem; text-transform: uppercase; }
+.record-badges .active-badge { border-color: #607a48; color: var(--lime); background: var(--lime-dark); }
+.record-actions { display: flex; align-items: center; gap: 8px; }
+.target-card-grid { display: grid; grid-template-columns: 1.4fr 0.7fr 1fr 1fr; gap: 10px; margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line); }
+.card-notes { margin-top: 12px; }
+.empty-state.compact { padding: 90px 20px; }
+
 @media (max-width: 760px) {
   .topbar { padding: 12px 18px 0; grid-template-columns: 1fr auto; gap: 12px; }
   .topbar nav { grid-column: 1 / -1; overflow-x: auto; order: 3; }
@@ -251,4 +276,11 @@ textarea:focus, input[type="text"]:focus, input[type="password"]:focus { border-
   .check-item-body { padding: 0 12px 20px; }
   .results-head { align-items: flex-start; flex-direction: column; }
   .file-button { width: 100%; }
+  .section-hero { align-items: start; }
+  .big-count { display: none; }
+  .records-layout { grid-template-columns: 1fr; }
+  .entry-form { position: static; }
+  .target-card-head { flex-direction: column; }
+  .record-actions { width: 100%; justify-content: space-between; }
+  .target-card-grid { grid-template-columns: 1fr 1fr; }
 }
