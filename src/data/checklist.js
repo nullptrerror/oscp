@@ -117,11 +117,10 @@ export const CHECKLIST = [
       {
         id: "svc-smb",
         title: "SMB / RPC (139, 445)",
-        detail: "The guest command and one command for every saved account with a secret are added automatically below. Each identity downloads into its own folder. Run credentials deliberately: repeated bad passwords can lock accounts.",
+        detail: "The guest command and one all-shares command for every account saved under Findings with a secret are added automatically below. Each identity downloads into its own folder. Run credentials deliberately: repeated bad passwords can lock accounts.",
         commands: [
           { label: "Anonymous SMB", value: "nxc smb {{rhost}} -u '' -p '' --shares --users --groups" },
           { label: "Authenticated SMB", value: "nxc smb {{rhost}} -u '{{user}}' -p '{{password}}' --shares --users --groups --sessions" },
-          { label: "Download share", value: "smbclient //{{rhost}}/SHARE -U '{{domain}}/{{user}}%{{password}}' -c 'recurse ON; prompt OFF; mget *'" },
           { label: "Triage all downloaded SMB loot", value: "find ~/oscp/{{targetName}}/loot/smb -type f -printf '%s %p\\n' | sort -nr > ~/oscp/{{targetName}}/loot/smb-file-index.txt; grep -RniI -E 'pass(word)?|passwd|pwd|secret|token|api.?key|connection.?string|cpassword|user(name)?|BEGIN (RSA |OPENSSH )?PRIVATE KEY' ~/oscp/{{targetName}}/loot/smb | tee ~/oscp/{{targetName}}/loot/smb-credential-hits.txt" },
         ],
       },
