@@ -9,6 +9,7 @@ const LABELS = {
   rport: "RPORT(S)",
   targetName: "Target name",
   domain: "Domain",
+  baseDn: "LDAP base DN",
   dc: "Domain controller",
   user: "Username",
   password: "Password",

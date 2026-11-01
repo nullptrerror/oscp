@@ -5,6 +5,7 @@ export const DEFAULT_VARIABLES = {
   rport: "80",
   targetName: "target-01",
   domain: "corp.local",
+  baseDn: "DC=corp,DC=local",
   dc: "dc01.corp.local",
   user: "student",
   password: "Password123!",
@@ -17,7 +18,7 @@ export const DEFAULT_VARIABLES = {
 export const VARIABLE_GROUPS = [
   { label: "Operator", keys: ["lhost", "lport", "interface"] },
   { label: "Target", keys: ["targetName", "rhost", "rport", "subnet"] },
-  { label: "Identity", keys: ["domain", "dc", "user", "password", "hash"] },
+  { label: "Identity", keys: ["domain", "baseDn", "dc", "user", "password", "hash"] },
   { label: "Resources", keys: ["wordlist"] },
 ];
 
@@ -125,7 +126,7 @@ export const CHECKLIST = [
         title: "LDAP / Active Directory (389, 636)",
         commands: [
           { label: "Root DSE", value: "ldapsearch -x -H ldap://{{rhost}} -s base namingContexts defaultNamingContext" },
-          { label: "Authenticated users", value: "ldapsearch -x -H ldap://{{dc}} -D '{{user}}@{{domain}}' -w '{{password}}' -b 'DC=corp,DC=local' '(objectClass=user)' sAMAccountName memberOf" },
+          { label: "Authenticated users", value: "ldapsearch -x -H ldap://{{dc}} -D '{{user}}@{{domain}}' -w '{{password}}' -b '{{baseDn}}' '(objectClass=user)' sAMAccountName memberOf" },
         ],
       },
       {
@@ -339,7 +340,7 @@ export const CHECKLIST = [
         id: "windows-helper",
         title: "Run one packaged helper if manual checks stall",
         commands: [
-          { label: "Find WinPEAS on Kali", value: "find /usr/share/windows-resources -type f -iname 'winpeas*x64*.exe' -o -iname 'winPEASany.exe' 2>/dev/null" },
+          { label: "Find WinPEAS on Kali", value: "find /usr/share/windows-resources -type f \\( -iname 'winpeas*x64*.exe' -o -iname 'winPEASany.exe' \\) 2>/dev/null" },
           { label: "Save output", value: "winPEASx64.exe log=console > C:\\Windows\\Temp\\winpeas.txt" },
         ],
       },
@@ -414,7 +415,7 @@ export const CHECKLIST = [
         id: "creds-reuse",
         title: "Test known credentials across the target",
         commands: [
-          { label: "Network services", value: "nxc smb,winrm,ssh {{rhost}} -u '{{user}}' -p '{{password}}' --continue-on-success" },
+          { label: "Network services", value: "for protocol in smb winrm ssh; do nxc \"$protocol\" {{rhost}} -u '{{user}}' -p '{{password}}' --continue-on-success; done" },
           { label: "SSH", value: "ssh -o PreferredAuthentications=password '{{user}}@{{rhost}}'" },
         ],
       },
@@ -431,7 +432,7 @@ export const CHECKLIST = [
         title: "Prepare the Ligolo interface and proxy",
         commands: [
           { label: "Interface", value: "sudo ip tuntap add user $(whoami) mode tun ligolo 2>/dev/null; sudo ip link set ligolo up" },
-          { label: "Find proxy", value: "find /usr/share/ligolo-ng-common-binaries -type f -iname '*proxy*linux*' -o -iname 'proxy'" },
+          { label: "Find proxy", value: "find /usr/share/ligolo-ng-common-binaries -type f \\( -iname '*proxy*linux*' -o -iname 'proxy' \\)" },
           { label: "Route subnet", value: "sudo ip route add {{subnet}} dev ligolo" },
         ],
       },
