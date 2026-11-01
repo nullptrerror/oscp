@@ -2,6 +2,7 @@ import { NavLink, Route, Routes } from "react-router";
 import { WorkspaceProvider, useWorkspace } from "./context/WorkspaceContext";
 import ChecklistPage from "./pages/ChecklistPage";
 import TargetsPage from "./pages/TargetsPage";
+import FindingsPage from "./pages/FindingsPage";
 
 const pages = [
   { to: "/", label: "Checklist" },
@@ -53,13 +54,7 @@ function AppRoutes() {
         />
         <Route
           path="/vault"
-          element={
-            <Placeholder
-              eyebrow="Evidence locker"
-              title="Keep what mattered."
-              copy="Accounts, loot, and command output will be collected here."
-            />
-          }
+          element={<FindingsPage />}
         />
         <Route
           path="/backup"
