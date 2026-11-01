@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { useWorkspace } from "../context/WorkspaceContext";
+import { buildSmbDownloadCommands } from "../lib/smbCommands";
 import CommandBlock from "./CommandBlock";
 
 const MAX_RESULT_SIZE = 400 * 1024;
@@ -14,6 +15,12 @@ export default function ChecklistItem({ item, searchActive = false }) {
   const [fileError, setFileError] = useState("");
 
   const resultBytes = useMemo(() => new Blob([result]).size, [result]);
+  const commands = useMemo(
+    () => item.id === "svc-smb"
+      ? [...item.commands, ...buildSmbDownloadCommands(workspace.accounts)]
+      : item.commands,
+    [item, workspace.accounts],
+  );
 
   const saveResult = () => {
     if (!result.trim()) return;
@@ -65,7 +72,7 @@ export default function ChecklistItem({ item, searchActive = false }) {
         <button type="button" className="item-title-button" onClick={() => setOpen((value) => !value)}>
           <span>{item.title}</span>
           <small>
-            {item.commands.length} {item.commands.length === 1 ? "command" : "commands"}
+            {commands.length} {commands.length === 1 ? "command" : "commands"}
             {evidence.length > 0 && ` · ${evidence.length} saved result${evidence.length === 1 ? "" : "s"}`}
           </small>
         </button>
@@ -84,8 +91,8 @@ export default function ChecklistItem({ item, searchActive = false }) {
         <div className="check-item-body">
           {item.detail && <p className="item-detail">{item.detail}</p>}
           <div className="command-list">
-            {item.commands.map((command) => (
-              <CommandBlock key={`${item.id}-${command.label}`} command={command} variables={workspace.variables} />
+            {commands.map((command) => (
+              <CommandBlock key={command.key ?? `${item.id}-${command.label}`} command={command} variables={workspace.variables} />
             ))}
           </div>
 

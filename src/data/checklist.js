@@ -117,11 +117,12 @@ export const CHECKLIST = [
       {
         id: "svc-smb",
         title: "SMB / RPC (139, 445)",
+        detail: "The guest command and one command for every saved account with a secret are added automatically below. Each identity downloads into its own folder. Run credentials deliberately: repeated bad passwords can lock accounts.",
         commands: [
           { label: "Anonymous SMB", value: "nxc smb {{rhost}} -u '' -p '' --shares --users --groups" },
-          { label: "Dump shares (Anonymous)", value: "mkdir -p ~/oscp/{{targetName}}/loot/smb && { smbclient -N -L //{{rhost}} 2>/dev/null || smbclient -U 'guest%' -L //{{rhost}} 2>/dev/null; } | awk '/Disk/ {print $1}' | while read -r s; do [ -z \"$s\" ] && continue; echo \"[*] Checking share: $s\"; mkdir -p ~/oscp/{{targetName}}/loot/smb/\"$s\" && (cd ~/oscp/{{targetName}}/loot/smb/\"$s\" && { smbclient //{{rhost}}/\"$s\" -N -c 'recurse ON; prompt OFF; mget *' >/dev/null 2>&1 || smbclient //{{rhost}}/\"$s\" -U 'guest%' -c 'recurse ON; prompt OFF; mget *' >/dev/null 2>&1; }); done && find ~/oscp/{{targetName}}/loot/smb -mindepth 1 -type d -empty -delete 2>/dev/null && ls -la ~/oscp/{{targetName}}/loot/smb/" },
           { label: "Authenticated SMB", value: "nxc smb {{rhost}} -u '{{user}}' -p '{{password}}' --shares --users --groups --sessions" },
           { label: "Download share", value: "smbclient //{{rhost}}/SHARE -U '{{domain}}/{{user}}%{{password}}' -c 'recurse ON; prompt OFF; mget *'" },
+          { label: "Triage all downloaded SMB loot", value: "find ~/oscp/{{targetName}}/loot/smb -type f -printf '%s %p\\n' | sort -nr > ~/oscp/{{targetName}}/loot/smb-file-index.txt; grep -RniI -E 'pass(word)?|passwd|pwd|secret|token|api.?key|connection.?string|cpassword|user(name)?|BEGIN (RSA |OPENSSH )?PRIVATE KEY' ~/oscp/{{targetName}}/loot/smb | tee ~/oscp/{{targetName}}/loot/smb-credential-hits.txt" },
         ],
       },
       {
