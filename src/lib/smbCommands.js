@@ -20,6 +20,16 @@ const downloadBody = ({ folder, listCommand, downloadCommand }) => [
   'find "$root" -type f -printf "%p\\n"',
 ].join(" ");
 
+const singleDirectoryBody = ({ folder, auth, guest = false }) => [
+  `root="{{workspaceRoot}}/{{targetName}}/loot/smb/${folder}/{{smbShare}}/selected";`,
+  'mkdir -p "$root";',
+  '(cd "$root" &&',
+  guest
+    ? "{ smbclient '//{{rhost}}/{{smbShare}}' -N -D '{{smbDirectory}}' -c 'recurse ON; prompt OFF; mget *' || smbclient '//{{rhost}}/{{smbShare}}' -U 'guest%' -D '{{smbDirectory}}' -c 'recurse ON; prompt OFF; mget *'; })"
+    : `smbclient '//{{rhost}}/{{smbShare}}' ${auth} -D '{{smbDirectory}}' -c 'recurse ON; prompt OFF; mget *')`,
+  '; find "$root" -type f -printf "%p\\n"',
+].join(" ");
+
 export function buildSmbDownloadCommands(accounts = [], variables = {}) {
   const commands = [
     {
@@ -30,6 +40,11 @@ export function buildSmbDownloadCommands(accounts = [], variables = {}) {
         listCommand: "{ smbclient -g -L '//{{rhost}}' -N 2>/dev/null || smbclient -g -L '//{{rhost}}' -U 'guest%' 2>/dev/null; }",
         downloadCommand: "{ smbclient \"//{{rhost}}/$share\" -N -c 'recurse ON; prompt OFF; mget *' || smbclient \"//{{rhost}}/$share\" -U 'guest%' -c 'recurse ON; prompt OFF; mget *'; }",
       }),
+    },
+    {
+      key: "smb-download-directory-guest",
+      label: "Download one directory — guest / anonymous",
+      value: singleDirectoryBody({ folder: "guest", guest: true }),
     },
   ];
 
@@ -65,6 +80,11 @@ export function buildSmbDownloadCommands(accounts = [], variables = {}) {
         listCommand: `smbclient -g -L '//{{rhost}}' -U ${credential}${hashFlag} 2>/dev/null`,
         downloadCommand: `smbclient \"//{{rhost}}/$share\" -U ${credential}${hashFlag} -c 'recurse ON; prompt OFF; mget *'`,
       }),
+    });
+    commands.push({
+      key: `smb-download-directory-${account.id ?? folder}`,
+      label: `Download one directory — ${domain ? `${domain}\\` : ""}${username}`,
+      value: singleDirectoryBody({ folder, auth: `-U ${credential}${hashFlag}` }),
     });
   }
 

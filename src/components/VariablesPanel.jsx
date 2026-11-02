@@ -16,6 +16,8 @@ const LABELS = {
   password: "Password",
   gppCpassword: "GPP cpassword",
   hash: "NTLM / hash",
+  smbShare: "SMB share",
+  smbDirectory: "SMB directory",
   subnet: "Pivot subnet",
   interface: "VPN interface",
   wordlist: "Default wordlist",

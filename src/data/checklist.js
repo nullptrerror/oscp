@@ -12,6 +12,8 @@ export const DEFAULT_VARIABLES = {
   password: "",
   gppCpassword: "",
   hash: "",
+  smbShare: "SYSVOL",
+  smbDirectory: ".",
   subnet: "172.16.10.0/24",
   interface: "tun0",
   wordlist: "/usr/share/seclists/Discovery/Web-Content/raft-medium-directories.txt",
@@ -22,7 +24,7 @@ export const VARIABLE_GROUPS = [
   { label: "Operator", keys: ["lhost", "lport", "interface"] },
   { label: "Target", keys: ["targetName", "rhost", "rport", "subnet"] },
   { label: "Identity", keys: ["domain", "baseDn", "dc", "user", "password", "gppCpassword", "hash"] },
-  { label: "Resources", keys: ["wordlist"] },
+  { label: "Resources", keys: ["smbShare", "smbDirectory", "wordlist"] },
 ];
 
 export const CHECKLIST = [
