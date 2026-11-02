@@ -41,6 +41,7 @@ export function parseEvidence(content = "", filename = "") {
   for (const match of text.matchAll(/\$krb5tgs\$\d+\$\*?([^$*:\s]+)[*$]/gi)) add("kerberos-ticket", match[0], { username: match[1], ticket: "TGS" });
   for (const match of text.matchAll(/\$krb5asrep\$\d+\$([^@:]+)@([^:]+):[^\s]+/gi)) add("kerberos-ticket", match[0], { username: match[1], domain: match[2], ticket: "AS-REP" });
   for (const match of text.matchAll(/\b[a-f0-9]{32}\b/gi)) add("ntlm-hash", match[0].toLowerCase());
+  for (const match of text.matchAll(/\bcpassword\s*=\s*["']([^"']+)["']/gi)) add("gpp-cpassword", match[1]);
 
   for (const line of text.split(/\r?\n/)) {
     const cracked = line.match(/^\$krb5(?:tgs|asrep)\$\d+\$\*?([^$*:\s]+)[*$].*:(\S+)$/i);
@@ -51,6 +52,11 @@ export function parseEvidence(content = "", filename = "") {
     }
     const user = line.match(/^\s*(?:user(?:name)?|samaccountname)\s*[:=]\s*([^\s,;]+)/i);
     if (user) add("user", user[1]);
+    const nxcUser = line.match(/^(?:SMB|LDAP)\s+\S+\s+\d+\s+\S+\s+([A-Za-z0-9._$-]+)\s+/i);
+    if (nxcUser && !/^(?:username|[-*+]+)$/i.test(nxcUser[1]) && !nxcUser[1].endsWith("$")) add("user", nxcUser[1]);
+    for (const principal of line.matchAll(/\b([A-Za-z0-9][A-Za-z0-9_.-]{1,})\\([A-Za-z0-9._$-]+)\b/g)) {
+      if (!principal[2].endsWith("$")) add("user", principal[2], { domain: principal[1] });
+    }
     const group = line.match(/^\s*(?:group|memberof)\s*[:=]\s*(.+)$/i);
     if (group) add("group", group[1]);
   }

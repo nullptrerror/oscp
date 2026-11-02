@@ -3,6 +3,13 @@ import { DEFAULT_VARIABLES } from "../data/checklist.js";
 export const STORAGE_KEY = "fieldnotes.oscp.workspace.v1";
 export const WORKSPACE_VERSION = 1;
 
+export const domainToBaseDn = (domain = "") => String(domain)
+  .trim()
+  .split(".")
+  .filter(Boolean)
+  .map((part) => `DC=${part}`)
+  .join(",");
+
 export const createId = (prefix = "item") => {
   const suffix = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   return `${prefix}-${suffix}`;
@@ -15,6 +22,7 @@ export const createDefaultWorkspace = () => ({
   variables: { ...DEFAULT_VARIABLES },
   targets: [],
   accounts: [],
+  users: [],
   loot: [],
   completed: {},
   notes: {},
@@ -34,12 +42,15 @@ export function normalizeWorkspace(value) {
   }
 
   const base = createDefaultWorkspace();
+  const variables = { ...base.variables, ...asRecord(value.variables) };
+  if (!variables.baseDn && variables.domain) variables.baseDn = domainToBaseDn(variables.domain);
   return {
     ...base,
     ...value,
-    variables: { ...base.variables, ...asRecord(value.variables) },
+    variables,
     targets: asArray(value.targets),
     accounts: asArray(value.accounts),
+    users: asArray(value.users),
     loot: asArray(value.loot),
     completed: asRecord(value.completed),
     notes: asRecord(value.notes),

@@ -5,11 +5,20 @@ import { useWorkspace } from "../context/WorkspaceContext";
 import { fileToEvidence } from "../lib/evidence";
 import { getActiveScope, getScopedItemValue } from "../lib/workspace";
 
+const reportError = (error) => {
+  const message = error instanceof Error ? error.message : String(error || "");
+  if (/pdf-lib|failed to fetch dynamically imported module/i.test(message)) {
+    return "PDF support is not installed in node_modules. Stop Vite, run npm install (or npm ci), then restart npm run dev.";
+  }
+  return message || "The PDF operation failed.";
+};
+
 export default function ReportPage() {
   const { workspace, actions } = useWorkspace();
   const importRef = useRef(null);
   const userFlagRef = useRef(null);
   const rootFlagRef = useRef(null);
+  const profileRef = useRef(null);
   const [message, setMessage] = useState(null);
   const [busy, setBusy] = useState(false);
   const activeTarget = workspace.targets.find((target) => target.id === workspace.activeTargetId);
@@ -35,7 +44,7 @@ export default function ReportPage() {
       await downloadReportPdf(workspace, workspace.activeTargetId);
       setMessage({ type: "success", text: "Report generated. Its attachments include the complete restorable workspace and target evidence." });
     } catch (error) {
-      setMessage({ type: "error", text: error instanceof Error ? error.message : "Could not generate the PDF." });
+      setMessage({ type: "error", text: reportError(error) });
     } finally {
       setBusy(false);
     }
@@ -57,7 +66,7 @@ export default function ReportPage() {
       actions.importWorkspace(restored);
       setMessage({ type: "success", text: `Restored ${restored.targets.length} target(s) from ${file.name}.` });
     } catch (error) {
-      setMessage({ type: "error", text: error instanceof Error ? error.message : "Could not import that PDF." });
+      setMessage({ type: "error", text: reportError(error) });
     } finally {
       setBusy(false);
     }
@@ -74,6 +83,20 @@ export default function ReportPage() {
       setMessage({ type: "success", text: `${category === "user-flag" ? "User" : "Root / Administrator"} proof added to this target.` });
     } catch (error) {
       setMessage({ type: "error", text: error instanceof Error ? error.message : "Could not add that screenshot." });
+    }
+  };
+
+  const addProfileImage = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    try {
+      const image = await fileToEvidence(file);
+      if (!image.dataUrl) throw new Error("Profile image must be a PNG or JPEG.");
+      actions.updateReport({ profileImage: image.dataUrl, profileImageName: file.name });
+      setMessage({ type: "success", text: "Profile image added to this target report." });
+    } catch (error) {
+      setMessage({ type: "error", text: error instanceof Error ? error.message : "Could not add that profile image." });
     }
   };
 
@@ -103,6 +126,18 @@ export default function ReportPage() {
         <section className="report-editor">
           <div className="finding-section-head no-border">
             <div><p className="eyebrow">Narrative</p><h2>{activeTarget?.name || workspace.variables.targetName}</h2></div>
+          </div>
+          <div className="form-row equal">
+            <label><span>Your name</span><input type="text" value={report.operatorName || ""} onChange={(event) => actions.updateReport({ operatorName: event.target.value })} placeholder="Candidate name" /></label>
+            <label><span>Candidate / lab ID</span><input type="text" value={report.candidateId || ""} onChange={(event) => actions.updateReport({ candidateId: event.target.value })} placeholder="Optional identifier" /></label>
+          </div>
+          <div className="profile-image-control">
+            {report.profileImage && <img src={report.profileImage} alt="Report profile" />}
+            <div>
+              <button type="button" className="button secondary" onClick={() => profileRef.current?.click()}>{report.profileImage ? "Replace profile image" : "Add profile image"}</button>
+              {report.profileImage && <button type="button" className="text-button danger" onClick={() => actions.updateReport({ profileImage: "", profileImageName: "" })}>Remove</button>}
+            </div>
+            <input ref={profileRef} className="sr-only" type="file" accept="image/png,image/jpeg,.png,.jpg,.jpeg" onChange={addProfileImage} />
           </div>
           <label><span>Report title</span><input type="text" value={report.title || ""} onChange={(event) => actions.updateReport({ title: event.target.value })} placeholder={`${activeTarget?.name || workspace.variables.targetName} Penetration Test Report`} /></label>
           <label><span>Executive summary</span><textarea rows="6" value={report.executiveSummary || ""} onChange={(event) => actions.updateReport({ executiveSummary: event.target.value })} placeholder="Summarize the compromise path, impact, and final access in plain language." /></label>

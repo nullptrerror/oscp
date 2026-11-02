@@ -3,9 +3,11 @@ import { ALL_ITEMS } from "../data/checklist";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { getScopedItemValue } from "../lib/workspace";
 import { formatDiscovery } from "../lib/evidence";
+import { credentialVariables } from "../lib/credentials";
 
 const EMPTY_ACCOUNT = { target: "", domain: "", username: "", secret: "", source: "", status: "untested" };
 const EMPTY_LOOT = { target: "", label: "", location: "", value: "" };
+const EMPTY_USER = { domain: "", username: "", source: "manual" };
 
 function EmptyMessage({ children }) {
   return <p className="empty-inline">{children}</p>;
@@ -15,6 +17,7 @@ export default function FindingsPage() {
   const { workspace, actions } = useWorkspace();
   const [account, setAccount] = useState(EMPTY_ACCOUNT);
   const [loot, setLoot] = useState(EMPTY_LOOT);
+  const [user, setUser] = useState(EMPTY_USER);
   const [showSecrets, setShowSecrets] = useState(false);
 
   const savedResults = useMemo(
@@ -27,6 +30,7 @@ export default function FindingsPage() {
 
   const targetAccounts = workspace.accounts.filter((entry) => !workspace.activeTargetId || entry.targetId === workspace.activeTargetId);
   const targetLoot = workspace.loot.filter((entry) => !workspace.activeTargetId || entry.targetId === workspace.activeTargetId);
+  const targetUsers = (workspace.users || []).filter((entry) => !workspace.activeTargetId || entry.targetId === workspace.activeTargetId);
   const targetDiscoveries = workspace.discoveries.filter((entry) => !workspace.activeTargetId || entry.targetId === workspace.activeTargetId);
 
   const addAccount = (event) => {
@@ -43,6 +47,13 @@ export default function FindingsPage() {
     setLoot(EMPTY_LOOT);
   };
 
+  const addUser = (event) => {
+    event.preventDefault();
+    if (!user.username.trim()) return;
+    actions.addRecord("users", user);
+    setUser(EMPTY_USER);
+  };
+
   return (
     <main className="page-shell findings-page">
       <section className="section-hero">
@@ -54,6 +65,29 @@ export default function FindingsPage() {
         <button type="button" className="button secondary" onClick={() => setShowSecrets((value) => !value)}>
           {showSecrets ? "Hide secrets" : "Show secrets"}
         </button>
+      </section>
+
+      <section className="finding-section users-ledger">
+        <div className="finding-section-head">
+          <div><p className="eyebrow">Enumeration</p><h2>Tracked users</h2></div>
+          <span>{targetUsers.length}</span>
+        </div>
+        <form className="inline-entry-form user-entry-form" onSubmit={addUser}>
+          <input type="text" value={user.domain} onChange={(event) => setUser({ ...user, domain: event.target.value })} placeholder={workspace.variables.domain || "Domain"} aria-label="User domain" />
+          <input type="text" value={user.username} onChange={(event) => setUser({ ...user, username: event.target.value })} placeholder="Username" aria-label="Tracked username" required />
+          <input type="text" value={user.source} onChange={(event) => setUser({ ...user, source: event.target.value })} placeholder="Source" aria-label="Username source" />
+          <button type="submit" className="button">Track user</button>
+        </form>
+        <div className="tracked-users-list">
+          {targetUsers.length === 0 ? <EmptyMessage>Paste enumeration output or add usernames manually. They will populate the target users file.</EmptyMessage> : targetUsers.map((entry) => (
+            <div className="tracked-user" key={entry.id}>
+              <code>{entry.domain ? `${entry.domain}\\` : ""}{entry.username}</code>
+              <span>{entry.source || "manual"}</span>
+              <button type="button" className="text-button" onClick={() => actions.updateVariables({ domain: entry.domain || workspace.variables.domain, user: entry.username })}>Use</button>
+              <button type="button" className="text-button danger" onClick={() => actions.deleteRecord("users", entry.id)}>Delete</button>
+            </div>
+          ))}
+        </div>
       </section>
 
       <div className="finding-columns">
@@ -85,7 +119,10 @@ export default function FindingsPage() {
               <article className="ledger-card" key={entry.id}>
                 <div className="ledger-card-head">
                   <div><span className={`status-dot ${entry.status}`} /> <strong>{entry.domain ? `${entry.domain}\\` : ""}{entry.username}</strong></div>
-                  <button type="button" className="text-button danger" onClick={() => actions.deleteRecord("accounts", entry.id)}>Delete</button>
+                  <div>
+                    <button type="button" className="text-button" onClick={() => actions.updateVariables(credentialVariables(entry))}>Use in commands</button>
+                    <button type="button" className="text-button danger" onClick={() => actions.deleteRecord("accounts", entry.id)}>Delete</button>
+                  </div>
                 </div>
                 <code>{showSecrets ? entry.secret || "—" : entry.secret ? "••••••••••••" : "—"}</code>
                 <p>{entry.target || "No target"}{entry.source ? ` · ${entry.source}` : ""}</p>

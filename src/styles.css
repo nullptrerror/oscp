@@ -243,8 +243,11 @@ textarea:focus, input[type="text"]:focus, input[type="password"]:focus { border-
 .active-target { padding: 8px 10px; border-left: 2px solid var(--lime); background: var(--lime-dark); }
 .active-target strong { color: var(--text); }
 .variables-panel fieldset { min-width: 0; margin: 18px 0 0; padding: 0; border: 0; }
+.context-picker { display: grid; gap: 6px; margin-top: 10px; }
+.context-picker > span { color: var(--lime); font-family: var(--mono); font-size: 0.65rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; }
 .variables-panel legend { width: 100%; margin-bottom: 9px; padding-bottom: 6px; border-bottom: 1px solid var(--line); color: var(--lime); font-family: var(--mono); font-size: 0.66rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.11em; }
 .variables-panel label { display: grid; grid-template-columns: 90px minmax(0, 1fr); align-items: center; gap: 8px; margin-top: 8px; color: var(--muted); font-size: 0.7rem; }
+.variables-panel .context-picker { grid-template-columns: 1fr; align-items: stretch; }
 .variables-panel input { min-width: 0; height: 35px; font-family: var(--mono); font-size: 0.7rem; }
 
 .empty-state { padding: 80px 20px; border: 1px dashed var(--line); border-radius: 12px; text-align: center; }
@@ -275,6 +278,11 @@ textarea:focus, input[type="text"]:focus, input[type="password"]:focus { border-
 .empty-state.compact { padding: 90px 20px; }
 
 .finding-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+.users-ledger { margin-bottom: 20px; }
+.user-entry-form { grid-template-columns: 1fr 1fr 1fr auto; align-items: center; }
+.tracked-users-list { display: flex; flex-wrap: wrap; gap: 8px; padding: 14px 20px; }
+.tracked-user { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: #0b0f0c; }
+.tracked-user span { color: var(--muted); font-size: 0.65rem; }
 .finding-section, .results-ledger { overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
 .finding-section-head { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 20px; border-bottom: 1px solid var(--line); }
 .finding-section-head .eyebrow { margin-bottom: 5px; }
@@ -337,6 +345,9 @@ textarea:focus, input[type="text"]:focus, input[type="password"]:focus { border-
 .report-editor, .report-readiness { padding: 22px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
 .report-editor { display: grid; gap: 16px; }
 .report-editor label { display: grid; gap: 7px; }
+.profile-image-control { display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: #0b0f0c; }
+.profile-image-control img { width: 72px; height: 72px; object-fit: cover; border: 1px solid #405044; border-radius: 8px; }
+.profile-image-control > div { display: flex; flex-wrap: wrap; gap: 6px; }
 .report-readiness { position: sticky; top: 84px; }
 .report-readiness .stat-list { margin: 12px 0 18px; }
 .proof-actions { display: grid; gap: 8px; margin-bottom: 12px; }
@@ -370,6 +381,7 @@ textarea:focus, input[type="text"]:focus, input[type="password"]:focus { border-
   .record-actions { width: 100%; justify-content: space-between; }
   .target-card-grid { grid-template-columns: 1fr 1fr; }
   .finding-columns, .results-grid { grid-template-columns: 1fr; }
+  .user-entry-form { grid-template-columns: 1fr; }
   .primary-backup-card, .backup-grid { grid-template-columns: 1fr; }
   .backup-actions { align-items: stretch; flex-direction: column; }
   .report-layout { grid-template-columns: 1fr; }

@@ -30,6 +30,8 @@ npm run build
 npm run preview -- --host 127.0.0.1
 ```
 
+If Vite reports that it cannot resolve `pdf-lib` after pulling newer commits, stop the development server, run `npm install` (or `npm ci` for a clean install), and restart it. The PDF dependency is recorded in both `package.json` and `package-lock.json`; an older `node_modules` directory is the usual cause.
+
 ## Workflow
 
 1. Add a host under **Targets** and choose **Use in commands**.

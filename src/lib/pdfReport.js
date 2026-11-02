@@ -86,6 +86,7 @@ function targetData(workspace, targetId) {
     report,
     items,
     accounts: workspace.accounts.filter(belongs),
+    users: (workspace.users || []).filter(belongs),
     loot: workspace.loot.filter(belongs),
     discoveries: workspace.discoveries.filter(belongs),
   };
@@ -98,6 +99,16 @@ export async function generateReportPdf(workspace, targetId) {
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
   const mono = await pdf.embedFont(StandardFonts.Courier);
   const monoBold = await pdf.embedFont(StandardFonts.CourierBold);
+  const generatedAt = new Date();
+  let profileImage = null;
+  if (data.report.profileImage) {
+    try {
+      const profileBytes = dataUrlBytes(data.report.profileImage);
+      profileImage = /png/i.test(data.report.profileImage.slice(0, 30)) ? await pdf.embedPng(profileBytes) : await pdf.embedJpg(profileBytes);
+    } catch {
+      profileImage = null;
+    }
+  }
   const colors = {
     ink: rgb(0.10, 0.13, 0.11),
     muted: rgb(0.35, 0.41, 0.37),
@@ -111,7 +122,8 @@ export async function generateReportPdf(workspace, targetId) {
   const newPage = () => {
     page = pdf.addPage(PAGE_SIZE);
     y = PAGE_SIZE[1] - MARGIN;
-    page.drawText("FIELDNOTES / OSCP+ TARGET REPORT", { x: MARGIN, y: 24, size: 7, font: monoBold, color: colors.muted });
+    const footer = `${data.report.operatorName || "FIELDNOTES"} / ${generatedAt.toISOString()}`;
+    page.drawText(ascii(footer), { x: MARGIN, y: 24, size: 7, font: monoBold, color: colors.muted });
   };
   const ensure = (height) => { if (!page || y - height < MARGIN) newPage(); };
   const lines = (text, { font = regular, size = 10, color = colors.ink, indent = 0, gap = 3 } = {}) => {
@@ -154,18 +166,24 @@ export async function generateReportPdf(workspace, targetId) {
   };
 
   newPage();
+  if (profileImage) {
+    const profileScale = Math.min(72 / profileImage.width, 72 / profileImage.height);
+    page.drawImage(profileImage, { x: MARGIN, y: y - (profileImage.height * profileScale), width: profileImage.width * profileScale, height: profileImage.height * profileScale });
+  }
   y -= 90;
   lines(data.report.title || `${data.target?.name || workspace.variables.targetName} Penetration Test Report`, { font: bold, size: 28, color: colors.ink, gap: 6 });
   y -= 14;
   lines("OSCP+ STYLE LAB REPORT", { font: monoBold, size: 11, color: colors.green, gap: 4 });
   y -= 28;
   labelValue("Target", data.target?.name || workspace.variables.targetName);
+  labelValue("Prepared by", data.report.operatorName);
+  labelValue("Candidate / lab ID", data.report.candidateId);
   labelValue("IP address", data.target?.host || workspace.variables.rhost);
   labelValue("TCP ports", data.target?.port || workspace.variables.rport);
   labelValue("UDP ports", data.target?.udpPorts || workspace.variables.uport);
   labelValue("Domain", data.target?.domain || workspace.variables.domain);
   labelValue("Workspace", `${workspace.variables.workspaceRoot}/${data.target?.name || workspace.variables.targetName}`);
-  labelValue("Generated", new Date().toISOString());
+  labelValue("Generated", generatedAt.toISOString());
   y -= 30;
   lines("This report was generated from target-scoped checklist notes and attached evidence. The original Fieldnotes workspace is embedded in this PDF for restoration.", { size: 10.5, color: colors.muted, gap: 5 });
 
@@ -177,6 +195,9 @@ export async function generateReportPdf(workspace, targetId) {
   heading("Attack surface", 2);
   if (data.discoveries.length === 0) lines("No parsed discoveries were saved.", { color: colors.muted });
   for (const discovery of data.discoveries) lines(formatDiscovery(discovery), { font: mono, size: 8.5, color: colors.muted });
+  heading("Tracked users", 2);
+  if (data.users.length === 0) lines("No standalone usernames were saved.", { color: colors.muted });
+  for (const user of data.users) labelValue(user.source || "user", `${user.domain ? `${user.domain}\\` : ""}${user.username}`);
   heading("Credentials obtained", 2);
   if (data.accounts.length === 0) lines("No credentials were saved.", { color: colors.muted });
   for (const account of data.accounts) labelValue(account.status || "credential", `${account.domain ? `${account.domain}\\` : ""}${account.username}${account.secret ? ` : ${account.secret}` : ""}`);
@@ -238,12 +259,12 @@ export async function generateReportPdf(workspace, targetId) {
     pdfPage.drawText(`${index + 1} / ${pages.length}`, { x: PAGE_SIZE[0] - MARGIN - 34, y: 24, size: 7, font: mono, color: colors.muted });
   });
   pdf.setTitle(data.report.title || `${data.target?.name || "Target"} Penetration Test Report`);
-  pdf.setAuthor("Fieldnotes OSCP+");
+  pdf.setAuthor(data.report.operatorName || "Fieldnotes OSCP+");
   pdf.setSubject("Target report with embedded Fieldnotes workspace");
   await pdf.attach(new TextEncoder().encode(JSON.stringify(workspace)), WORKSPACE_ATTACHMENT, {
     mimeType: "application/json",
     description: "Complete Fieldnotes workspace for import",
-    creationDate: new Date(),
+    creationDate: generatedAt,
   });
   let attachmentIndex = 0;
   for (const evidence of data.items.flatMap((item) => item.evidence)) {

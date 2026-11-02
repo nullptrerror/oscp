@@ -1,6 +1,7 @@
 import { buildSmbDownloadCommands } from "./smbCommands.js";
 import { buildRemoteAccessCommands } from "./remoteAccessCommands.js";
 import { buildSpnTgsCommands } from "./kerberosCommands.js";
+import { buildUsersFileCommand } from "./userCommands.js";
 
 export function getChecklistCommands(item, workspace) {
   const accounts = workspace.accounts.filter((account) => (
@@ -9,5 +10,16 @@ export function getChecklistCommands(item, workspace) {
   if (item.id === "svc-smb") return [...item.commands, ...buildSmbDownloadCommands(accounts, workspace.variables)];
   if (item.id === "access-remote") return [...item.commands, ...buildRemoteAccessCommands(accounts, workspace.variables)];
   if (item.id === "ad-spn-tgs") return [...item.commands, ...buildSpnTgsCommands(accounts, workspace.variables)];
+  if (item.id === "ad-roast") {
+    const usersFile = buildUsersFileCommand(workspace);
+    return [
+      usersFile,
+      ...item.commands.map((command) => ({
+        ...command,
+        label: `Build users file + ${command.label}`,
+        value: `${usersFile.value}; ${command.value}`,
+      })),
+    ];
+  }
   return item.commands;
 }

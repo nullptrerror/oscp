@@ -46,3 +46,11 @@ test("TCP and UDP port lists accumulate without overwriting each other", () => {
   const discoveries = parseEvidence("53/tcp open domain\n53/udp open domain");
   assert.equal(discoveries.filter((entry) => entry.type === "port").length, 2);
 });
+
+test("LDAP and NetExec enumeration output yields tracked usernames", () => {
+  const output = `sAMAccountName: SVC_TGS
+SMB 10.129.81.60 445 DC Administrator 2018-07-18 00:00:00 0 Built-in account
+active.htb\\alice`;
+  const users = parseEvidence(output).filter((entry) => entry.type === "user").map((entry) => entry.value);
+  assert.deepEqual(users, ["SVC_TGS", "Administrator", "alice"]);
+});

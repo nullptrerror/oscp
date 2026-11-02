@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import {
   createDefaultWorkspace,
   createId,
+  domainToBaseDn,
   getActiveScope,
   getItemStateKey,
   getScopedItemValue,
@@ -42,16 +43,20 @@ export function WorkspaceProvider({ children }) {
     () => ({
       updateVariables(values) {
         update((current) => {
+          const shouldDeriveBaseDn = values.domain !== undefined
+            && values.baseDn === undefined
+            && (!current.variables.baseDn || current.variables.baseDn === domainToBaseDn(current.variables.domain));
+          const variableValues = shouldDeriveBaseDn ? { ...values, baseDn: domainToBaseDn(values.domain) } : values;
           const targetPatch = {
-            ...(values.targetName !== undefined ? { name: values.targetName } : {}),
-            ...(values.rhost !== undefined ? { host: values.rhost } : {}),
-            ...(values.rport !== undefined ? { port: values.rport } : {}),
-            ...(values.uport !== undefined ? { udpPorts: values.uport } : {}),
-            ...(values.domain !== undefined ? { domain: values.domain } : {}),
+            ...(variableValues.targetName !== undefined ? { name: variableValues.targetName } : {}),
+            ...(variableValues.rhost !== undefined ? { host: variableValues.rhost } : {}),
+            ...(variableValues.rport !== undefined ? { port: variableValues.rport } : {}),
+            ...(variableValues.uport !== undefined ? { udpPorts: variableValues.uport } : {}),
+            ...(variableValues.domain !== undefined ? { domain: variableValues.domain } : {}),
           };
           return {
             ...current,
-            variables: { ...current.variables, ...values },
+            variables: { ...current.variables, ...variableValues },
             targets: current.activeTargetId
               ? current.targets.map((target) => (target.id === current.activeTargetId ? { ...target, ...targetPatch } : target))
               : current.targets,
@@ -127,15 +132,31 @@ export function WorkspaceProvider({ children }) {
             source: evidence.filename || evidence.label || "parsed evidence",
             status: "untested",
           }));
+          const parsedUserCandidates = parsed.filter((entry) => entry.type === "user" || entry.type === "credential")
+            .map((entry) => ({ username: entry.username || entry.value, domain: entry.domain || foundDomain || current.variables.domain }))
+            .filter((entry) => entry.username);
+          const parsedUsers = [...new Map(parsedUserCandidates.map((entry) => [entry.username.toLowerCase(), entry])).values()]
+            .filter((entry) => entry.username && !current.users.some((saved) => (
+              saved.targetId === current.activeTargetId && saved.username?.toLowerCase() === entry.username.toLowerCase()
+            )))
+            .map((entry) => ({
+              id: createId("user"),
+              createdAt,
+              targetId: current.activeTargetId,
+              target: target?.name || current.variables.targetName,
+              source: evidence.filename || evidence.label || "parsed evidence",
+              ...entry,
+            }));
           return {
             ...current,
             variables: {
               ...current.variables,
               ...(foundTcpPorts.length > 0 ? { rport: tcpPorts } : {}),
               ...(foundUdpPorts.length > 0 ? { uport: udpPorts } : {}),
-              ...(foundDomain && !current.variables.domain ? { domain: foundDomain } : {}),
+              ...(foundDomain && !current.variables.domain ? { domain: foundDomain, baseDn: domainToBaseDn(foundDomain) } : {}),
             },
             accounts: [...current.accounts, ...parsedAccounts],
+            users: [...current.users, ...parsedUsers],
             discoveries: [...current.discoveries, ...newDiscoveries],
             targets: current.targets.map((entry) => entry.id === current.activeTargetId ? {
               ...entry,
@@ -179,6 +200,7 @@ export function WorkspaceProvider({ children }) {
               rport: target.port || "",
               uport: target.udpPorts || "",
               domain: target.domain || "",
+              baseDn: domainToBaseDn(target.domain),
             } : current.variables,
             targets: [...current.targets, { id, createdAt: new Date().toISOString(), ...target }],
           };
@@ -194,6 +216,7 @@ export function WorkspaceProvider({ children }) {
             ...(patch.port !== undefined ? { rport: patch.port } : {}),
             ...(patch.udpPorts !== undefined ? { uport: patch.udpPorts } : {}),
             ...(patch.domain !== undefined ? { domain: patch.domain } : {}),
+            ...(patch.domain !== undefined ? { baseDn: domainToBaseDn(patch.domain) } : {}),
           } : current.variables,
           targets: current.targets.map((target) => (target.id === id ? { ...target, ...patch } : target)),
         }));
@@ -216,7 +239,7 @@ export function WorkspaceProvider({ children }) {
             rport: target.port || "",
             uport: target.udpPorts || "",
             domain: target.domain || "",
-            baseDn: "",
+            baseDn: domainToBaseDn(target.domain),
             dc: "",
             user: "",
             password: "",
@@ -226,7 +249,7 @@ export function WorkspaceProvider({ children }) {
         }));
       },
       addRecord(kind, record) {
-        if (!['accounts', 'loot'].includes(kind)) return;
+        if (!['accounts', 'users', 'loot'].includes(kind)) return;
         update((current) => ({
           ...current,
           [kind]: [...current[kind], {
@@ -235,7 +258,7 @@ export function WorkspaceProvider({ children }) {
             ...record,
             targetId: current.activeTargetId,
             target: record.target || current.variables.targetName,
-            ...(kind === "accounts" ? { domain: record.domain || current.variables.domain } : {}),
+            ...(['accounts', 'users'].includes(kind) ? { domain: record.domain || current.variables.domain } : {}),
           }],
         }));
       },
@@ -246,7 +269,7 @@ export function WorkspaceProvider({ children }) {
         });
       },
       deleteRecord(kind, id) {
-        if (!['accounts', 'loot'].includes(kind)) return;
+        if (!['accounts', 'users', 'loot'].includes(kind)) return;
         update((current) => ({ ...current, [kind]: current[kind].filter((record) => record.id !== id) }));
       },
       importWorkspace(value) {

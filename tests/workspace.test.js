@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   createDefaultWorkspace,
+  domainToBaseDn,
   getItemStateKey,
   getScopedItemValue,
   normalizeWorkspace,
@@ -58,4 +59,10 @@ test("checklist state is scoped to the active target", () => {
 
 test("the default Kali workspace root is /home/kali/oscp", () => {
   assert.equal(createDefaultWorkspace().variables.workspaceRoot, "/home/kali/oscp");
+});
+
+test("domains derive LDAP base DNs when one is not supplied", () => {
+  assert.equal(domainToBaseDn("active.htb"), "DC=active,DC=htb");
+  const restored = normalizeWorkspace({ version: WORKSPACE_VERSION, variables: { domain: "corp.example.com", baseDn: "" } });
+  assert.equal(restored.variables.baseDn, "DC=corp,DC=example,DC=com");
 });
