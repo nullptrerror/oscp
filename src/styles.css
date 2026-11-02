@@ -281,6 +281,8 @@ textarea:focus, input[type="text"]:focus, input[type="password"]:focus { border-
 .finding-section-head h2 { margin: 0; font-size: 1.3rem; }
 .finding-section-head > span { color: var(--lime); font-family: var(--mono); font-size: 1.6rem; font-weight: 800; }
 .inline-entry-form { display: grid; gap: 9px; padding: 16px 20px; border-bottom: 1px solid var(--line); background: #0c100d; }
+.form-context { margin: 0; color: var(--muted); font-size: 0.7rem; }
+.form-context strong { color: var(--text); }
 .form-row.equal { grid-template-columns: 1fr 1fr; }
 .inline-entry-form .button { justify-self: end; }
 .ledger-list { display: grid; gap: 0; }

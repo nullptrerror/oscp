@@ -41,7 +41,21 @@ export function WorkspaceProvider({ children }) {
   const actions = useMemo(
     () => ({
       updateVariables(values) {
-        update((current) => ({ ...current, variables: { ...current.variables, ...values } }));
+        update((current) => {
+          const targetPatch = {
+            ...(values.targetName !== undefined ? { name: values.targetName } : {}),
+            ...(values.rhost !== undefined ? { host: values.rhost } : {}),
+            ...(values.rport !== undefined ? { port: values.rport } : {}),
+            ...(values.domain !== undefined ? { domain: values.domain } : {}),
+          };
+          return {
+            ...current,
+            variables: { ...current.variables, ...values },
+            targets: current.activeTargetId
+              ? current.targets.map((target) => (target.id === current.activeTargetId ? { ...target, ...targetPatch } : target))
+              : current.targets,
+          };
+        });
       },
       toggleCompleted(itemId) {
         update((current) => {
@@ -117,6 +131,11 @@ export function WorkspaceProvider({ children }) {
             },
             accounts: [...current.accounts, ...parsedAccounts],
             discoveries: [...current.discoveries, ...newDiscoveries],
+            targets: current.targets.map((entry) => entry.id === current.activeTargetId ? {
+              ...entry,
+              ...(foundPorts.length > 0 ? { port: [...new Set(foundPorts)].sort((a, b) => Number(a) - Number(b)).join(",") } : {}),
+              ...(foundDomain && !entry.domain ? { domain: foundDomain } : {}),
+            } : entry),
             evidence: {
               ...current.evidence,
               [key]: [
@@ -160,6 +179,13 @@ export function WorkspaceProvider({ children }) {
       updateTarget(id, patch) {
         update((current) => ({
           ...current,
+          variables: current.activeTargetId === id ? {
+            ...current.variables,
+            ...(patch.name !== undefined ? { targetName: patch.name } : {}),
+            ...(patch.host !== undefined ? { rhost: patch.host } : {}),
+            ...(patch.port !== undefined ? { rport: patch.port } : {}),
+            ...(patch.domain !== undefined ? { domain: patch.domain } : {}),
+          } : current.variables,
           targets: current.targets.map((target) => (target.id === id ? { ...target, ...patch } : target)),
         }));
       },
@@ -176,10 +202,16 @@ export function WorkspaceProvider({ children }) {
           activeTargetId: target.id,
           variables: {
             ...current.variables,
-            targetName: target.name || current.variables.targetName,
-            rhost: target.host || current.variables.rhost,
-            rport: target.port || current.variables.rport,
-            domain: target.domain || current.variables.domain,
+            targetName: target.name,
+            rhost: target.host,
+            rport: target.port || "",
+            domain: target.domain || "",
+            baseDn: "",
+            dc: "",
+            user: "",
+            password: "",
+            gppCpassword: "",
+            hash: "",
           },
         }));
       },
@@ -193,6 +225,7 @@ export function WorkspaceProvider({ children }) {
             ...record,
             targetId: current.activeTargetId,
             target: record.target || current.variables.targetName,
+            ...(kind === "accounts" ? { domain: record.domain || current.variables.domain } : {}),
           }],
         }));
       },

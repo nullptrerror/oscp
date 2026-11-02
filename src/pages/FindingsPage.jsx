@@ -62,6 +62,7 @@ export default function FindingsPage() {
             <span>{targetAccounts.length}</span>
           </div>
           <form className="inline-entry-form" onSubmit={addAccount}>
+            <p className="form-context">New credentials are saved to <strong>{workspace.variables.targetName}</strong> unless you enter another target.</p>
             <div className="form-row equal">
               <input type="text" value={account.domain} onChange={(event) => setAccount({ ...account, domain: event.target.value })} placeholder="Domain / host" aria-label="Account domain or host" />
               <input type="text" value={account.target} onChange={(event) => setAccount({ ...account, target: event.target.value })} placeholder="Target" aria-label="Account target" />
