@@ -338,7 +338,7 @@ export function WorkspaceProvider({ children }) {
             commandHistory: current.commandHistory.map(retarget),
             completed: mergeScopedState(current.completed, sourceId, destinationId, (destinationValue, sourceValue) => Boolean(destinationValue || sourceValue)),
             notes: mergeScopedState(current.notes, sourceId, destinationId, (destinationValue, sourceValue) => [destinationValue, sourceValue].filter(Boolean).join("\n\n")),
-            evidence: mergeScopedState(current.evidence, sourceId, destinationId, (destinationValue = [], sourceValue = []) => [...destinationValue, ...sourceValue]),
+            evidence: mergeScopedState(current.evidence, sourceId, destinationId, (destinationValue = [], sourceValue = []) => [...destinationValue, ...sourceValue.map(retarget)]),
             reports,
           };
         });
