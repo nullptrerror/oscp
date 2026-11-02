@@ -81,7 +81,8 @@ test("workspace normalization removes historical Nmap vendor hostnames", () => {
   const restored = normalizeWorkspace({
     version: WORKSPACE_VERSION,
     targets: [{ id: "active", name: "active", endpoints: [{ id: "ep", address: "10.129.81.76", hostnames: ["nmap.org", "dc.active.htb"] }] }],
-    discoveries: [{ type: "hostname", value: "nmap.org" }, { type: "hostname", value: "dc.active.htb" }],
+    variables: { lhost: "10.10.15.240" },
+    discoveries: [{ type: "hostname", value: "nmap.org" }, { type: "hostname", value: "dc.active.htb" }, { type: "ip", value: "10.10.15.240" }],
   });
   assert.deepEqual(restored.targets[0].endpoints[0].hostnames, ["dc.active.htb"]);
   assert.deepEqual(restored.discoveries.map((entry) => entry.value), ["dc.active.htb"]);

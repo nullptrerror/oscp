@@ -87,7 +87,11 @@ export function normalizeWorkspace(value) {
     completed: asRecord(value.completed),
     notes: asRecord(value.notes),
     evidence: asRecord(value.evidence),
-    discoveries: asArray(value.discoveries).filter((entry) => !(entry.type === "hostname" && ["nmap.org", "www.nmap.org"].includes(String(entry.value).toLowerCase()))),
+    discoveries: asArray(value.discoveries).filter((entry) => {
+      if (entry.type === "hostname" && ["nmap.org", "www.nmap.org"].includes(String(entry.value).toLowerCase())) return false;
+      if (["ip", "endpoint"].includes(entry.type) && entry.value === variables.lhost) return false;
+      return true;
+    }),
     commandHistory: asArray(value.commandHistory),
     reports: asRecord(value.reports),
   };
