@@ -37,10 +37,14 @@ export function parseEvidence(content = "", filename = "") {
   for (const match of text.matchAll(/\b(?:domain|realm)\s*[:=]\s*([a-z0-9][a-z0-9.-]*\.[a-z]{2,})\b/gi)) add("domain", match[1].toLowerCase());
   for (const match of text.matchAll(/\b(?:Domain Name|DNS_Domain_Name)\s*[:=]\s*([a-z0-9][a-z0-9.-]*\.[a-z]{2,})\b/gi)) add("domain", match[1].toLowerCase());
   for (const match of text.matchAll(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g)) {
-    if (match[0].split(".").every((part) => Number(part) <= 255)) add("ip", match[0]);
+    const suffix = text.slice(match.index + match[0].length, match.index + match[0].length + 4);
+    if (!/^\/\d{1,2}\b/.test(suffix) && match[0].split(".").every((part) => Number(part) <= 255)) add("ip", match[0]);
   }
+  for (const match of text.matchAll(/^tun\d*\s+\S+\s+((?:\d{1,3}\.){3}\d{1,3})\/\d+/gim)) add("local-ip", match[1]);
+  for (const match of text.matchAll(/^Nmap scan report for (?:(?:[^\s(]+) \()?((?:\d{1,3}\.){3}\d{1,3})\)?/gim)) add("endpoint", match[1], { confidence: "high", source: "nmap-target" });
   for (const match of text.matchAll(/^Nmap scan report for ([^\s(]+) \(((?:\d{1,3}\.){3}\d{1,3})\)/gim)) add("hostname", match[1].toLowerCase(), { address: match[2] });
   for (const match of text.matchAll(/\bName:\s*([^\s]+)[\s\S]{0,80}?\bAddress:\s*((?:\d{1,3}\.){3}\d{1,3})/gi)) add("hostname", match[1].toLowerCase(), { address: match[2] });
+  for (const match of text.matchAll(/\b([a-z0-9][a-z0-9.-]*\.[a-z]{2,})\s+(?:has address|A\s+)\s*((?:\d{1,3}\.){3}\d{1,3})\b/gi)) add("hostname", match[1].toLowerCase(), { address: match[2] });
   for (const match of text.matchAll(/\bDNS:([a-z0-9][a-z0-9.-]*\.[a-z]{2,})\b/gi)) add("hostname", match[1].toLowerCase());
   for (const match of text.matchAll(/https?:\/\/([a-z0-9][a-z0-9.-]*)(?::\d+)?/gi)) add("hostname", match[1].toLowerCase());
   for (const match of text.matchAll(/\bCVE-\d{4}-\d{4,7}\b/gi)) add("cve", match[0].toUpperCase());
@@ -53,7 +57,12 @@ export function parseEvidence(content = "", filename = "") {
 
   for (const line of text.split(/\r?\n/)) {
     const smbIdentity = line.match(/\bSMB\s+((?:\d{1,3}\.){3}\d{1,3}).*\(name:([^\s)]+)\).*\(domain:([^\s)]+)\)/i);
-    if (smbIdentity) add("hostname", `${smbIdentity[2]}.${smbIdentity[3]}`.toLowerCase(), { address: smbIdentity[1] });
+    if (smbIdentity) {
+      add("endpoint", smbIdentity[1], { confidence: "high", source: "smb-host" });
+      add("hostname", `${smbIdentity[2]}.${smbIdentity[3]}`.toLowerCase(), { address: smbIdentity[1] });
+    }
+    const toolHost = line.match(/^(?:SMB|LDAP|WINRM|SSH|MSSQL|RDP)\s+((?:\d{1,3}\.){3}\d{1,3})\s+/i);
+    if (toolHost) add("endpoint", toolHost[1], { confidence: "high", source: "service-host" });
     const cracked = line.match(/^\$krb5(?:tgs|asrep)\$\d+\$\*?([^$*:\s]+)[*$].*:(\S+)$/i);
     if (cracked) add("credential", `${cracked[1]}:${cracked[2]}`, { username: cracked[1], secret: cracked[2], source: filename || "Kerberos crack" });
     const explicit = line.match(/\b([A-Za-z0-9_.-]+)\\([A-Za-z0-9.$_-]+):([^\s]+)\b/);
@@ -71,7 +80,14 @@ export function parseEvidence(content = "", filename = "") {
     if (group) add("group", group[1]);
   }
 
-  return unique(discoveries);
+  const deduped = unique(discoveries);
+  const classifiedAddresses = new Set(deduped.flatMap((entry) => entry.type === "endpoint" || entry.type === "local-ip" ? [entry.value] : entry.type === "hostname" && entry.address ? [entry.address] : []));
+  return deduped.filter((entry) => entry.type !== "ip" || !classifiedAddresses.has(entry.value));
+}
+
+export function discoveriesForChecklistItem(itemId, discoveries) {
+  if (itemId === "setup-network") return discoveries.filter((entry) => entry.type !== "ip" && entry.type !== "endpoint" && entry.type !== "hostname");
+  return discoveries;
 }
 
 export function formatDiscovery(discovery) {

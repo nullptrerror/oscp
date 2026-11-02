@@ -10,7 +10,7 @@ import {
   normalizeWorkspace,
   saveWorkspace,
 } from "../lib/workspace";
-import { guidanceForDiscoveries, mergePortLists, parseEvidence } from "../lib/evidence";
+import { discoveriesForChecklistItem, guidanceForDiscoveries, mergePortLists, parseEvidence } from "../lib/evidence";
 
 const WorkspaceContext = createContext(null);
 
@@ -117,7 +117,7 @@ export function WorkspaceProvider({ children }) {
         update((current) => {
           const key = getItemStateKey(current, itemId);
           const target = current.targets.find((entry) => entry.id === current.activeTargetId);
-          const parsed = evidence.discoveries ?? parseEvidence(evidence.content, evidence.filename || evidence.label);
+          const parsed = discoveriesForChecklistItem(itemId, evidence.discoveries ?? parseEvidence(evidence.content, evidence.filename || evidence.label));
           const guidance = guidanceForDiscoveries(parsed);
           const createdAt = new Date().toISOString();
           const enrichedEvidence = {
@@ -151,8 +151,9 @@ export function WorkspaceProvider({ children }) {
           const tcpPorts = mergePortLists(selectedEndpoint?.tcpPorts || current.variables.rport, foundTcpPorts);
           const udpPorts = mergePortLists(selectedEndpoint?.udpPorts || current.variables.uport, foundUdpPorts);
           const foundDomain = parsed.find((entry) => entry.type === "domain")?.value;
+          const foundLocalIp = parsed.find((entry) => entry.type === "local-ip")?.value;
           const discoveredAddresses = [...new Set([...parsed.flatMap((entry) => (
-            entry.type === "ip" ? [entry.value] : entry.type === "hostname" && entry.address ? [entry.address] : []
+            entry.type === "endpoint" ? [entry.value] : entry.type === "hostname" && entry.address ? [entry.address] : []
           )), ...(parsed.some((entry) => entry.type === "hostname" && !entry.address) ? [current.variables.rhost] : [])]
             .filter((address) => address && address !== current.variables.lhost))];
           const hostnamesFor = (address) => parsed.filter((entry) => entry.type === "hostname" && (entry.address === address || (!entry.address && address === current.variables.rhost))).map((entry) => entry.value);
@@ -193,6 +194,7 @@ export function WorkspaceProvider({ children }) {
               ...(foundTcpPorts.length > 0 ? { rport: tcpPorts } : {}),
               ...(foundUdpPorts.length > 0 ? { uport: udpPorts } : {}),
               ...(foundDomain && !current.variables.domain ? { domain: foundDomain, baseDn: domainToBaseDn(foundDomain) } : {}),
+              ...(foundLocalIp ? { lhost: foundLocalIp } : {}),
             },
             accounts: [...current.accounts, ...parsedAccounts],
             users: [...current.users, ...parsedUsers],

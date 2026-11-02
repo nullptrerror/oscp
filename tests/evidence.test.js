@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { guidanceForDiscoveries, mergePortLists, parseEvidence, routeEvidence } from "../src/lib/evidence.js";
+import { discoveriesForChecklistItem, guidanceForDiscoveries, mergePortLists, parseEvidence, routeEvidence } from "../src/lib/evidence.js";
 
 test("nmap output yields ports and useful guidance", () => {
   const discoveries = parseEvidence("445/tcp open microsoft-ds\n5985/tcp open wsman", "tcp-detail.nmap");
@@ -63,4 +63,20 @@ SMB 10.129.81.60 445 DC [*] Windows (name:DC) (domain:active.htb)`;
     ["dc.active.htb", "10.129.81.60"],
     ["dc.active.htb", "10.129.81.60"],
   ].slice(0, 1));
+});
+
+test("VPN route output updates local context without promoting routes to endpoints", () => {
+  const output = `tun0 UNKNOWN 10.10.15.240/23 fe80::1/64
+default via 10.42.42.1 dev eth0
+10.10.8.0/22 via 10.10.14.1 dev tun0
+10.129.0.0/16 via 10.10.14.1 dev tun0
+172.17.0.0/16 dev docker0 scope link src 172.17.0.1`;
+  const discoveries = discoveriesForChecklistItem("setup-network", parseEvidence(output));
+  assert.deepEqual(discoveries, [{ type: "local-ip", value: "10.10.15.240" }]);
+  assert.equal(discoveries.some((entry) => entry.type === "endpoint" || entry.type === "ip"), false);
+});
+
+test("only explicit scan targets are promoted as endpoint candidates", () => {
+  const discoveries = parseEvidence("Nmap scan report for 10.129.81.60\nHost is up.");
+  assert.ok(discoveries.some((entry) => entry.type === "endpoint" && entry.value === "10.129.81.60"));
 });
