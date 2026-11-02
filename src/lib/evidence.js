@@ -90,11 +90,13 @@ export async function fileToEvidence(file) {
   const isText = file.type.startsWith("text/") || /\.(txt|log|nmap|gnmap|xml|json|md|csv|lst|out|hashes?)$/i.test(file.name);
   if (isText && file.size > TEXT_LIMIT) throw new Error(`${file.name} is larger than 1 MB. Attach a useful excerpt and record the full path on disk.`);
   const content = isText ? await file.text() : "";
+  const encodedFile = isText ? undefined : await fileToDataUrl(file);
   return {
     label: file.name,
     filename: file.name,
     content,
-    dataUrl: isImage ? await fileToDataUrl(file) : undefined,
+    dataUrl: isImage ? encodedFile : undefined,
+    fileDataUrl: !isImage ? encodedFile : undefined,
     source: "file",
     mimeType: file.type || (isText ? "text/plain" : "application/octet-stream"),
     size: file.size,

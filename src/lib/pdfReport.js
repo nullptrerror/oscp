@@ -244,7 +244,8 @@ export async function generateReportPdf(workspace, targetId) {
   });
   let attachmentIndex = 0;
   for (const evidence of data.items.flatMap((item) => item.evidence)) {
-    const bytes = evidence.dataUrl ? dataUrlBytes(evidence.dataUrl) : evidence.content ? new TextEncoder().encode(evidence.content) : null;
+    const encodedFile = evidence.dataUrl || evidence.fileDataUrl;
+    const bytes = encodedFile ? dataUrlBytes(encodedFile) : evidence.content ? new TextEncoder().encode(evidence.content) : null;
     if (!bytes) continue;
     attachmentIndex += 1;
     await pdf.attach(bytes, `${String(attachmentIndex).padStart(3, "0")}-${safeFilename(evidence.filename || evidence.label)}`, {
