@@ -4,12 +4,13 @@ import ChecklistPage from "./pages/ChecklistPage";
 import TargetsPage from "./pages/TargetsPage";
 import FindingsPage from "./pages/FindingsPage";
 import BackupPage from "./pages/BackupPage";
+import ReportPage from "./pages/ReportPage";
 
 const pages = [
   { to: "/", label: "Checklist" },
   { to: "/targets", label: "Targets" },
   { to: "/vault", label: "Findings" },
-  { to: "/backup", label: "Backup" },
+  { to: "/report", label: "Report" },
 ];
 
 function AppRoutes() {
@@ -46,6 +47,10 @@ function AppRoutes() {
         <Route
           path="/vault"
           element={<FindingsPage />}
+        />
+        <Route
+          path="/report"
+          element={<ReportPage />}
         />
         <Route
           path="/backup"

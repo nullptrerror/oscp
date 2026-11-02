@@ -1,10 +1,8 @@
 import { useMemo, useState } from "react";
 import { useWorkspace } from "../context/WorkspaceContext";
-import { buildSmbDownloadCommands } from "../lib/smbCommands";
-import { buildRemoteAccessCommands } from "../lib/remoteAccessCommands";
-import { buildSpnTgsCommands } from "../lib/kerberosCommands";
 import { getScopedItemValue } from "../lib/workspace";
 import { fileToEvidence } from "../lib/evidence";
+import { getChecklistCommands } from "../lib/checklistCommands";
 import CommandBlock from "./CommandBlock";
 
 const MAX_RESULT_SIZE = 1024 * 1024;
@@ -20,18 +18,7 @@ export default function ChecklistItem({ item, searchActive = false }) {
   const [copiedReminder, setCopiedReminder] = useState(false);
 
   const resultBytes = useMemo(() => new Blob([result]).size, [result]);
-  const commands = useMemo(() => {
-    if (item.id === "svc-smb") {
-      return [...item.commands, ...buildSmbDownloadCommands(workspace.accounts, workspace.variables)];
-    }
-    if (item.id === "access-remote") {
-      return [...item.commands, ...buildRemoteAccessCommands(workspace.accounts, workspace.variables)];
-    }
-    if (item.id === "ad-spn-tgs") {
-      return [...item.commands, ...buildSpnTgsCommands(workspace.accounts, workspace.variables)];
-    }
-    return item.commands;
-  }, [item, workspace.accounts, workspace.variables]);
+  const commands = useMemo(() => getChecklistCommands(item, workspace), [item, workspace]);
 
   const saveResult = () => {
     if (!result.trim()) return;
