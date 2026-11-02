@@ -6,8 +6,8 @@ Fieldnotes keeps four things together:
 
 - a phase-based checklist with copy-ready command examples;
 - reusable command variables such as `lhost`, `rhost`, ports, domain, user, password, hash, subnet, and wordlist;
-- targets, accounts, loot, notes, and plain-text command results;
-- a single JSON backup that moves the entire workspace to another machine.
+- target-scoped accounts, loot, notes, command output, and screenshots;
+- an OSCP-style target PDF with the complete workspace and evidence embedded for later restoration.
 
 The app has no backend, login, cloud sync, database, rich-text editor, or plugin system. State is stored in browser `localStorage` and can be exported at any time.
 
@@ -33,11 +33,14 @@ npm run preview -- --host 127.0.0.1
 ## Workflow
 
 1. Add a host under **Targets** and choose **Use in commands**.
-2. Set `LHOST`, ports, domain, credentials, and the default wordlist in the checklist's **Variables** panel.
+2. Set `LHOST`, ports, domain, credentials, and the default wordlist in the checklist's **Variables** panel. Target work is organized under `/home/kali/oscp/<target>/`.
 3. Work down the checklist. Expand a point to copy its rendered commands.
-4. Paste or upload useful text output under that checklist point. Files are limited to 400 KB to protect browser storage.
-5. Track reusable accounts and loot under **Findings**.
-6. Export a JSON backup from **Backup** at the end of each target and before moving machines.
+4. Paste, upload, or drag command output onto the item. The global evidence inbox routes common Nmap, SMB, Kerberos, web, and proof files automatically.
+5. Review parsed ports, domains, credentials, hashes, and tickets under **Findings**. Parsed credentials are added to the active target and generate follow-up commands.
+6. Attach user and root/Administrator proof screenshots under **Report**, write the short narrative, and generate the target PDF.
+7. Import that PDF on another machine to restore the full workspace. JSON export remains available as a fallback under **Backup**.
+
+A checklist item requires a pasted or uploaded result before it can be marked complete. A short note describing a failed or empty result is enough; the goal is to preserve what was actually tested.
 
 ## Kali assumptions
 
@@ -54,9 +57,9 @@ Exact resource contents can vary with the Kali package snapshot, so commands tha
 
 ## Data and security
 
-Passwords, hashes, notes, and results are stored as plain text in browser storage and in exported JSON. This is an exam notebook, not a password manager. Lock the workstation, protect backups, and reset the workspace when the data is no longer needed.
+Passwords, hashes, notes, and results are stored as plain text in browser storage, exported JSON, and the PDF's embedded workspace. This is an exam notebook, not a password manager. Lock the workstation, protect reports and backups, and reset the workspace when the data is no longer needed.
 
-If the browser reports a storage error, export a backup and remove large saved results. Keep large binaries, screenshots, and full scan archives in `~/oscp/<target>/`; save only useful excerpts or paths in the app.
+If the browser reports a storage error, export a backup and remove large saved results. Text files are limited to 1 MB and screenshots/files to 3 MB. Keep large binaries and full scan archives in `/home/kali/oscp/<target>/`; save useful excerpts or paths in the app.
 
 ## Customize the methodology
 
