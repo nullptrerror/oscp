@@ -9,7 +9,7 @@ import {
   normalizeWorkspace,
   saveWorkspace,
 } from "../lib/workspace";
-import { guidanceForDiscoveries, parseEvidence } from "../lib/evidence";
+import { guidanceForDiscoveries, mergePortLists, parseEvidence } from "../lib/evidence";
 
 const WorkspaceContext = createContext(null);
 
@@ -46,6 +46,7 @@ export function WorkspaceProvider({ children }) {
             ...(values.targetName !== undefined ? { name: values.targetName } : {}),
             ...(values.rhost !== undefined ? { host: values.rhost } : {}),
             ...(values.rport !== undefined ? { port: values.rport } : {}),
+            ...(values.uport !== undefined ? { udpPorts: values.uport } : {}),
             ...(values.domain !== undefined ? { domain: values.domain } : {}),
           };
           return {
@@ -95,6 +96,7 @@ export function WorkspaceProvider({ children }) {
           const newDiscoveries = parsed.filter((candidate) => !current.discoveries.some((saved) => (
             saved.targetId === current.activeTargetId
             && saved.type === candidate.type
+            && (saved.protocol || "") === (candidate.protocol || "")
             && String(saved.value).toLowerCase() === String(candidate.value).toLowerCase()
           ))).map((candidate) => ({
             id: createId("discovery"),
@@ -105,7 +107,10 @@ export function WorkspaceProvider({ children }) {
             evidenceId: enrichedEvidence.id,
             ...candidate,
           }));
-          const foundPorts = parsed.filter((entry) => entry.type === "port").map((entry) => entry.value);
+          const foundTcpPorts = parsed.filter((entry) => entry.type === "port" && entry.protocol === "tcp").map((entry) => entry.value);
+          const foundUdpPorts = parsed.filter((entry) => entry.type === "port" && entry.protocol === "udp").map((entry) => entry.value);
+          const tcpPorts = mergePortLists(target?.port || current.variables.rport, foundTcpPorts);
+          const udpPorts = mergePortLists(target?.udpPorts || current.variables.uport, foundUdpPorts);
           const foundDomain = parsed.find((entry) => entry.type === "domain")?.value;
           const parsedAccounts = parsed.filter((entry) => entry.type === "credential").filter((entry) => !current.accounts.some((saved) => (
             saved.targetId === current.activeTargetId
@@ -126,14 +131,16 @@ export function WorkspaceProvider({ children }) {
             ...current,
             variables: {
               ...current.variables,
-              ...(foundPorts.length > 0 ? { rport: [...new Set(foundPorts)].sort((a, b) => Number(a) - Number(b)).join(",") } : {}),
+              ...(foundTcpPorts.length > 0 ? { rport: tcpPorts } : {}),
+              ...(foundUdpPorts.length > 0 ? { uport: udpPorts } : {}),
               ...(foundDomain && !current.variables.domain ? { domain: foundDomain } : {}),
             },
             accounts: [...current.accounts, ...parsedAccounts],
             discoveries: [...current.discoveries, ...newDiscoveries],
             targets: current.targets.map((entry) => entry.id === current.activeTargetId ? {
               ...entry,
-              ...(foundPorts.length > 0 ? { port: [...new Set(foundPorts)].sort((a, b) => Number(a) - Number(b)).join(",") } : {}),
+              ...(foundTcpPorts.length > 0 ? { port: tcpPorts } : {}),
+              ...(foundUdpPorts.length > 0 ? { udpPorts } : {}),
               ...(foundDomain && !entry.domain ? { domain: foundDomain } : {}),
             } : entry),
             evidence: {
@@ -169,8 +176,9 @@ export function WorkspaceProvider({ children }) {
               ...current.variables,
               targetName: target.name || current.variables.targetName,
               rhost: target.host || current.variables.rhost,
-              rport: target.port || current.variables.rport,
-              domain: target.domain || current.variables.domain,
+              rport: target.port || "",
+              uport: target.udpPorts || "",
+              domain: target.domain || "",
             } : current.variables,
             targets: [...current.targets, { id, createdAt: new Date().toISOString(), ...target }],
           };
@@ -184,6 +192,7 @@ export function WorkspaceProvider({ children }) {
             ...(patch.name !== undefined ? { targetName: patch.name } : {}),
             ...(patch.host !== undefined ? { rhost: patch.host } : {}),
             ...(patch.port !== undefined ? { rport: patch.port } : {}),
+            ...(patch.udpPorts !== undefined ? { uport: patch.udpPorts } : {}),
             ...(patch.domain !== undefined ? { domain: patch.domain } : {}),
           } : current.variables,
           targets: current.targets.map((target) => (target.id === id ? { ...target, ...patch } : target)),
@@ -205,6 +214,7 @@ export function WorkspaceProvider({ children }) {
             targetName: target.name,
             rhost: target.host,
             rport: target.port || "",
+            uport: target.udpPorts || "",
             domain: target.domain || "",
             baseDn: "",
             dc: "",

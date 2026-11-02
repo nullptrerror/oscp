@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { guidanceForDiscoveries, parseEvidence, routeEvidence } from "../src/lib/evidence.js";
+import { guidanceForDiscoveries, mergePortLists, parseEvidence, routeEvidence } from "../src/lib/evidence.js";
 
 test("nmap output yields ports and useful guidance", () => {
   const discoveries = parseEvidence("445/tcp open microsoft-ds\n5985/tcp open wsman", "tcp-detail.nmap");
@@ -21,4 +21,28 @@ test("files route to the closest checklist item", () => {
   assert.equal(routeEvidence("tcp-all.nmap", "445/tcp open microsoft-ds"), "recon-tcp-detail");
   assert.equal(routeEvidence("GetUserSPNs.txt", "$krb5tgs$23$*svc$REALM$"), "ad-spn-tgs");
   assert.equal(routeEvidence("root-flag.png", ""), "proof-artifacts");
+});
+
+test("UDP scans retain open and open-filtered ports with protocol metadata", () => {
+  const output = `PORT     STATE         SERVICE
+53/udp   open          domain
+88/udp   open          kerberos-sec
+123/udp  open          ntp
+137/udp  open|filtered netbios-ns
+138/udp  open|filtered netbios-dgm
+500/udp  open|filtered isakmp
+4500/udp open|filtered nat-t-ike
+623/udp  closed        asf-rmcp`;
+  const discoveries = parseEvidence(output, "udp-top100.nmap").filter((entry) => entry.type === "port");
+
+  assert.deepEqual(discoveries.map((entry) => entry.value), ["53", "88", "123", "137", "138", "500", "4500"]);
+  assert.ok(discoveries.every((entry) => entry.protocol === "udp"));
+  assert.equal(discoveries.find((entry) => entry.value === "137").state, "open|filtered");
+  assert.equal(routeEvidence("udp-top100.nmap", output), "recon-udp");
+});
+
+test("TCP and UDP port lists accumulate without overwriting each other", () => {
+  assert.equal(mergePortLists("53,445", ["88", "53", "123"]), "53,88,123,445");
+  const discoveries = parseEvidence("53/tcp open domain\n53/udp open domain");
+  assert.equal(discoveries.filter((entry) => entry.type === "port").length, 2);
 });

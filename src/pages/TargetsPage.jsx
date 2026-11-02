@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useWorkspace } from "../context/WorkspaceContext";
 
-const EMPTY_TARGET = { name: "", host: "", port: "", os: "Unknown", domain: "", notes: "" };
+const EMPTY_TARGET = { name: "", host: "", port: "", udpPorts: "", os: "Unknown", domain: "", notes: "" };
 
 export default function TargetsPage() {
   const { workspace, actions } = useWorkspace();
@@ -43,10 +43,14 @@ export default function TargetsPage() {
               <input type="text" value={draft.host} onChange={(event) => setDraft({ ...draft, host: event.target.value })} placeholder="192.168.45.100" required />
             </label>
             <label>
-              <span>Port(s)</span>
+              <span>TCP port(s)</span>
               <input type="text" value={draft.port} onChange={(event) => setDraft({ ...draft, port: event.target.value })} placeholder="80,443" />
             </label>
           </div>
+          <label>
+            <span>UDP port(s)</span>
+            <input type="text" value={draft.udpPorts} onChange={(event) => setDraft({ ...draft, udpPorts: event.target.value })} placeholder="53,88,123" />
+          </label>
           <div className="form-row">
             <label>
               <span>OS</span>
@@ -105,8 +109,12 @@ export default function TargetsPage() {
                     <input type="text" value={target.host} onChange={(event) => actions.updateTarget(target.id, { host: event.target.value })} />
                   </label>
                   <label>
-                    <span>Port(s)</span>
+                    <span>TCP ports</span>
                     <input type="text" value={target.port} onChange={(event) => actions.updateTarget(target.id, { port: event.target.value })} />
+                  </label>
+                  <label>
+                    <span>UDP ports</span>
+                    <input type="text" value={target.udpPorts || ""} onChange={(event) => actions.updateTarget(target.id, { udpPorts: event.target.value })} />
                   </label>
                   <label>
                     <span>Domain</span>

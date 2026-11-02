@@ -1,10 +1,17 @@
 const TEXT_LIMIT = 1024 * 1024;
 const FILE_LIMIT = 3 * 1024 * 1024;
 
+export const mergePortLists = (existing, found) => [...new Set([
+  ...String(existing || "").split(","),
+  ...found,
+].map((port) => port.trim()).filter((port) => /^\d{1,5}$/.test(port)))]
+  .sort((a, b) => Number(a) - Number(b))
+  .join(",");
+
 const unique = (items) => {
   const seen = new Set();
   return items.filter((item) => {
-    const key = `${item.type}:${String(item.value).toLowerCase()}`;
+    const key = `${item.type}:${item.protocol || ""}:${String(item.value).toLowerCase()}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -19,12 +26,12 @@ export function parseEvidence(content = "", filename = "") {
     if (clean) discoveries.push({ type, value: clean, ...details });
   };
 
-  for (const match of text.matchAll(/^(\d{1,5})\/(tcp|udp)\s+open\s+([^\s]+)/gim)) {
-    add("port", match[1], { protocol: match[2].toLowerCase(), service: match[3] });
+  for (const match of text.matchAll(/^(\d{1,5})\/(tcp|udp)\s+(open(?:\|filtered)?)\s+([^\s]+)/gim)) {
+    add("port", match[1], { protocol: match[2].toLowerCase(), state: match[3].toLowerCase(), service: match[4] });
   }
   for (const match of text.matchAll(/Ports:\s*([^\n]+)/gi)) {
-    for (const port of match[1].matchAll(/(\d{1,5})\/open\/(tcp|udp)\/\/([^/]*)/gi)) {
-      add("port", port[1], { protocol: port[2].toLowerCase(), service: port[3] || "unknown" });
+    for (const port of match[1].matchAll(/(\d{1,5})\/(open(?:\|filtered)?)\/(tcp|udp)\/\/([^/]*)/gi)) {
+      add("port", port[1], { protocol: port[3].toLowerCase(), state: port[2].toLowerCase(), service: port[4] || "unknown" });
     }
   }
   for (const match of text.matchAll(/\b(?:domain|realm)\s*[:=]\s*([a-z0-9][a-z0-9.-]*\.[a-z]{2,})\b/gi)) add("domain", match[1].toLowerCase());
@@ -51,13 +58,18 @@ export function parseEvidence(content = "", filename = "") {
   return unique(discoveries);
 }
 
+export function formatDiscovery(discovery) {
+  if (discovery.type !== "port") return `${discovery.type}: ${discovery.value}`;
+  return `port: ${discovery.value}/${discovery.protocol || "?"} ${discovery.state || "open"}${discovery.service ? ` ${discovery.service}` : ""}`;
+}
+
 export function routeEvidence(filename = "", content = "", fallbackItemId = "proof-artifacts") {
   const haystack = `${filename}\n${String(content).slice(0, 12000)}`.toLowerCase();
   if (/getuserspns|krb5tgs|kerberoast|tgs\.hash/.test(haystack)) return "ad-spn-tgs";
   if (/getnpusers|krb5asrep|as-?rep/.test(haystack)) return "ad-roast";
   if (/groups\.xml|cpassword|gpp/.test(haystack)) return "svc-smb-gpp";
   if (/smbclient|netexec|\bnxc\s+smb|\\\\.*\\|smb[-_. ]/.test(haystack)) return "svc-smb";
-  if (/\.gnmap|\.nmap|nmap scan report|\d+\/(?:tcp|udp)\s+open/.test(haystack)) return haystack.includes("udp") ? "recon-udp" : "recon-tcp-detail";
+  if (/\.gnmap|\.nmap|nmap scan report|\d+\/(?:tcp|udp)\s+open(?:\|filtered)?/.test(haystack)) return /\d+\/udp|udp[-_. ]/.test(haystack) ? "recon-udp" : "recon-tcp-detail";
   if (/ldapsearch|bloodhound|domain users|samaccountname/.test(haystack)) return "ad-enum";
   if (/winpeas|windows privilege/.test(haystack)) return "windows-helper";
   if (/linpeas|linux privilege/.test(haystack)) return "linux-context";
@@ -68,10 +80,13 @@ export function routeEvidence(filename = "", content = "", fallbackItemId = "pro
 
 export function guidanceForDiscoveries(discoveries) {
   const steps = [];
-  const ports = new Set(discoveries.filter((item) => item.type === "port").map((item) => item.value));
-  if (["139", "445"].some((port) => ports.has(port))) steps.push({ itemId: "svc-smb", text: "SMB is open: enumerate shares, users, groups, and readable files." });
-  if (["389", "636", "3268", "3269"].some((port) => ports.has(port))) steps.push({ itemId: "svc-ldap", text: "LDAP is open: identify the domain and test anonymous or authenticated enumeration." });
-  if (["5985", "5986", "445", "22", "3389"].some((port) => ports.has(port))) steps.push({ itemId: "access-remote", text: "A remote-management path is exposed: validate each discovered credential." });
+  const tcpPorts = new Set(discoveries.filter((item) => item.type === "port" && item.protocol === "tcp").map((item) => item.value));
+  const udpPorts = new Set(discoveries.filter((item) => item.type === "port" && item.protocol === "udp").map((item) => item.value));
+  if (["139", "445"].some((port) => tcpPorts.has(port)) || ["137", "138"].some((port) => udpPorts.has(port))) steps.push({ itemId: "svc-smb", text: "SMB/NetBIOS is exposed: enumerate shares, users, groups, and readable files." });
+  if (["389", "636", "3268", "3269"].some((port) => tcpPorts.has(port))) steps.push({ itemId: "svc-ldap", text: "LDAP is open: identify the domain and test anonymous or authenticated enumeration." });
+  if (udpPorts.has("53")) steps.push({ itemId: "svc-dns", text: "DNS is open over UDP: query records, attempt a zone transfer, and capture discovered names." });
+  if (["88", "123"].some((port) => udpPorts.has(port))) steps.push({ itemId: "ad-baseline", text: "Kerberos/NTP over UDP suggests Active Directory: confirm DNS, realm, and clock alignment." });
+  if (["5985", "5986", "445", "22", "3389"].some((port) => tcpPorts.has(port))) steps.push({ itemId: "access-remote", text: "A remote-management path is exposed: validate each discovered credential." });
   if (discoveries.some((item) => item.type === "credential")) steps.push({ itemId: "creds-reuse", text: "A credential was parsed: save it, validate it, then reuse it deliberately across exposed services." });
   if (discoveries.some((item) => item.type === "kerberos-ticket")) steps.push({ itemId: "creds-crack", text: "A Kerberos ticket was parsed: crack the saved hash and record the result." });
   return unique(steps.map((step) => ({ ...step, type: "guidance", value: `${step.itemId}:${step.text}` }))).map(({ type, value, ...step }) => step);

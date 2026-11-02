@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { ALL_ITEMS } from "../data/checklist";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { getScopedItemValue } from "../lib/workspace";
+import { formatDiscovery } from "../lib/evidence";
 
 const EMPTY_ACCOUNT = { target: "", domain: "", username: "", secret: "", source: "", status: "untested" };
 const EMPTY_LOOT = { target: "", label: "", location: "", value: "" };
@@ -129,7 +130,7 @@ export default function FindingsPage() {
         </div>
         {targetDiscoveries.length === 0 ? <EmptyMessage>No parsed ports, domains, accounts, hashes, or tickets yet.</EmptyMessage> : (
           <div className="discovery-chips discovery-ledger-chips">
-            {targetDiscoveries.map((entry) => <span key={entry.id}>{entry.type}: {entry.value}</span>)}
+            {targetDiscoveries.map((entry) => <span key={entry.id}>{formatDiscovery(entry)}</span>)}
           </div>
         )}
       </section>

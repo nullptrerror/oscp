@@ -270,7 +270,7 @@ textarea:focus, input[type="text"]:focus, input[type="password"]:focus { border-
 .record-badges span { padding: 4px 7px; border: 1px solid #3a493e; border-radius: 4px; color: var(--muted); font-family: var(--mono); font-size: 0.63rem; text-transform: uppercase; }
 .record-badges .active-badge { border-color: #607a48; color: var(--lime); background: var(--lime-dark); }
 .record-actions { display: flex; align-items: center; gap: 8px; }
-.target-card-grid { display: grid; grid-template-columns: 1.4fr 0.7fr 1fr 1fr; gap: 10px; margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line); }
+.target-card-grid { display: grid; grid-template-columns: 1.3fr 0.7fr 0.7fr 1fr 1fr; gap: 10px; margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line); }
 .card-notes { margin-top: 12px; }
 .empty-state.compact { padding: 90px 20px; }
 

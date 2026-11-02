@@ -14,6 +14,7 @@ import {
 import { ALL_ITEMS } from "../data/checklist.js";
 import { getChecklistCommands } from "./checklistCommands.js";
 import { getActiveScope, getTargetItemValue, normalizeWorkspace, renderCommand } from "./workspace.js";
+import { formatDiscovery } from "./evidence.js";
 
 export const WORKSPACE_ATTACHMENT = "fieldnotes-workspace.json";
 const PAGE_SIZE = [595.28, 841.89];
@@ -160,6 +161,8 @@ export async function generateReportPdf(workspace, targetId) {
   y -= 28;
   labelValue("Target", data.target?.name || workspace.variables.targetName);
   labelValue("IP address", data.target?.host || workspace.variables.rhost);
+  labelValue("TCP ports", data.target?.port || workspace.variables.rport);
+  labelValue("UDP ports", data.target?.udpPorts || workspace.variables.uport);
   labelValue("Domain", data.target?.domain || workspace.variables.domain);
   labelValue("Workspace", `${workspace.variables.workspaceRoot}/${data.target?.name || workspace.variables.targetName}`);
   labelValue("Generated", new Date().toISOString());
@@ -173,7 +176,7 @@ export async function generateReportPdf(workspace, targetId) {
   lines(data.report.scope || `${data.target?.host || workspace.variables.rhost} (${data.target?.name || workspace.variables.targetName})`, { size: 10, gap: 4 });
   heading("Attack surface", 2);
   if (data.discoveries.length === 0) lines("No parsed discoveries were saved.", { color: colors.muted });
-  for (const discovery of data.discoveries) labelValue(discovery.type, discovery.value);
+  for (const discovery of data.discoveries) lines(formatDiscovery(discovery), { font: mono, size: 8.5, color: colors.muted });
   heading("Credentials obtained", 2);
   if (data.accounts.length === 0) lines("No credentials were saved.", { color: colors.muted });
   for (const account of data.accounts) labelValue(account.status || "credential", `${account.domain ? `${account.domain}\\` : ""}${account.username}${account.secret ? ` : ${account.secret}` : ""}`);
@@ -197,7 +200,7 @@ export async function generateReportPdf(workspace, targetId) {
     for (const evidence of item.evidence) {
       lines(`Evidence: ${evidence.label}`, { font: bold, size: 9 });
       if (evidence.content) code(evidence.content.slice(0, 3500));
-      if (evidence.discoveries?.length) lines(evidence.discoveries.map((entry) => `${entry.type}=${entry.value}`).join(" | "), { font: mono, size: 7.5, color: colors.muted });
+      if (evidence.discoveries?.length) lines(evidence.discoveries.map(formatDiscovery).join(" | "), { font: mono, size: 7.5, color: colors.muted });
     }
   }
 

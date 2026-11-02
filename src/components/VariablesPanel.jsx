@@ -8,6 +8,7 @@ const LABELS = {
   lport: "LPORT",
   rhost: "RHOST",
   rport: "RPORT(S)",
+  uport: "UDP PORT(S)",
   targetName: "Target name",
   domain: "Domain",
   baseDn: "LDAP base DN",

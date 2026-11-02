@@ -3,7 +3,8 @@ export const DEFAULT_VARIABLES = {
   lhost: "10.10.14.2",
   lport: "443",
   rhost: "192.168.45.100",
-  rport: "80",
+  rport: "",
+  uport: "",
   targetName: "target-01",
   domain: "",
   baseDn: "",
@@ -22,7 +23,7 @@ export const DEFAULT_VARIABLES = {
 export const VARIABLE_GROUPS = [
   { label: "Workspace", keys: ["workspaceRoot"] },
   { label: "Operator", keys: ["lhost", "lport", "interface"] },
-  { label: "Target", keys: ["targetName", "rhost", "rport", "subnet"] },
+  { label: "Target", keys: ["targetName", "rhost", "rport", "uport", "subnet"] },
   { label: "Identity", keys: ["domain", "baseDn", "dc", "user", "password", "gppCpassword", "hash"] },
   { label: "Resources", keys: ["smbShare", "smbDirectory", "wordlist"] },
 ];
@@ -98,7 +99,7 @@ export const CHECKLIST = [
         title: "Check common UDP services",
         commands: [
           { label: "Top UDP", value: "sudo nmap -Pn -n -sU --top-ports 100 --open -oA {{workspaceRoot}}/{{targetName}}/scans/udp-top100 {{rhost}}" },
-          { label: "Focused UDP", value: "sudo nmap -Pn -n -sU -sV -p 53,69,111,123,161,500,623 -oN {{workspaceRoot}}/{{targetName}}/scans/udp-detail.txt {{rhost}}" },
+          { label: "Focused UDP", value: "sudo nmap -Pn -n -sU -sV -p {{uport}} -oN {{workspaceRoot}}/{{targetName}}/scans/udp-detail.txt {{rhost}}" },
         ],
       },
       {

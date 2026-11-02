@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { getScopedItemValue } from "../lib/workspace";
-import { fileToEvidence } from "../lib/evidence";
+import { fileToEvidence, formatDiscovery } from "../lib/evidence";
 import { getChecklistCommands } from "../lib/checklistCommands";
 import CommandBlock from "./CommandBlock";
 
@@ -177,7 +177,7 @@ export default function ChecklistItem({ item, searchActive = false }) {
                     {entry.discoveries?.length > 0 && (
                       <div className="discovery-chips">
                         {entry.discoveries.map((discovery) => (
-                          <span key={`${discovery.type}-${discovery.value}`}>{discovery.type}: {discovery.value}</span>
+                          <span key={`${discovery.type}-${discovery.protocol || ""}-${discovery.value}`}>{formatDiscovery(discovery)}</span>
                         ))}
                       </div>
                     )}
