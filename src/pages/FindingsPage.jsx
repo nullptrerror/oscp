@@ -26,6 +26,7 @@ export default function FindingsPage() {
 
   const targetAccounts = workspace.accounts.filter((entry) => !workspace.activeTargetId || entry.targetId === workspace.activeTargetId);
   const targetLoot = workspace.loot.filter((entry) => !workspace.activeTargetId || entry.targetId === workspace.activeTargetId);
+  const targetDiscoveries = workspace.discoveries.filter((entry) => !workspace.activeTargetId || entry.targetId === workspace.activeTargetId);
 
   const addAccount = (event) => {
     event.preventDefault();
@@ -120,6 +121,18 @@ export default function FindingsPage() {
         </section>
       </div>
 
+      <section className="results-ledger discoveries-ledger">
+        <div className="finding-section-head">
+          <div><p className="eyebrow">Parsed automatically</p><h2>Critical discoveries</h2></div>
+          <span>{targetDiscoveries.length}</span>
+        </div>
+        {targetDiscoveries.length === 0 ? <EmptyMessage>No parsed ports, domains, accounts, hashes, or tickets yet.</EmptyMessage> : (
+          <div className="discovery-chips discovery-ledger-chips">
+            {targetDiscoveries.map((entry) => <span key={entry.id}>{entry.type}: {entry.value}</span>)}
+          </div>
+        )}
+      </section>
+
       <section className="results-ledger">
         <div className="finding-section-head">
           <div><p className="eyebrow">Checklist evidence</p><h2>Saved command results</h2></div>
@@ -133,7 +146,8 @@ export default function FindingsPage() {
                   <div><strong>{entry.label}</strong><span>{entry.itemTitle}</span></div>
                   <time>{new Date(entry.createdAt).toLocaleString()}</time>
                 </summary>
-                <pre>{entry.content}</pre>
+                {entry.dataUrl && <img className="evidence-image" src={entry.dataUrl} alt={entry.label} />}
+                {entry.content && <pre>{entry.content}</pre>}
                 <p>{entry.phaseTitle}</p>
               </details>
             ))}

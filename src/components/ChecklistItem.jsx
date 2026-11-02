@@ -4,9 +4,10 @@ import { buildSmbDownloadCommands } from "../lib/smbCommands";
 import { buildRemoteAccessCommands } from "../lib/remoteAccessCommands";
 import { buildSpnTgsCommands } from "../lib/kerberosCommands";
 import { getScopedItemValue } from "../lib/workspace";
+import { fileToEvidence } from "../lib/evidence";
 import CommandBlock from "./CommandBlock";
 
-const MAX_RESULT_SIZE = 400 * 1024;
+const MAX_RESULT_SIZE = 1024 * 1024;
 
 export default function ChecklistItem({ item, searchActive = false }) {
   const { workspace, actions } = useWorkspace();
@@ -16,6 +17,7 @@ export default function ChecklistItem({ item, searchActive = false }) {
   const [result, setResult] = useState("");
   const [resultLabel, setResultLabel] = useState("");
   const [fileError, setFileError] = useState("");
+  const [copiedReminder, setCopiedReminder] = useState(false);
 
   const resultBytes = useMemo(() => new Blob([result]).size, [result]);
   const commands = useMemo(() => {
@@ -47,33 +49,40 @@ export default function ChecklistItem({ item, searchActive = false }) {
     setFileError("");
   };
 
+  const addFiles = async (files) => {
+    for (const file of files) {
+      try {
+        actions.addEvidence(item.id, await fileToEvidence(file));
+        setFileError("");
+      } catch (error) {
+        setFileError(error instanceof Error ? error.message : `Could not read ${file.name}.`);
+      }
+    }
+  };
+
   const uploadResult = async (event) => {
-    const file = event.target.files?.[0];
+    const files = [...event.target.files];
     event.target.value = "";
-    if (!file) return;
-    if (file.size > MAX_RESULT_SIZE) {
-      setFileError("File is larger than 400 KB. Keep large artifacts on disk and paste their path or a useful excerpt.");
+    await addFiles(files);
+  };
+
+  const toggleComplete = () => {
+    if (!completed && evidence.length === 0) {
+      setOpen(true);
+      setFileError("Save or upload a result before marking this check complete. A short failure note counts as evidence.");
       return;
     }
-    const content = await file.text();
-    actions.addEvidence(item.id, {
-      label: file.name,
-      content,
-      source: "file",
-      mimeType: file.type || "text/plain",
-      size: file.size,
-    });
-    setFileError("");
+    actions.toggleCompleted(item.id);
   };
 
   return (
-    <article className={`check-item ${completed ? "is-complete" : ""}`}>
+    <article id={`item-${item.id}`} className={`check-item ${completed ? "is-complete" : ""}`}>
       <div className="check-item-row">
         <label className="check-control">
           <input
             type="checkbox"
             checked={completed}
-            onChange={() => actions.toggleCompleted(item.id)}
+            onChange={toggleComplete}
           />
           <span aria-hidden="true">✓</span>
           <span className="sr-only">Mark {item.title} complete</span>
@@ -101,9 +110,17 @@ export default function ChecklistItem({ item, searchActive = false }) {
           {item.detail && <p className="item-detail">{item.detail}</p>}
           <div className="command-list">
             {commands.map((command) => (
-              <CommandBlock key={command.key ?? `${item.id}-${command.label}`} command={command} variables={workspace.variables} />
+              <CommandBlock
+                key={command.key ?? `${item.id}-${command.label}`}
+                command={command}
+                variables={workspace.variables}
+                onCopy={() => { setCopiedReminder(true); setOpen(true); }}
+              />
             ))}
           </div>
+          {copiedReminder && (
+            <p className="copy-reminder">After running the command, paste or drop its output below so the report can explain what happened.</p>
+          )}
 
           <div className="operator-notes">
             <label htmlFor={`note-${item.id}`}>Operator note</label>
@@ -116,17 +133,22 @@ export default function ChecklistItem({ item, searchActive = false }) {
             />
           </div>
 
-          <div className="results-panel">
+          <div
+            className="results-panel"
+            onDragOver={(event) => event.preventDefault()}
+            onDrop={(event) => { event.preventDefault(); addFiles([...event.dataTransfer.files]); }}
+          >
             <div className="results-head">
               <div>
                 <p className="field-label">Command results</p>
-                <span>Plain text only · 400 KB max per result</span>
+                <span>Paste text or drop text/images · 1 MB text / 3 MB file</span>
               </div>
               <label className="button secondary file-button">
-                Upload text output
+                Upload result
                 <input
                   type="file"
-                  accept=".txt,.log,.nmap,.gnmap,.xml,.json,.md,.csv,text/*,application/json,application/xml"
+                  multiple
+                  accept=".txt,.log,.nmap,.gnmap,.xml,.json,.md,.csv,.hash,.hashes,.png,.jpg,.jpeg,text/*,image/png,image/jpeg,application/json,application/xml"
                   onChange={uploadResult}
                 />
               </label>
@@ -163,7 +185,30 @@ export default function ChecklistItem({ item, searchActive = false }) {
                       <span>{entry.label}</span>
                       <time>{new Date(entry.createdAt).toLocaleString()}</time>
                     </summary>
-                    <pre>{entry.content}</pre>
+                    {entry.dataUrl && <img className="evidence-image" src={entry.dataUrl} alt={entry.label} />}
+                    {entry.content && <pre>{entry.content}</pre>}
+                    {entry.discoveries?.length > 0 && (
+                      <div className="discovery-chips">
+                        {entry.discoveries.map((discovery) => (
+                          <span key={`${discovery.type}-${discovery.value}`}>{discovery.type}: {discovery.value}</span>
+                        ))}
+                      </div>
+                    )}
+                    {entry.guidance?.length > 0 && (
+                      <div className="evidence-guidance">
+                        <strong>Suggested next checks</strong>
+                        {entry.guidance.map((step) => (
+                          <button
+                            type="button"
+                            className="text-button"
+                            key={`${entry.id}-${step.itemId}`}
+                            onClick={() => document.getElementById(`item-${step.itemId}`)?.scrollIntoView({ behavior: "smooth", block: "center" })}
+                          >
+                            {step.text}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                     <button
                       type="button"
                       className="text-button danger"

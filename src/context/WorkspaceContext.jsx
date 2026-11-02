@@ -9,6 +9,7 @@ import {
   normalizeWorkspace,
   saveWorkspace,
 } from "../lib/workspace";
+import { guidanceForDiscoveries, parseEvidence } from "../lib/evidence";
 
 const WorkspaceContext = createContext(null);
 
@@ -64,20 +65,63 @@ export function WorkspaceProvider({ children }) {
         update((current) => {
           const key = getItemStateKey(current, itemId);
           const target = current.targets.find((entry) => entry.id === current.activeTargetId);
+          const parsed = evidence.discoveries ?? parseEvidence(evidence.content, evidence.filename || evidence.label);
+          const guidance = guidanceForDiscoveries(parsed);
+          const createdAt = new Date().toISOString();
+          const enrichedEvidence = {
+            id: createId("evidence"),
+            createdAt,
+            targetId: current.activeTargetId,
+            targetName: target?.name || current.variables.targetName,
+            itemId,
+            ...evidence,
+            discoveries: parsed,
+            guidance,
+          };
+          const newDiscoveries = parsed.filter((candidate) => !current.discoveries.some((saved) => (
+            saved.targetId === current.activeTargetId
+            && saved.type === candidate.type
+            && String(saved.value).toLowerCase() === String(candidate.value).toLowerCase()
+          ))).map((candidate) => ({
+            id: createId("discovery"),
+            createdAt,
+            targetId: current.activeTargetId,
+            targetName: target?.name || current.variables.targetName,
+            itemId,
+            evidenceId: enrichedEvidence.id,
+            ...candidate,
+          }));
+          const foundPorts = parsed.filter((entry) => entry.type === "port").map((entry) => entry.value);
+          const foundDomain = parsed.find((entry) => entry.type === "domain")?.value;
+          const parsedAccounts = parsed.filter((entry) => entry.type === "credential").filter((entry) => !current.accounts.some((saved) => (
+            saved.targetId === current.activeTargetId
+            && saved.username?.toLowerCase() === entry.username?.toLowerCase()
+            && saved.secret === entry.secret
+          ))).map((entry) => ({
+            id: createId("account"),
+            createdAt,
+            targetId: current.activeTargetId,
+            target: target?.name || current.variables.targetName,
+            domain: entry.domain || current.variables.domain,
+            username: entry.username,
+            secret: entry.secret,
+            source: evidence.filename || evidence.label || "parsed evidence",
+            status: "untested",
+          }));
           return {
             ...current,
+            variables: {
+              ...current.variables,
+              ...(foundPorts.length > 0 ? { rport: [...new Set(foundPorts)].sort((a, b) => Number(a) - Number(b)).join(",") } : {}),
+              ...(foundDomain && !current.variables.domain ? { domain: foundDomain } : {}),
+            },
+            accounts: [...current.accounts, ...parsedAccounts],
+            discoveries: [...current.discoveries, ...newDiscoveries],
             evidence: {
               ...current.evidence,
               [key]: [
                 ...getScopedItemValue(current.evidence, current, itemId, []),
-                {
-                  id: createId("evidence"),
-                  createdAt: new Date().toISOString(),
-                  targetId: current.activeTargetId,
-                  targetName: target?.name || current.variables.targetName,
-                  itemId,
-                  ...evidence,
-                },
+                enrichedEvidence,
               ],
             },
           };

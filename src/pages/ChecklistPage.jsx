@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import ChecklistItem from "../components/ChecklistItem";
 import VariablesPanel from "../components/VariablesPanel";
+import EvidenceInbox from "../components/EvidenceInbox";
 import { CHECKLIST } from "../data/checklist";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { getScopedItemValue } from "../lib/workspace";
@@ -69,6 +70,8 @@ export default function ChecklistPage() {
           <span>Hide complete</span>
         </label>
       </div>
+
+      <EvidenceInbox />
 
       <div className="checklist-layout">
         <div className="phases-column">

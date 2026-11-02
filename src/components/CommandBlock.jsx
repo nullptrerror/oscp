@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { renderCommand } from "../lib/workspace";
 
-export default function CommandBlock({ command, variables }) {
+export default function CommandBlock({ command, variables, onCopy }) {
   const [copied, setCopied] = useState(false);
   const rendered = renderCommand(command.value, variables);
 
   const copy = async () => {
     await navigator.clipboard.writeText(rendered.command);
+    onCopy?.(command);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1200);
   };
