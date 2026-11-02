@@ -7,6 +7,7 @@ export default function TargetsPage() {
   const { workspace, actions } = useWorkspace();
   const [draft, setDraft] = useState(EMPTY_MACHINE);
   const [endpointDrafts, setEndpointDrafts] = useState({});
+  const [mergeDestinations, setMergeDestinations] = useState({});
 
   const submit = (event) => {
     event.preventDefault();
@@ -76,6 +77,18 @@ export default function TargetsPage() {
                 </div>
 
                 <div className="add-endpoint-row"><input type="text" value={endpointDrafts[machine.id] || ""} onChange={(event) => setEndpointDrafts((current) => ({ ...current, [machine.id]: event.target.value }))} placeholder="Discovered IP or hostname" /><button type="button" className="button secondary" onClick={() => addEndpoint(machine)}>Add endpoint</button></div>
+                {workspace.targets.length > 1 && (
+                  <div className="merge-machine-row">
+                    <select value={mergeDestinations[machine.id] || ""} onChange={(event) => setMergeDestinations((current) => ({ ...current, [machine.id]: event.target.value }))}>
+                      <option value="">Merge this machine into…</option>
+                      {workspace.targets.filter((target) => target.id !== machine.id).map((target) => <option key={target.id} value={target.id}>{target.name}</option>)}
+                    </select>
+                    <button type="button" className="button secondary" disabled={!mergeDestinations[machine.id]} onClick={() => {
+                      const destination = workspace.targets.find((target) => target.id === mergeDestinations[machine.id]);
+                      if (destination && window.confirm(`Merge ${machine.name} into ${destination.name}? Case data and endpoints will move; ${machine.name} will be removed.`)) actions.mergeTarget(machine.id, destination.id);
+                    }}>Merge case data</button>
+                  </div>
+                )}
                 <label className="card-notes"><span>Machine notes</span><textarea rows="3" value={machine.notes} onChange={(event) => actions.updateTarget(machine.id, { notes: event.target.value })} /></label>
               </article>
             );

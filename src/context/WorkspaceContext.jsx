@@ -24,6 +24,17 @@ const endpointVariables = (target, endpoint = activeEndpoint(target)) => ({
   baseDn: domainToBaseDn(target?.domain),
 });
 
+const mergeScopedState = (record, sourceId, destinationId, combine) => {
+  const next = { ...record };
+  for (const [key, value] of Object.entries(record)) {
+    if (!key.startsWith(`${sourceId}::`)) continue;
+    const destinationKey = `${destinationId}::${key.slice(sourceId.length + 2)}`;
+    next[destinationKey] = combine(next[destinationKey], value);
+    delete next[key];
+  }
+  return next;
+};
+
 export function WorkspaceProvider({ children }) {
   const [workspace, setWorkspace] = useState(loadWorkspace);
   const [saveState, setSaveState] = useState({ status: "saved", message: "Saved locally" });
@@ -281,6 +292,56 @@ export function WorkspaceProvider({ children }) {
           activeTargetId: current.activeTargetId === id ? null : current.activeTargetId,
           targets: current.targets.filter((target) => target.id !== id),
         }));
+      },
+      mergeTarget(sourceId, destinationId) {
+        if (!sourceId || !destinationId || sourceId === destinationId) return;
+        update((current) => {
+          const source = current.targets.find((target) => target.id === sourceId);
+          const destination = current.targets.find((target) => target.id === destinationId);
+          if (!source || !destination) return current;
+          const endpoints = (destination.endpoints || []).map((endpoint) => ({ ...endpoint, hostnames: [...(endpoint.hostnames || [])] }));
+          for (const endpoint of source.endpoints || []) {
+            const existingIndex = endpoints.findIndex((entry) => entry.address === endpoint.address);
+            if (existingIndex >= 0) {
+              const existing = endpoints[existingIndex];
+              endpoints[existingIndex] = {
+                ...existing,
+                hostnames: [...new Set([...(existing.hostnames || []), ...(endpoint.hostnames || [])])],
+                tcpPorts: mergePortLists(existing.tcpPorts, String(endpoint.tcpPorts || "").split(",")),
+                udpPorts: mergePortLists(existing.udpPorts, String(endpoint.udpPorts || "").split(",")),
+              };
+            } else endpoints.push(endpoint);
+          }
+          const selected = endpoints.find((endpoint) => endpoint.id === destination.activeEndpointId) || endpoints[0];
+          const mergedTarget = {
+            ...destination,
+            endpoints,
+            activeEndpointId: selected?.id || null,
+            host: selected?.address || destination.host,
+            port: selected?.tcpPorts || "",
+            udpPorts: selected?.udpPorts || "",
+            notes: [destination.notes, source.notes].filter(Boolean).join("\n\n"),
+          };
+          const retarget = (entry) => entry.targetId === sourceId ? { ...entry, targetId: destinationId, target: destination.name, targetName: destination.name } : entry;
+          const becomesActive = current.activeTargetId === sourceId;
+          const reports = { ...current.reports, [destinationId]: { ...(current.reports[sourceId] || {}), ...(current.reports[destinationId] || {}) } };
+          delete reports[sourceId];
+          return {
+            ...current,
+            activeTargetId: becomesActive ? destinationId : current.activeTargetId,
+            variables: becomesActive ? { ...current.variables, ...endpointVariables(mergedTarget, selected) } : current.variables,
+            targets: current.targets.filter((target) => target.id !== sourceId).map((target) => target.id === destinationId ? mergedTarget : target),
+            accounts: current.accounts.map(retarget),
+            users: current.users.map(retarget),
+            loot: current.loot.map(retarget),
+            discoveries: current.discoveries.map(retarget),
+            commandHistory: current.commandHistory.map(retarget),
+            completed: mergeScopedState(current.completed, sourceId, destinationId, (destinationValue, sourceValue) => Boolean(destinationValue || sourceValue)),
+            notes: mergeScopedState(current.notes, sourceId, destinationId, (destinationValue, sourceValue) => [destinationValue, sourceValue].filter(Boolean).join("\n\n")),
+            evidence: mergeScopedState(current.evidence, sourceId, destinationId, (destinationValue = [], sourceValue = []) => [...destinationValue, ...sourceValue]),
+            reports,
+          };
+        });
       },
       useTarget(target) {
         const endpoint = activeEndpoint(target);

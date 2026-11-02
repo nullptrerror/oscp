@@ -20,7 +20,7 @@ export default function BackupPage() {
     const bytes = new Blob([JSON.stringify(workspace)]).size;
     return [
       ["Checklist", `${completedCount} / ${ALL_ITEMS.length}`],
-      ["Targets", workspace.targets.length],
+      ["Machines", workspace.targets.length],
       ["Accounts", workspace.accounts.length],
       ["Users", (workspace.users || []).length],
       ["Loot", workspace.loot.length],

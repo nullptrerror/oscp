@@ -106,12 +106,12 @@ export default function ReportPage() {
     <main className="page-shell report-page">
       <section className="section-hero report-hero">
         <div>
-          <p className="eyebrow">Target deliverable</p>
+          <p className="eyebrow">Machine deliverable</p>
           <h1>Turn the runbook into the report.</h1>
           <p>The PDF includes the narrative, commands, notes, text output, screenshots, and a private embedded workspace that can restore the app later.</p>
         </div>
         <div className="report-target-picker">
-          <label htmlFor="report-target">Report target</label>
+          <label htmlFor="report-target">Report machine</label>
           <select id="report-target" value={workspace.activeTargetId || ""} onChange={(event) => {
             const target = workspace.targets.find((entry) => entry.id === event.target.value);
             if (target) actions.useTarget(target);
