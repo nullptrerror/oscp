@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { ALL_ITEMS } from "../data/checklist";
 import { useWorkspace } from "../context/WorkspaceContext";
+import { getScopedItemValue } from "../lib/workspace";
 
 const EMPTY_ACCOUNT = { target: "", domain: "", username: "", secret: "", source: "", status: "untested" };
 const EMPTY_LOOT = { target: "", label: "", location: "", value: "" };
@@ -17,10 +18,14 @@ export default function FindingsPage() {
 
   const savedResults = useMemo(
     () => ALL_ITEMS.flatMap((item) =>
-      (workspace.evidence[item.id] ?? []).map((entry) => ({ ...entry, itemTitle: item.title, phaseTitle: item.phaseTitle })),
+      getScopedItemValue(workspace.evidence, workspace, item.id, [])
+        .map((entry) => ({ ...entry, itemTitle: item.title, phaseTitle: item.phaseTitle })),
     ).sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
-    [workspace.evidence],
+    [workspace],
   );
+
+  const targetAccounts = workspace.accounts.filter((entry) => !workspace.activeTargetId || entry.targetId === workspace.activeTargetId);
+  const targetLoot = workspace.loot.filter((entry) => !workspace.activeTargetId || entry.targetId === workspace.activeTargetId);
 
   const addAccount = (event) => {
     event.preventDefault();
@@ -53,7 +58,7 @@ export default function FindingsPage() {
         <section className="finding-section">
           <div className="finding-section-head">
             <div><p className="eyebrow">Credentials</p><h2>Accounts</h2></div>
-            <span>{workspace.accounts.length}</span>
+            <span>{targetAccounts.length}</span>
           </div>
           <form className="inline-entry-form" onSubmit={addAccount}>
             <div className="form-row equal">
@@ -73,7 +78,7 @@ export default function FindingsPage() {
             <button type="submit" className="button">Save account</button>
           </form>
           <div className="ledger-list">
-            {workspace.accounts.length === 0 ? <EmptyMessage>No saved accounts.</EmptyMessage> : workspace.accounts.map((entry) => (
+            {targetAccounts.length === 0 ? <EmptyMessage>No saved accounts for this target.</EmptyMessage> : targetAccounts.map((entry) => (
               <article className="ledger-card" key={entry.id}>
                 <div className="ledger-card-head">
                   <div><span className={`status-dot ${entry.status}`} /> <strong>{entry.domain ? `${entry.domain}\\` : ""}{entry.username}</strong></div>
@@ -89,7 +94,7 @@ export default function FindingsPage() {
         <section className="finding-section">
           <div className="finding-section-head">
             <div><p className="eyebrow">Artifacts</p><h2>Loot</h2></div>
-            <span>{workspace.loot.length}</span>
+            <span>{targetLoot.length}</span>
           </div>
           <form className="inline-entry-form" onSubmit={addLoot}>
             <div className="form-row equal">
@@ -101,7 +106,7 @@ export default function FindingsPage() {
             <button type="submit" className="button">Save loot</button>
           </form>
           <div className="ledger-list">
-            {workspace.loot.length === 0 ? <EmptyMessage>No saved loot.</EmptyMessage> : workspace.loot.map((entry) => (
+            {targetLoot.length === 0 ? <EmptyMessage>No saved loot for this target.</EmptyMessage> : targetLoot.map((entry) => (
               <article className="ledger-card" key={entry.id}>
                 <div className="ledger-card-head">
                   <strong>{entry.label}</strong>

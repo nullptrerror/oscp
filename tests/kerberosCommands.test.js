@@ -12,7 +12,7 @@ test("SPN TGS commands organize active credentials under target loot", () => {
   assert.equal(commands.length, 2);
   assert.match(commands[0].value, /impacket-GetUserSPNs/);
   assert.match(commands[0].value, /active\.htb\/SVC_TGS:GPPstillStandingStrong2k18/);
-  assert.match(commands[0].value, /oscp\/\{\{targetName\}\}\/loot\/kerberos\/spn_tgs\/active\.htb_SVC_TGS/);
+  assert.match(commands[0].value, /\{\{workspaceRoot\}\}\/\{\{targetName\}\}\/loot\/kerberos\/spn_tgs\/active\.htb_SVC_TGS/);
   assert.match(commands[0].value, /tgs\.hashes/);
   assert.match(commands[0].value, /spn-enumeration\.txt/);
 });

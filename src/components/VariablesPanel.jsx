@@ -3,6 +3,7 @@ import { VARIABLE_GROUPS } from "../data/checklist";
 import { useWorkspace } from "../context/WorkspaceContext";
 
 const LABELS = {
+  workspaceRoot: "Root path",
   lhost: "LHOST",
   lport: "LPORT",
   rhost: "RHOST",

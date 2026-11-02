@@ -2,6 +2,9 @@ import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import {
   createDefaultWorkspace,
   createId,
+  getActiveScope,
+  getItemStateKey,
+  getScopedItemValue,
   loadWorkspace,
   normalizeWorkspace,
   saveWorkspace,
@@ -40,42 +43,75 @@ export function WorkspaceProvider({ children }) {
         update((current) => ({ ...current, variables: { ...current.variables, ...values } }));
       },
       toggleCompleted(itemId) {
-        update((current) => ({
-          ...current,
-          completed: { ...current.completed, [itemId]: !current.completed[itemId] },
-        }));
+        update((current) => {
+          const key = getItemStateKey(current, itemId);
+          return {
+            ...current,
+            completed: {
+              ...current.completed,
+              [key]: !getScopedItemValue(current.completed, current, itemId, false),
+            },
+          };
+        });
       },
       updateNote(itemId, note) {
-        update((current) => ({ ...current, notes: { ...current.notes, [itemId]: note } }));
+        update((current) => {
+          const key = getItemStateKey(current, itemId);
+          return { ...current, notes: { ...current.notes, [key]: note } };
+        });
       },
       addEvidence(itemId, evidence) {
-        update((current) => ({
-          ...current,
-          evidence: {
-            ...current.evidence,
-            [itemId]: [
-              ...(current.evidence[itemId] ?? []),
-              { id: createId("evidence"), createdAt: new Date().toISOString(), ...evidence },
-            ],
-          },
-        }));
+        update((current) => {
+          const key = getItemStateKey(current, itemId);
+          const target = current.targets.find((entry) => entry.id === current.activeTargetId);
+          return {
+            ...current,
+            evidence: {
+              ...current.evidence,
+              [key]: [
+                ...getScopedItemValue(current.evidence, current, itemId, []),
+                {
+                  id: createId("evidence"),
+                  createdAt: new Date().toISOString(),
+                  targetId: current.activeTargetId,
+                  targetName: target?.name || current.variables.targetName,
+                  itemId,
+                  ...evidence,
+                },
+              ],
+            },
+          };
+        });
       },
       deleteEvidence(itemId, evidenceId) {
-        update((current) => ({
-          ...current,
-          evidence: {
-            ...current.evidence,
-            [itemId]: (current.evidence[itemId] ?? []).filter((entry) => entry.id !== evidenceId),
-          },
-        }));
+        update((current) => {
+          const key = getItemStateKey(current, itemId);
+          return {
+            ...current,
+            evidence: {
+              ...current.evidence,
+              [key]: getScopedItemValue(current.evidence, current, itemId, []).filter((entry) => entry.id !== evidenceId),
+            },
+          };
+        });
       },
       addTarget(target) {
         const id = createId("target");
-        update((current) => ({
-          ...current,
-          activeTargetId: current.activeTargetId ?? id,
-          targets: [...current.targets, { id, createdAt: new Date().toISOString(), ...target }],
-        }));
+        update((current) => {
+          const becomesActive = !current.activeTargetId;
+          return {
+            ...current,
+            activeTargetId: current.activeTargetId ?? id,
+            variables: becomesActive ? {
+              ...current.variables,
+              targetName: target.name || current.variables.targetName,
+              rhost: target.host || current.variables.rhost,
+              rport: target.port || current.variables.rport,
+              domain: target.domain || current.variables.domain,
+            } : current.variables,
+            targets: [...current.targets, { id, createdAt: new Date().toISOString(), ...target }],
+          };
+        });
       },
       updateTarget(id, patch) {
         update((current) => ({
@@ -107,8 +143,20 @@ export function WorkspaceProvider({ children }) {
         if (!['accounts', 'loot'].includes(kind)) return;
         update((current) => ({
           ...current,
-          [kind]: [...current[kind], { id: createId(kind.slice(0, -1)), createdAt: new Date().toISOString(), ...record }],
+          [kind]: [...current[kind], {
+            id: createId(kind.slice(0, -1)),
+            createdAt: new Date().toISOString(),
+            ...record,
+            targetId: current.activeTargetId,
+            target: record.target || current.variables.targetName,
+          }],
         }));
+      },
+      updateReport(patch) {
+        update((current) => {
+          const scope = getActiveScope(current);
+          return { ...current, reports: { ...current.reports, [scope]: { ...(current.reports[scope] ?? {}), ...patch } } };
+        });
       },
       deleteRecord(kind, id) {
         if (!['accounts', 'loot'].includes(kind)) return;

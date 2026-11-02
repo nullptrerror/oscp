@@ -6,7 +6,7 @@ const identityFolder = (domain, username) => {
 };
 
 const downloadBody = ({ folder, listCommand, downloadCommand }) => [
-  `root="$HOME/oscp/{{targetName}}/loot/smb/${folder}";`,
+  `root="{{workspaceRoot}}/{{targetName}}/loot/smb/${folder}";`,
   'mkdir -p "$root";',
   listCommand,
   "| awk -F'|' '$1 == \"Disk\" {print $2}'",

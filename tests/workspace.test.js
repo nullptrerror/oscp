@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   createDefaultWorkspace,
+  getItemStateKey,
+  getScopedItemValue,
   normalizeWorkspace,
   renderCommand,
   WORKSPACE_VERSION,
@@ -40,4 +42,20 @@ test("new workspaces have independent variable objects", () => {
   first.variables.rhost = "changed";
 
   assert.notEqual(first.variables.rhost, second.variables.rhost);
+});
+
+test("checklist state is scoped to the active target", () => {
+  const workspace = createDefaultWorkspace();
+  workspace.activeTargetId = "target-active";
+  workspace.completed["target-active::svc-smb"] = true;
+
+  assert.equal(getItemStateKey(workspace, "svc-smb"), "target-active::svc-smb");
+  assert.equal(getScopedItemValue(workspace.completed, workspace, "svc-smb", false), true);
+
+  workspace.activeTargetId = "target-other";
+  assert.equal(getScopedItemValue(workspace.completed, workspace, "svc-smb", false), false);
+});
+
+test("the default Kali workspace root is /home/kali/oscp", () => {
+  assert.equal(createDefaultWorkspace().variables.workspaceRoot, "/home/kali/oscp");
 });

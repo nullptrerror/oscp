@@ -19,6 +19,8 @@ export const createDefaultWorkspace = () => ({
   completed: {},
   notes: {},
   evidence: {},
+  discoveries: [],
+  reports: {},
 });
 
 const isRecord = (value) => value && typeof value === "object" && !Array.isArray(value);
@@ -42,7 +44,30 @@ export function normalizeWorkspace(value) {
     completed: asRecord(value.completed),
     notes: asRecord(value.notes),
     evidence: asRecord(value.evidence),
+    discoveries: asArray(value.discoveries),
+    reports: asRecord(value.reports),
   };
+}
+
+export function getActiveScope(workspace) {
+  return workspace.activeTargetId || `name:${workspace.variables.targetName || "unassigned"}`;
+}
+
+export function getItemStateKey(workspace, itemId) {
+  return `${getActiveScope(workspace)}::${itemId}`;
+}
+
+export function getScopedItemValue(record, workspace, itemId, fallback) {
+  return record[getItemStateKey(workspace, itemId)] ?? record[itemId] ?? fallback;
+}
+
+export function getTargetScope(workspace, targetId) {
+  if (targetId) return targetId;
+  return getActiveScope(workspace);
+}
+
+export function getTargetItemValue(record, scope, itemId, fallback) {
+  return record[`${scope}::${itemId}`] ?? record[itemId] ?? fallback;
 }
 
 export function loadWorkspace() {

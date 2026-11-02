@@ -3,14 +3,15 @@ import { useWorkspace } from "../context/WorkspaceContext";
 import { buildSmbDownloadCommands } from "../lib/smbCommands";
 import { buildRemoteAccessCommands } from "../lib/remoteAccessCommands";
 import { buildSpnTgsCommands } from "../lib/kerberosCommands";
+import { getScopedItemValue } from "../lib/workspace";
 import CommandBlock from "./CommandBlock";
 
 const MAX_RESULT_SIZE = 400 * 1024;
 
 export default function ChecklistItem({ item, searchActive = false }) {
   const { workspace, actions } = useWorkspace();
-  const evidence = workspace.evidence[item.id] ?? [];
-  const completed = Boolean(workspace.completed[item.id]);
+  const evidence = getScopedItemValue(workspace.evidence, workspace, item.id, []);
+  const completed = Boolean(getScopedItemValue(workspace.completed, workspace, item.id, false));
   const [open, setOpen] = useState(searchActive || evidence.length > 0);
   const [result, setResult] = useState("");
   const [resultLabel, setResultLabel] = useState("");
@@ -109,7 +110,7 @@ export default function ChecklistItem({ item, searchActive = false }) {
             <textarea
               id={`note-${item.id}`}
               rows="2"
-              value={workspace.notes[item.id] ?? ""}
+              value={getScopedItemValue(workspace.notes, workspace, item.id, "")}
               onChange={(event) => actions.updateNote(item.id, event.target.value)}
               placeholder="What changed, what failed, or what to try next…"
             />

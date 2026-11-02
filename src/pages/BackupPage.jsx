@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { ALL_ITEMS } from "../data/checklist";
-import { downloadWorkspace, normalizeWorkspace } from "../lib/workspace";
+import { downloadWorkspace, getScopedItemValue, normalizeWorkspace } from "../lib/workspace";
 
 const formatBytes = (bytes) => {
   if (bytes < 1024) return `${bytes} B`;
@@ -16,7 +16,7 @@ export default function BackupPage() {
 
   const stats = useMemo(() => {
     const evidenceCount = Object.values(workspace.evidence).reduce((total, entries) => total + entries.length, 0);
-    const completedCount = ALL_ITEMS.filter((item) => workspace.completed[item.id]).length;
+    const completedCount = ALL_ITEMS.filter((item) => getScopedItemValue(workspace.completed, workspace, item.id, false)).length;
     const bytes = new Blob([JSON.stringify(workspace)]).size;
     return [
       ["Checklist", `${completedCount} / ${ALL_ITEMS.length}`],

@@ -29,7 +29,7 @@ export function buildSpnTgsCommands(accounts = [], variables = {}) {
 
     const identity = `${domain}\\${username}`;
     const folder = identityFolder(domain, username);
-    const loot = `$HOME/oscp/{{targetName}}/loot/kerberos/spn_tgs/${folder}`;
+    const loot = `{{workspaceRoot}}/{{targetName}}/loot/kerberos/spn_tgs/${folder}`;
     const isHash = /^[a-f0-9]{32}$/i.test(secret);
     const target = shellQuote(`${domain}/${username}${isHash ? "" : `:${secret}`}`);
     const hashAuth = isHash ? ` -hashes ${shellQuote(`:${secret}`)}` : "";

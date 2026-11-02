@@ -3,6 +3,7 @@ import ChecklistItem from "../components/ChecklistItem";
 import VariablesPanel from "../components/VariablesPanel";
 import { CHECKLIST } from "../data/checklist";
 import { useWorkspace } from "../context/WorkspaceContext";
+import { getScopedItemValue } from "../lib/workspace";
 
 export default function ChecklistPage() {
   const { workspace } = useWorkspace();
@@ -12,7 +13,7 @@ export default function ChecklistPage() {
 
   const totalItems = CHECKLIST.reduce((total, phase) => total + phase.items.length, 0);
   const completedItems = CHECKLIST.reduce(
-    (total, phase) => total + phase.items.filter((item) => workspace.completed[item.id]).length,
+    (total, phase) => total + phase.items.filter((item) => getScopedItemValue(workspace.completed, workspace, item.id, false)).length,
     0,
   );
   const percent = totalItems ? Math.round((completedItems / totalItems) * 100) : 0;
@@ -21,7 +22,7 @@ export default function ChecklistPage() {
     () => CHECKLIST.map((phase) => ({
       ...phase,
       items: phase.items.filter((item) => {
-        if (hideComplete && workspace.completed[item.id]) return false;
+        if (hideComplete && getScopedItemValue(workspace.completed, workspace, item.id, false)) return false;
         if (!normalizedQuery) return true;
         const haystack = [
           item.title,
@@ -72,7 +73,7 @@ export default function ChecklistPage() {
       <div className="checklist-layout">
         <div className="phases-column">
           {visiblePhases.map((phase) => {
-            const phaseDone = phase.items.filter((item) => workspace.completed[item.id]).length;
+            const phaseDone = phase.items.filter((item) => getScopedItemValue(workspace.completed, workspace, item.id, false)).length;
             return (
               <section className="phase-card" id={`phase-${phase.id}`} key={phase.id}>
                 <div className="phase-heading">
