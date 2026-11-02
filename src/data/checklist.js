@@ -235,6 +235,14 @@ export const CHECKLIST = [
         ],
       },
       {
+        id: "access-remote",
+        title: "Try remote access with discovered credentials",
+        detail: "Commands are generated from the active credential and every saved account. A valid SMB login is not automatically a shell: Evil-WinRM requires WinRM and permission to use it, while NetExec SMB execution and WMI require administrator access. Look for Pwn3d in NetExec output. If authentication works but every shell method fails, continue with AD enumeration and Kerberoasting.",
+        commands: [
+          { label: "Check remote-management ports", value: "nmap -Pn -n -sV --open -p 22,445,3389,5985,5986 -oN ~/oscp/{{targetName}}/scans/remote-access.txt {{rhost}}" },
+        ],
+      },
+      {
         id: "access-listener",
         title: "Start a listener",
         commands: [
