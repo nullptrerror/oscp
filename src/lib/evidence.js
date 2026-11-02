@@ -46,7 +46,10 @@ export function parseEvidence(content = "", filename = "") {
   for (const match of text.matchAll(/\bName:\s*([^\s]+)[\s\S]{0,80}?\bAddress:\s*((?:\d{1,3}\.){3}\d{1,3})/gi)) add("hostname", match[1].toLowerCase(), { address: match[2] });
   for (const match of text.matchAll(/\b([a-z0-9][a-z0-9.-]*\.[a-z]{2,})\s+(?:has address|A\s+)\s*((?:\d{1,3}\.){3}\d{1,3})\b/gi)) add("hostname", match[1].toLowerCase(), { address: match[2] });
   for (const match of text.matchAll(/\bDNS:([a-z0-9][a-z0-9.-]*\.[a-z]{2,})\b/gi)) add("hostname", match[1].toLowerCase());
-  for (const match of text.matchAll(/https?:\/\/([a-z0-9][a-z0-9.-]*)(?::\d+)?/gi)) add("hostname", match[1].toLowerCase());
+  for (const match of text.matchAll(/https?:\/\/([a-z0-9][a-z0-9.-]*)(?::\d+)?[^\s)]*/gi)) {
+    const hostname = match[1].toLowerCase();
+    if (!["nmap.org", "www.nmap.org"].includes(hostname)) add("url", match[0]);
+  }
   for (const match of text.matchAll(/\bCVE-\d{4}-\d{4,7}\b/gi)) add("cve", match[0].toUpperCase());
   for (const match of text.matchAll(/^Disk\|([^|\r\n]+)\|/gim)) add("share", match[1]);
 
@@ -85,9 +88,10 @@ export function parseEvidence(content = "", filename = "") {
   return deduped.filter((entry) => entry.type !== "ip" || !classifiedAddresses.has(entry.value));
 }
 
-export function discoveriesForChecklistItem(itemId, discoveries) {
-  if (itemId === "setup-network") return discoveries.filter((entry) => entry.type !== "ip" && entry.type !== "endpoint" && entry.type !== "hostname");
-  return discoveries;
+export function discoveriesForChecklistItem(itemId, discoveries, { lhost = "" } = {}) {
+  const withoutLocalHost = discoveries.filter((entry) => !(["ip", "endpoint"].includes(entry.type) && entry.value === lhost));
+  if (itemId === "setup-network") return withoutLocalHost.filter((entry) => entry.type !== "ip" && entry.type !== "endpoint" && entry.type !== "hostname");
+  return withoutLocalHost;
 }
 
 export function formatDiscovery(discovery) {

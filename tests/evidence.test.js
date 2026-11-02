@@ -80,3 +80,15 @@ test("only explicit scan targets are promoted as endpoint candidates", () => {
   const discoveries = parseEvidence("Nmap scan report for 10.129.81.60\nHost is up.");
   assert.ok(discoveries.some((entry) => entry.type === "endpoint" && entry.value === "10.129.81.60"));
 });
+
+test("Nmap vendor URLs and the operator LHOST are not remote endpoint discoveries", () => {
+  const output = `kali vpn 10.10.15.240 ~/oscp/active
+Starting Nmap 7.99 ( https://nmap.org )
+Nmap scan report for 10.129.81.76
+445/tcp open microsoft-ds`;
+  const discoveries = discoveriesForChecklistItem("recon-tcp-detail", parseEvidence(output), { lhost: "10.10.15.240" });
+  assert.equal(discoveries.some((entry) => entry.value === "nmap.org"), false);
+  assert.equal(discoveries.some((entry) => entry.value === "10.10.15.240"), false);
+  assert.ok(discoveries.some((entry) => entry.type === "endpoint" && entry.value === "10.129.81.76"));
+  assert.ok(discoveries.some((entry) => entry.type === "port" && entry.value === "445"));
+});

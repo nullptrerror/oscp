@@ -48,7 +48,7 @@ const normalizeTarget = (target, index) => {
   const endpoints = asArray(target.endpoints).length > 0 ? asArray(target.endpoints).map((endpoint, endpointIndex) => ({
     id: endpoint.id || `${target.id || `machine-${index}`}--endpoint-${endpointIndex + 1}`,
     address: endpoint.address || endpoint.host || "",
-    hostnames: asArray(endpoint.hostnames),
+    hostnames: asArray(endpoint.hostnames).filter((hostname) => !["nmap.org", "www.nmap.org"].includes(String(hostname).toLowerCase())),
     tcpPorts: endpoint.tcpPorts || endpoint.port || "",
     udpPorts: endpoint.udpPorts || "",
     source: endpoint.source || "manual",
@@ -87,7 +87,7 @@ export function normalizeWorkspace(value) {
     completed: asRecord(value.completed),
     notes: asRecord(value.notes),
     evidence: asRecord(value.evidence),
-    discoveries: asArray(value.discoveries),
+    discoveries: asArray(value.discoveries).filter((entry) => !(entry.type === "hostname" && ["nmap.org", "www.nmap.org"].includes(String(entry.value).toLowerCase()))),
     commandHistory: asArray(value.commandHistory),
     reports: asRecord(value.reports),
   };

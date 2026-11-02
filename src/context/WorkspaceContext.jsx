@@ -117,7 +117,11 @@ export function WorkspaceProvider({ children }) {
         update((current) => {
           const key = getItemStateKey(current, itemId);
           const target = current.targets.find((entry) => entry.id === current.activeTargetId);
-          const parsed = discoveriesForChecklistItem(itemId, evidence.discoveries ?? parseEvidence(evidence.content, evidence.filename || evidence.label));
+          const parsed = discoveriesForChecklistItem(
+            itemId,
+            evidence.discoveries ?? parseEvidence(evidence.content, evidence.filename || evidence.label),
+            { lhost: current.variables.lhost },
+          );
           const guidance = guidanceForDiscoveries(parsed);
           const createdAt = new Date().toISOString();
           const enrichedEvidence = {

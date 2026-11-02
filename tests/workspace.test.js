@@ -76,3 +76,13 @@ test("legacy targets migrate into machines with a primary endpoint", () => {
   assert.equal(restored.targets[0].endpoints[0].address, "10.129.81.60");
   assert.equal(restored.targets[0].endpoints[0].tcpPorts, "53,445");
 });
+
+test("workspace normalization removes historical Nmap vendor hostnames", () => {
+  const restored = normalizeWorkspace({
+    version: WORKSPACE_VERSION,
+    targets: [{ id: "active", name: "active", endpoints: [{ id: "ep", address: "10.129.81.76", hostnames: ["nmap.org", "dc.active.htb"] }] }],
+    discoveries: [{ type: "hostname", value: "nmap.org" }, { type: "hostname", value: "dc.active.htb" }],
+  });
+  assert.deepEqual(restored.targets[0].endpoints[0].hostnames, ["dc.active.htb"]);
+  assert.deepEqual(restored.discoveries.map((entry) => entry.value), ["dc.active.htb"]);
+});
