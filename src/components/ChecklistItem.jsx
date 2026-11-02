@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { buildSmbDownloadCommands } from "../lib/smbCommands";
 import { buildRemoteAccessCommands } from "../lib/remoteAccessCommands";
+import { buildSpnTgsCommands } from "../lib/kerberosCommands";
 import CommandBlock from "./CommandBlock";
 
 const MAX_RESULT_SIZE = 400 * 1024;
@@ -22,6 +23,9 @@ export default function ChecklistItem({ item, searchActive = false }) {
     }
     if (item.id === "access-remote") {
       return [...item.commands, ...buildRemoteAccessCommands(workspace.accounts, workspace.variables)];
+    }
+    if (item.id === "ad-spn-tgs") {
+      return [...item.commands, ...buildSpnTgsCommands(workspace.accounts, workspace.variables)];
     }
     return item.commands;
   }, [item, workspace.accounts, workspace.variables]);
