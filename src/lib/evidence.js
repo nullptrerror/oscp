@@ -11,7 +11,7 @@ export const mergePortLists = (existing, found) => [...new Set([
 const unique = (items) => {
   const seen = new Set();
   return items.filter((item) => {
-    const key = `${item.type}:${item.protocol || ""}:${String(item.value).toLowerCase()}`;
+    const key = `${item.type}:${item.protocol || ""}:${item.address || ""}:${String(item.value).toLowerCase()}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -36,7 +36,15 @@ export function parseEvidence(content = "", filename = "") {
   }
   for (const match of text.matchAll(/\b(?:domain|realm)\s*[:=]\s*([a-z0-9][a-z0-9.-]*\.[a-z]{2,})\b/gi)) add("domain", match[1].toLowerCase());
   for (const match of text.matchAll(/\b(?:Domain Name|DNS_Domain_Name)\s*[:=]\s*([a-z0-9][a-z0-9.-]*\.[a-z]{2,})\b/gi)) add("domain", match[1].toLowerCase());
-  for (const match of text.matchAll(/\b(?:10|127)(?:\.\d{1,3}){3}\b|\b169\.254(?:\.\d{1,3}){2}\b|\b172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2}\b|\b192\.168(?:\.\d{1,3}){2}\b/g)) add("ip", match[0]);
+  for (const match of text.matchAll(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g)) {
+    if (match[0].split(".").every((part) => Number(part) <= 255)) add("ip", match[0]);
+  }
+  for (const match of text.matchAll(/^Nmap scan report for ([^\s(]+) \(((?:\d{1,3}\.){3}\d{1,3})\)/gim)) add("hostname", match[1].toLowerCase(), { address: match[2] });
+  for (const match of text.matchAll(/\bName:\s*([^\s]+)[\s\S]{0,80}?\bAddress:\s*((?:\d{1,3}\.){3}\d{1,3})/gi)) add("hostname", match[1].toLowerCase(), { address: match[2] });
+  for (const match of text.matchAll(/\bDNS:([a-z0-9][a-z0-9.-]*\.[a-z]{2,})\b/gi)) add("hostname", match[1].toLowerCase());
+  for (const match of text.matchAll(/https?:\/\/([a-z0-9][a-z0-9.-]*)(?::\d+)?/gi)) add("hostname", match[1].toLowerCase());
+  for (const match of text.matchAll(/\bCVE-\d{4}-\d{4,7}\b/gi)) add("cve", match[0].toUpperCase());
+  for (const match of text.matchAll(/^Disk\|([^|\r\n]+)\|/gim)) add("share", match[1]);
 
   for (const match of text.matchAll(/\$krb5tgs\$\d+\$\*?([^$*:\s]+)[*$]/gi)) add("kerberos-ticket", match[0], { username: match[1], ticket: "TGS" });
   for (const match of text.matchAll(/\$krb5asrep\$\d+\$([^@:]+)@([^:]+):[^\s]+/gi)) add("kerberos-ticket", match[0], { username: match[1], domain: match[2], ticket: "AS-REP" });
@@ -44,6 +52,8 @@ export function parseEvidence(content = "", filename = "") {
   for (const match of text.matchAll(/\bcpassword\s*=\s*["']([^"']+)["']/gi)) add("gpp-cpassword", match[1]);
 
   for (const line of text.split(/\r?\n/)) {
+    const smbIdentity = line.match(/\bSMB\s+((?:\d{1,3}\.){3}\d{1,3}).*\(name:([^\s)]+)\).*\(domain:([^\s)]+)\)/i);
+    if (smbIdentity) add("hostname", `${smbIdentity[2]}.${smbIdentity[3]}`.toLowerCase(), { address: smbIdentity[1] });
     const cracked = line.match(/^\$krb5(?:tgs|asrep)\$\d+\$\*?([^$*:\s]+)[*$].*:(\S+)$/i);
     if (cracked) add("credential", `${cracked[1]}:${cracked[2]}`, { username: cracked[1], secret: cracked[2], source: filename || "Kerberos crack" });
     const explicit = line.match(/\b([A-Za-z0-9_.-]+)\\([A-Za-z0-9.$_-]+):([^\s]+)\b/);
@@ -65,6 +75,7 @@ export function parseEvidence(content = "", filename = "") {
 }
 
 export function formatDiscovery(discovery) {
+  if (discovery.type === "hostname") return `hostname: ${discovery.value}${discovery.address ? ` -> ${discovery.address}` : ""}`;
   if (discovery.type !== "port") return `${discovery.type}: ${discovery.value}`;
   return `port: ${discovery.value}/${discovery.protocol || "?"} ${discovery.state || "open"}${discovery.service ? ` ${discovery.service}` : ""}`;
 }
@@ -95,6 +106,7 @@ export function guidanceForDiscoveries(discoveries) {
   if (["5985", "5986", "445", "22", "3389"].some((port) => tcpPorts.has(port))) steps.push({ itemId: "access-remote", text: "A remote-management path is exposed: validate each discovered credential." });
   if (discoveries.some((item) => item.type === "credential")) steps.push({ itemId: "creds-reuse", text: "A credential was parsed: save it, validate it, then reuse it deliberately across exposed services." });
   if (discoveries.some((item) => item.type === "kerberos-ticket")) steps.push({ itemId: "creds-crack", text: "A Kerberos ticket was parsed: crack the saved hash and record the result." });
+  if (discoveries.some((item) => item.type === "cve")) steps.push({ itemId: "access-research", text: "A CVE identifier was parsed: verify the exact product version and research that specific issue." });
   return unique(steps.map((step) => ({ ...step, type: "guidance", value: `${step.itemId}:${step.text}` }))).map(({ type, value, ...step }) => step);
 }
 

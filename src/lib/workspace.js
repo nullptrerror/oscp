@@ -28,12 +28,44 @@ export const createDefaultWorkspace = () => ({
   notes: {},
   evidence: {},
   discoveries: [],
+  commandHistory: [],
   reports: {},
 });
 
 const isRecord = (value) => value && typeof value === "object" && !Array.isArray(value);
 const asArray = (value) => (Array.isArray(value) ? value : []);
 const asRecord = (value) => (isRecord(value) ? value : {});
+
+const normalizeTarget = (target, index) => {
+  const fallbackEndpoint = target.host ? [{
+    id: `${target.id || `machine-${index}`}--endpoint-1`,
+    address: target.host,
+    hostnames: [],
+    tcpPorts: target.port || "",
+    udpPorts: target.udpPorts || "",
+    source: "initial",
+  }] : [];
+  const endpoints = asArray(target.endpoints).length > 0 ? asArray(target.endpoints).map((endpoint, endpointIndex) => ({
+    id: endpoint.id || `${target.id || `machine-${index}`}--endpoint-${endpointIndex + 1}`,
+    address: endpoint.address || endpoint.host || "",
+    hostnames: asArray(endpoint.hostnames),
+    tcpPorts: endpoint.tcpPorts || endpoint.port || "",
+    udpPorts: endpoint.udpPorts || "",
+    source: endpoint.source || "manual",
+  })) : fallbackEndpoint;
+  const activeEndpointId = endpoints.some((endpoint) => endpoint.id === target.activeEndpointId)
+    ? target.activeEndpointId
+    : endpoints[0]?.id || null;
+  const activeEndpoint = endpoints.find((endpoint) => endpoint.id === activeEndpointId);
+  return {
+    ...target,
+    endpoints,
+    activeEndpointId,
+    host: activeEndpoint?.address || target.host || "",
+    port: activeEndpoint?.tcpPorts || target.port || "",
+    udpPorts: activeEndpoint?.udpPorts || target.udpPorts || "",
+  };
+};
 
 export function normalizeWorkspace(value) {
   if (!isRecord(value)) throw new Error("Backup must contain a JSON object.");
@@ -48,7 +80,7 @@ export function normalizeWorkspace(value) {
     ...base,
     ...value,
     variables,
-    targets: asArray(value.targets),
+    targets: asArray(value.targets).map(normalizeTarget),
     accounts: asArray(value.accounts),
     users: asArray(value.users),
     loot: asArray(value.loot),
@@ -56,6 +88,7 @@ export function normalizeWorkspace(value) {
     notes: asRecord(value.notes),
     evidence: asRecord(value.evidence),
     discoveries: asArray(value.discoveries),
+    commandHistory: asArray(value.commandHistory),
     reports: asRecord(value.reports),
   };
 }

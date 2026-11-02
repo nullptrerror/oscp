@@ -274,6 +274,19 @@ textarea:focus, input[type="text"]:focus, input[type="password"]:focus { border-
 .record-badges .active-badge { border-color: #607a48; color: var(--lime); background: var(--lime-dark); }
 .record-actions { display: flex; align-items: center; gap: 8px; }
 .target-card-grid { display: grid; grid-template-columns: 1.3fr 0.7fr 0.7fr 1fr 1fr; gap: 10px; margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line); }
+.machine-fields { display: grid; grid-template-columns: 1fr 160px; gap: 10px; margin-top: 18px; }
+.machine-fields label, .endpoint-grid label { display: grid; gap: 6px; }
+.machine-fields span, .endpoint-grid span { color: var(--muted); font-size: 0.67rem; font-weight: 700; text-transform: uppercase; }
+.endpoint-list { display: grid; gap: 9px; margin-top: 16px; }
+.endpoint-card { padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: #0b0f0c; }
+.endpoint-card.is-selected { border-color: #6c8a4e; box-shadow: inset 3px 0 var(--lime); }
+.endpoint-head, .endpoint-actions { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.endpoint-head span { color: var(--lime); font-family: var(--mono); font-size: 0.64rem; text-transform: uppercase; }
+.endpoint-grid { display: grid; grid-template-columns: 1fr 1.3fr 0.7fr 0.7fr; gap: 8px; margin: 10px 0; }
+.endpoint-actions { justify-content: flex-end; }
+.endpoint-actions small { margin-right: auto; color: var(--muted); }
+.add-endpoint-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-top: 10px; }
+.add-endpoint-row input { min-width: 0; }
 .card-notes { margin-top: 12px; }
 .empty-state.compact { padding: 90px 20px; }
 
@@ -316,6 +329,8 @@ textarea:focus, input[type="text"]:focus, input[type="password"]:focus { border-
 .result-card time { white-space: nowrap; font-family: var(--mono); }
 .result-card pre { max-height: 360px; margin: 0; padding: 13px; overflow: auto; border-top: 1px solid #202a23; color: #d9f2cb; font-family: var(--mono); font-size: 0.72rem; white-space: pre-wrap; overflow-wrap: anywhere; }
 .result-card > p { margin: 0; padding: 0 13px 13px; text-transform: uppercase; }
+.copied-command-head { display: flex; justify-content: space-between; gap: 10px; padding: 12px 13px; }
+.copied-command-head time { color: var(--muted); font-size: 0.65rem; }
 
 .backup-hero { max-width: 900px; padding-bottom: 34px; }
 .notice { margin-bottom: 16px; padding: 13px 16px; border: 1px solid #486133; border-radius: 7px; color: #dff6c6; background: #172313; font-size: 0.82rem; }
@@ -380,6 +395,7 @@ textarea:focus, input[type="text"]:focus, input[type="password"]:focus { border-
   .target-card-head { flex-direction: column; }
   .record-actions { width: 100%; justify-content: space-between; }
   .target-card-grid { grid-template-columns: 1fr 1fr; }
+  .machine-fields, .endpoint-grid { grid-template-columns: 1fr; }
   .finding-columns, .results-grid { grid-template-columns: 1fr; }
   .user-entry-form { grid-template-columns: 1fr; }
   .primary-backup-card, .backup-grid { grid-template-columns: 1fr; }

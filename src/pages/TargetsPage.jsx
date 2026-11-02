@@ -1,136 +1,82 @@
 import { useState } from "react";
 import { useWorkspace } from "../context/WorkspaceContext";
 
-const EMPTY_TARGET = { name: "", host: "", port: "", udpPorts: "", os: "Unknown", domain: "", notes: "" };
+const EMPTY_MACHINE = { name: "", host: "", os: "Unknown", domain: "", notes: "" };
 
 export default function TargetsPage() {
   const { workspace, actions } = useWorkspace();
-  const [draft, setDraft] = useState(EMPTY_TARGET);
+  const [draft, setDraft] = useState(EMPTY_MACHINE);
+  const [endpointDrafts, setEndpointDrafts] = useState({});
 
   const submit = (event) => {
     event.preventDefault();
     if (!draft.name.trim() || !draft.host.trim()) return;
     actions.addTarget({ ...draft, name: draft.name.trim(), host: draft.host.trim() });
-    setDraft(EMPTY_TARGET);
+    setDraft(EMPTY_MACHINE);
+  };
+
+  const addEndpoint = (machine) => {
+    const value = endpointDrafts[machine.id]?.trim();
+    if (!value) return;
+    actions.addEndpoint(machine.id, { address: value });
+    setEndpointDrafts((current) => ({ ...current, [machine.id]: "" }));
   };
 
   return (
     <main className="page-shell records-page">
       <section className="section-hero">
-        <div>
-          <p className="eyebrow">Target book</p>
-          <h1>Hosts with context.</h1>
-          <p>Keep the target list short. “Use in commands” loads a host into the checklist variables.</p>
-        </div>
+        <div><p className="eyebrow">Machine book</p><h1>One box. Every endpoint.</h1><p>The machine name owns the folder. Discovered IPs and hostnames become selectable endpoints inside that machine.</p></div>
         <span className="big-count">{workspace.targets.length.toString().padStart(2, "0")}</span>
       </section>
 
       <div className="records-layout">
         <form className="entry-form" onSubmit={submit}>
-          <div className="panel-heading">
-            <div>
-              <p className="eyebrow">New record</p>
-              <h2>Add target</h2>
-            </div>
-          </div>
-          <label>
-            <span>Name *</span>
-            <input type="text" value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder="web-01" required />
-          </label>
+          <div className="panel-heading"><div><p className="eyebrow">New box</p><h2>Add machine</h2></div></div>
+          <label><span>Machine / folder name *</span><input type="text" value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder="active" required /></label>
+          <label><span>Initial IP or host *</span><input type="text" value={draft.host} onChange={(event) => setDraft({ ...draft, host: event.target.value })} placeholder="10.129.81.60" required /></label>
           <div className="form-row">
-            <label>
-              <span>Host / IP *</span>
-              <input type="text" value={draft.host} onChange={(event) => setDraft({ ...draft, host: event.target.value })} placeholder="192.168.45.100" required />
-            </label>
-            <label>
-              <span>TCP port(s)</span>
-              <input type="text" value={draft.port} onChange={(event) => setDraft({ ...draft, port: event.target.value })} placeholder="80,443" />
-            </label>
+            <label><span>OS</span><select value={draft.os} onChange={(event) => setDraft({ ...draft, os: event.target.value })}><option>Unknown</option><option>Linux</option><option>Windows</option><option>Network device</option></select></label>
+            <label><span>Domain</span><input type="text" value={draft.domain} onChange={(event) => setDraft({ ...draft, domain: event.target.value })} placeholder="active.htb" /></label>
           </div>
-          <label>
-            <span>UDP port(s)</span>
-            <input type="text" value={draft.udpPorts} onChange={(event) => setDraft({ ...draft, udpPorts: event.target.value })} placeholder="53,88,123" />
-          </label>
-          <div className="form-row">
-            <label>
-              <span>OS</span>
-              <select value={draft.os} onChange={(event) => setDraft({ ...draft, os: event.target.value })}>
-                <option>Unknown</option>
-                <option>Linux</option>
-                <option>Windows</option>
-                <option>Network device</option>
-              </select>
-            </label>
-            <label>
-              <span>Domain</span>
-              <input type="text" value={draft.domain} onChange={(event) => setDraft({ ...draft, domain: event.target.value })} placeholder="corp.local" />
-            </label>
-          </div>
-          <label>
-            <span>Notes</span>
-            <textarea rows="4" value={draft.notes} onChange={(event) => setDraft({ ...draft, notes: event.target.value })} placeholder="Role, vhosts, likely attack path…" />
-          </label>
-          <button type="submit" className="button" disabled={!draft.name.trim() || !draft.host.trim()}>Add target</button>
+          <label><span>Notes</span><textarea rows="4" value={draft.notes} onChange={(event) => setDraft({ ...draft, notes: event.target.value })} placeholder="Role, scope, or likely attack path…" /></label>
+          <button type="submit" className="button" disabled={!draft.name.trim() || !draft.host.trim()}>Add machine</button>
         </form>
 
-        <section className="record-list" aria-label="Saved targets">
-          {workspace.targets.length === 0 ? (
-            <div className="empty-state compact">
-              <p className="eyebrow">No targets yet</p>
-              <h2>Add the first host you are working.</h2>
-            </div>
-          ) : workspace.targets.map((target) => {
-            const active = workspace.activeTargetId === target.id;
+        <section className="record-list" aria-label="Saved machines">
+          {workspace.targets.length === 0 ? <div className="empty-state compact"><p className="eyebrow">No machines yet</p><h2>Add the first box you are working.</h2></div> : workspace.targets.map((machine) => {
+            const active = workspace.activeTargetId === machine.id;
             return (
-              <article className={`target-card ${active ? "is-active" : ""}`} key={target.id}>
+              <article className={`target-card ${active ? "is-active" : ""}`} key={machine.id}>
                 <div className="target-card-head">
-                  <div>
-                    <div className="record-badges">
-                      <span>{target.os}</span>
-                      {active && <span className="active-badge">Active</span>}
-                    </div>
-                    <h2>{target.name}</h2>
-                    <code>{target.host}{target.port ? `:${target.port}` : ""}</code>
-                  </div>
-                  <div className="record-actions">
-                    <button type="button" className="button secondary" onClick={() => actions.useTarget(target)}>Use in commands</button>
-                    <button
-                      type="button"
-                      className="text-button danger"
-                      onClick={() => window.confirm(`Delete ${target.name}?`) && actions.deleteTarget(target.id)}
-                    >
-                      Delete
-                    </button>
-                  </div>
+                  <div><div className="record-badges"><span>{machine.os}</span>{active && <span className="active-badge">Active machine</span>}</div><h2>{machine.name}</h2><code>/home/kali/oscp/{machine.name}</code></div>
+                  <div className="record-actions"><button type="button" className="button secondary" onClick={() => actions.useTarget(machine)}>Use machine</button><button type="button" className="text-button danger" onClick={() => window.confirm(`Delete ${machine.name} and its case data?`) && actions.deleteTarget(machine.id)}>Delete</button></div>
                 </div>
-                <div className="target-card-grid">
-                  <label>
-                    <span>Host</span>
-                    <input type="text" value={target.host} onChange={(event) => actions.updateTarget(target.id, { host: event.target.value })} />
-                  </label>
-                  <label>
-                    <span>TCP ports</span>
-                    <input type="text" value={target.port} onChange={(event) => actions.updateTarget(target.id, { port: event.target.value })} />
-                  </label>
-                  <label>
-                    <span>UDP ports</span>
-                    <input type="text" value={target.udpPorts || ""} onChange={(event) => actions.updateTarget(target.id, { udpPorts: event.target.value })} />
-                  </label>
-                  <label>
-                    <span>Domain</span>
-                    <input type="text" value={target.domain} onChange={(event) => actions.updateTarget(target.id, { domain: event.target.value })} />
-                  </label>
-                  <label>
-                    <span>OS</span>
-                    <select value={target.os} onChange={(event) => actions.updateTarget(target.id, { os: event.target.value })}>
-                      <option>Unknown</option><option>Linux</option><option>Windows</option><option>Network device</option>
-                    </select>
-                  </label>
+
+                <div className="machine-fields">
+                  <label><span>Domain</span><input type="text" value={machine.domain || ""} onChange={(event) => actions.updateTarget(machine.id, { domain: event.target.value })} /></label>
+                  <label><span>OS</span><select value={machine.os} onChange={(event) => actions.updateTarget(machine.id, { os: event.target.value })}><option>Unknown</option><option>Linux</option><option>Windows</option><option>Network device</option></select></label>
                 </div>
-                <label className="card-notes">
-                  <span>Notes</span>
-                  <textarea rows="3" value={target.notes} onChange={(event) => actions.updateTarget(target.id, { notes: event.target.value })} />
-                </label>
+
+                <div className="endpoint-list">
+                  {(machine.endpoints || []).map((endpoint) => {
+                    const selected = active && machine.activeEndpointId === endpoint.id;
+                    return (
+                      <div className={`endpoint-card ${selected ? "is-selected" : ""}`} key={endpoint.id}>
+                        <div className="endpoint-head"><strong>{endpoint.address}</strong>{selected && <span>Command target</span>}</div>
+                        <div className="endpoint-grid">
+                          <label><span>IP / host</span><input type="text" value={endpoint.address} onChange={(event) => actions.updateEndpoint(machine.id, endpoint.id, { address: event.target.value })} /></label>
+                          <label><span>Hostnames</span><input type="text" value={(endpoint.hostnames || []).join(", ")} onChange={(event) => actions.updateEndpoint(machine.id, endpoint.id, { hostnames: event.target.value.split(",").map((name) => name.trim()).filter(Boolean) })} placeholder="dc.active.htb" /></label>
+                          <label><span>TCP</span><input type="text" value={endpoint.tcpPorts || ""} onChange={(event) => actions.updateEndpoint(machine.id, endpoint.id, { tcpPorts: event.target.value })} /></label>
+                          <label><span>UDP</span><input type="text" value={endpoint.udpPorts || ""} onChange={(event) => actions.updateEndpoint(machine.id, endpoint.id, { udpPorts: event.target.value })} /></label>
+                        </div>
+                        <div className="endpoint-actions"><small>{endpoint.source || "manual"}</small><button type="button" className="button secondary" onClick={() => actions.useEndpoint(machine, endpoint)}>Use endpoint</button>{(machine.endpoints || []).length > 1 && <button type="button" className="text-button danger" onClick={() => actions.deleteEndpoint(machine.id, endpoint.id)}>Delete</button>}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="add-endpoint-row"><input type="text" value={endpointDrafts[machine.id] || ""} onChange={(event) => setEndpointDrafts((current) => ({ ...current, [machine.id]: event.target.value }))} placeholder="Discovered IP or hostname" /><button type="button" className="button secondary" onClick={() => addEndpoint(machine)}>Add endpoint</button></div>
+                <label className="card-notes"><span>Machine notes</span><textarea rows="3" value={machine.notes} onChange={(event) => actions.updateTarget(machine.id, { notes: event.target.value })} /></label>
               </article>
             );
           })}

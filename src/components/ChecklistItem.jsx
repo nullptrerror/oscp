@@ -101,7 +101,11 @@ export default function ChecklistItem({ item, searchActive = false }) {
                 key={command.key ?? `${item.id}-${command.label}`}
                 command={command}
                 variables={workspace.variables}
-                onCopy={() => { setCopiedReminder(true); setOpen(true); }}
+                onCopy={(copiedCommand, renderedCommand) => {
+                  actions.recordCommand(item.id, { label: copiedCommand.label, command: renderedCommand });
+                  setCopiedReminder(true);
+                  setOpen(true);
+                }}
               />
             ))}
           </div>

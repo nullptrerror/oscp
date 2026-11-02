@@ -8,7 +8,7 @@ import ReportPage from "./pages/ReportPage";
 
 const pages = [
   { to: "/", label: "Checklist" },
-  { to: "/targets", label: "Targets" },
+  { to: "/targets", label: "Machines" },
   { to: "/vault", label: "Findings" },
   { to: "/report", label: "Report" },
 ];

@@ -32,6 +32,7 @@ export default function FindingsPage() {
   const targetLoot = workspace.loot.filter((entry) => !workspace.activeTargetId || entry.targetId === workspace.activeTargetId);
   const targetUsers = (workspace.users || []).filter((entry) => !workspace.activeTargetId || entry.targetId === workspace.activeTargetId);
   const targetDiscoveries = workspace.discoveries.filter((entry) => !workspace.activeTargetId || entry.targetId === workspace.activeTargetId);
+  const targetCommands = (workspace.commandHistory || []).filter((entry) => !workspace.activeTargetId || entry.targetId === workspace.activeTargetId).sort((a, b) => b.copiedAt.localeCompare(a.copiedAt));
 
   const addAccount = (event) => {
     event.preventDefault();
@@ -168,6 +169,18 @@ export default function FindingsPage() {
         {targetDiscoveries.length === 0 ? <EmptyMessage>No parsed ports, domains, accounts, hashes, or tickets yet.</EmptyMessage> : (
           <div className="discovery-chips discovery-ledger-chips">
             {targetDiscoveries.map((entry) => <span key={entry.id}>{formatDiscovery(entry)}</span>)}
+          </div>
+        )}
+      </section>
+
+      <section className="results-ledger">
+        <div className="finding-section-head">
+          <div><p className="eyebrow">Report command history</p><h2>Copied commands</h2></div>
+          <span>{targetCommands.length}</span>
+        </div>
+        {targetCommands.length === 0 ? <EmptyMessage>Only commands copied from the checklist appear here and in the PDF.</EmptyMessage> : (
+          <div className="results-grid">
+            {targetCommands.map((entry) => <article className="result-card" key={entry.id}><div className="copied-command-head"><strong>{entry.label}</strong><time>{new Date(entry.copiedAt).toLocaleString()}</time></div><pre>{entry.command}</pre><p>{entry.address}</p></article>)}
           </div>
         )}
       </section>

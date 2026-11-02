@@ -12,8 +12,7 @@ import {
   rgb,
 } from "pdf-lib";
 import { ALL_ITEMS } from "../data/checklist.js";
-import { getChecklistCommands } from "./checklistCommands.js";
-import { getActiveScope, getTargetItemValue, normalizeWorkspace, renderCommand } from "./workspace.js";
+import { getActiveScope, getTargetItemValue, normalizeWorkspace } from "./workspace.js";
 import { formatDiscovery } from "./evidence.js";
 
 export const WORKSPACE_ATTACHMENT = "fieldnotes-workspace.json";
@@ -73,13 +72,14 @@ function targetData(workspace, targetId) {
     || { id: null, name: workspace.variables.targetName, host: workspace.variables.rhost, domain: workspace.variables.domain };
   const scope = target?.id || getActiveScope(workspace);
   const report = workspace.reports[scope] || {};
+  const belongs = (entry) => entry.targetId ? entry.targetId === target?.id : entry.target === target?.name;
+  const commandHistory = (workspace.commandHistory || []).filter(belongs);
   const items = ALL_ITEMS.map((item) => ({
     ...item,
     completed: Boolean(getTargetItemValue(workspace.completed, scope, item.id, false)),
     note: getTargetItemValue(workspace.notes, scope, item.id, ""),
     evidence: getTargetItemValue(workspace.evidence, scope, item.id, []),
-  })).filter((item) => item.completed || item.note || item.evidence.length > 0);
-  const belongs = (entry) => entry.targetId ? entry.targetId === target?.id : entry.target === target?.name;
+  })).filter((item) => item.completed || item.note || item.evidence.length > 0 || commandHistory.some((command) => command.itemId === item.id));
   return {
     target,
     scope,
@@ -89,6 +89,7 @@ function targetData(workspace, targetId) {
     users: (workspace.users || []).filter(belongs),
     loot: workspace.loot.filter(belongs),
     discoveries: workspace.discoveries.filter(belongs),
+    commandHistory,
   };
 }
 
@@ -193,6 +194,9 @@ export async function generateReportPdf(workspace, targetId) {
   heading("Scope", 2);
   lines(data.report.scope || `${data.target?.host || workspace.variables.rhost} (${data.target?.name || workspace.variables.targetName})`, { size: 10, gap: 4 });
   heading("Attack surface", 2);
+  for (const endpoint of (data.target?.endpoints || [])) {
+    lines(`${endpoint.address}${endpoint.hostnames?.length ? ` (${endpoint.hostnames.join(", ")})` : ""} | TCP: ${endpoint.tcpPorts || "none"} | UDP: ${endpoint.udpPorts || "none"}`, { font: mono, size: 8.5, color: colors.muted });
+  }
   if (data.discoveries.length === 0) lines("No parsed discoveries were saved.", { color: colors.muted });
   for (const discovery of data.discoveries) lines(formatDiscovery(discovery), { font: mono, size: 8.5, color: colors.muted });
   heading("Tracked users", 2);
@@ -213,10 +217,10 @@ export async function generateReportPdf(workspace, targetId) {
       lines("Operator note", { font: bold, size: 9 });
       lines(item.note, { size: 9.5, gap: 4 });
     }
-    const commands = getChecklistCommands(item, workspace);
-    for (const command of commands) {
-      lines(command.label, { font: bold, size: 8.5, color: colors.green });
-      code(renderCommand(command.value, workspace.variables).command);
+    const copiedCommands = data.commandHistory.filter((command) => command.itemId === item.id);
+    for (const command of copiedCommands) {
+      lines(`${command.label} / ${command.address || "target"} / ${command.copiedAt}`, { font: bold, size: 8.5, color: colors.green });
+      code(command.command);
     }
     for (const evidence of item.evidence) {
       lines(`Evidence: ${evidence.label}`, { font: bold, size: 9 });

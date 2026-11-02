@@ -28,9 +28,11 @@ export default function ReportPage() {
     const completed = ALL_ITEMS.filter((item) => getScopedItemValue(workspace.completed, workspace, item.id, false)).length;
     const evidence = ALL_ITEMS.flatMap((item) => getScopedItemValue(workspace.evidence, workspace, item.id, [])).length;
     const proof = getScopedItemValue(workspace.evidence, workspace, "proof-artifacts", []);
+    const copiedCommands = (workspace.commandHistory || []).filter((entry) => entry.targetId === workspace.activeTargetId).length;
     return {
       completed,
       evidence,
+      copiedCommands,
       userFlag: proof.some((entry) => entry.category === "user-flag"),
       rootFlag: proof.some((entry) => entry.category === "root-flag"),
     };
@@ -115,7 +117,7 @@ export default function ReportPage() {
             if (target) actions.useTarget(target);
           }}>
             {workspace.targets.length === 0 && <option value="">Current command context</option>}
-            {workspace.targets.map((target) => <option key={target.id} value={target.id}>{target.name} · {target.host}</option>)}
+            {workspace.targets.map((target) => <option key={target.id} value={target.id}>{target.name} · {(target.endpoints || []).length} endpoint{(target.endpoints || []).length === 1 ? "" : "s"}</option>)}
           </select>
         </div>
       </section>
@@ -150,6 +152,7 @@ export default function ReportPage() {
           <dl className="stat-list">
             <div><dt>Completed checks</dt><dd>{readiness.completed} / {ALL_ITEMS.length}</dd></div>
             <div><dt>Evidence items</dt><dd>{readiness.evidence}</dd></div>
+            <div><dt>Copied commands</dt><dd>{readiness.copiedCommands}</dd></div>
             <div><dt>User proof</dt><dd>{readiness.userFlag ? "Ready" : "Missing"}</dd></div>
             <div><dt>Root / Admin proof</dt><dd>{readiness.rootFlag ? "Ready" : "Missing"}</dd></div>
           </dl>

@@ -2,6 +2,7 @@ import { buildSmbDownloadCommands } from "./smbCommands.js";
 import { buildRemoteAccessCommands } from "./remoteAccessCommands.js";
 import { buildSpnTgsCommands } from "./kerberosCommands.js";
 import { buildUsersFileCommand } from "./userCommands.js";
+import { buildSprayCommands } from "./sprayCommands.js";
 
 export function getChecklistCommands(item, workspace) {
   const accounts = workspace.accounts.filter((account) => (
@@ -21,5 +22,6 @@ export function getChecklistCommands(item, workspace) {
       })),
     ];
   }
+  if (item.id === "creds-spray") return [...item.commands, ...buildSprayCommands(workspace)];
   return item.commands;
 }

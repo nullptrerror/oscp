@@ -54,3 +54,13 @@ active.htb\\alice`;
   const users = parseEvidence(output).filter((entry) => entry.type === "user").map((entry) => entry.value);
   assert.deepEqual(users, ["SVC_TGS", "Administrator", "alice"]);
 });
+
+test("scan and SMB output associate hostnames with endpoint addresses", () => {
+  const output = `Nmap scan report for dc.active.htb (10.129.81.60)
+SMB 10.129.81.60 445 DC [*] Windows (name:DC) (domain:active.htb)`;
+  const hosts = parseEvidence(output).filter((entry) => entry.type === "hostname");
+  assert.deepEqual(hosts.map((entry) => [entry.value, entry.address]), [
+    ["dc.active.htb", "10.129.81.60"],
+    ["dc.active.htb", "10.129.81.60"],
+  ].slice(0, 1));
+});

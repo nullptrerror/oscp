@@ -66,3 +66,13 @@ test("domains derive LDAP base DNs when one is not supplied", () => {
   const restored = normalizeWorkspace({ version: WORKSPACE_VERSION, variables: { domain: "corp.example.com", baseDn: "" } });
   assert.equal(restored.variables.baseDn, "DC=corp,DC=example,DC=com");
 });
+
+test("legacy targets migrate into machines with a primary endpoint", () => {
+  const restored = normalizeWorkspace({
+    version: WORKSPACE_VERSION,
+    targets: [{ id: "active", name: "active", host: "10.129.81.60", port: "53,445" }],
+  });
+  assert.equal(restored.targets[0].endpoints.length, 1);
+  assert.equal(restored.targets[0].endpoints[0].address, "10.129.81.60");
+  assert.equal(restored.targets[0].endpoints[0].tcpPorts, "53,445");
+});

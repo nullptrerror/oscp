@@ -20,6 +20,9 @@ const LABELS = {
   hash: "NTLM / hash",
   smbShare: "SMB share",
   smbDirectory: "SMB directory",
+  sprayPassword: "Spray password",
+  sprayJitter: "Spray jitter",
+  sprayRockyouLimit: "Rockyou limit",
   subnet: "Pivot subnet",
   interface: "VPN interface",
   wordlist: "Default wordlist",
@@ -29,12 +32,13 @@ export default function VariablesPanel() {
   const { workspace, actions } = useWorkspace();
   const [showSecrets, setShowSecrets] = useState(false);
   const activeTarget = workspace.targets.find((target) => target.id === workspace.activeTargetId);
+  const activeEndpoint = activeTarget?.endpoints?.find((endpoint) => endpoint.id === activeTarget.activeEndpointId) || activeTarget?.endpoints?.[0];
   const activeAccounts = workspace.accounts.filter((entry) => entry.targetId ? entry.targetId === workspace.activeTargetId : entry.target === workspace.variables.targetName);
   const activeUsers = (workspace.users || []).filter((entry) => entry.targetId ? entry.targetId === workspace.activeTargetId : entry.target === workspace.variables.targetName);
   const activeDiscoveries = workspace.discoveries.filter((entry) => entry.targetId ? entry.targetId === workspace.activeTargetId : entry.targetName === workspace.variables.targetName);
   const unique = (values) => [...new Set(values.filter(Boolean))];
   const suggestions = {
-    rhost: unique(workspace.targets.map((target) => target.host)),
+    rhost: unique(workspace.targets.flatMap((target) => (target.endpoints || []).map((endpoint) => endpoint.address))),
     domain: unique([...workspace.targets.map((target) => target.domain), ...activeAccounts.map((entry) => entry.domain)]),
     user: unique([...activeUsers.map((entry) => entry.username), ...activeAccounts.map((entry) => entry.username)]),
     password: unique(activeAccounts.map((entry) => entry.secret).filter((secret) => !isNtHash(secret))),
@@ -64,6 +68,18 @@ export default function VariablesPanel() {
             if (target) actions.useTarget(target);
           }}>
             {workspace.targets.map((target) => <option key={target.id} value={target.id}>{target.name} · {target.host}</option>)}
+          </select>
+        </label>
+      )}
+
+      {activeTarget?.endpoints?.length > 0 && (
+        <label className="context-picker">
+          <span>Endpoint</span>
+          <select value={activeEndpoint?.id || ""} onChange={(event) => {
+            const endpoint = activeTarget.endpoints.find((entry) => entry.id === event.target.value);
+            if (endpoint) actions.useEndpoint(activeTarget, endpoint);
+          }}>
+            {activeTarget.endpoints.map((endpoint) => <option key={endpoint.id} value={endpoint.id}>{endpoint.address}{endpoint.hostnames?.length ? ` · ${endpoint.hostnames.join(", ")}` : ""}</option>)}
           </select>
         </label>
       )}

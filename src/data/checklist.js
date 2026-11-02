@@ -15,6 +15,9 @@ export const DEFAULT_VARIABLES = {
   hash: "",
   smbShare: "SYSVOL",
   smbDirectory: ".",
+  sprayPassword: "",
+  sprayJitter: "3-5",
+  sprayRockyouLimit: "25",
   subnet: "172.16.10.0/24",
   interface: "tun0",
   wordlist: "/usr/share/seclists/Discovery/Web-Content/raft-medium-directories.txt",
@@ -25,7 +28,7 @@ export const VARIABLE_GROUPS = [
   { label: "Operator", keys: ["lhost", "lport", "interface"] },
   { label: "Target", keys: ["targetName", "rhost", "rport", "uport", "subnet"] },
   { label: "Identity", keys: ["domain", "baseDn", "dc", "user", "password", "gppCpassword", "hash"] },
-  { label: "Resources", keys: ["smbShare", "smbDirectory", "wordlist"] },
+  { label: "Resources", keys: ["smbShare", "smbDirectory", "sprayPassword", "sprayJitter", "sprayRockyouLimit", "wordlist"] },
 ];
 
 export const CHECKLIST = [
@@ -452,6 +455,14 @@ export const CHECKLIST = [
         commands: [
           { label: "Network services", value: "for protocol in smb winrm ssh; do nxc \"$protocol\" {{rhost}} -u '{{user}}' -p '{{password}}' --continue-on-success; done" },
           { label: "SSH", value: "ssh -o PreferredAuthentications=password '{{user}}@{{rhost}}'" },
+        ],
+      },
+      {
+        id: "creds-spray",
+        title: "Run a bounded password spray",
+        detail: "Review domain lockout policy first. Start with one strong candidate password and jitter; only use discovered-password or bounded rockyou lists when the risk is acceptable.",
+        commands: [
+          { label: "Review password policy first", value: "nxc smb {{rhost}} -u '{{user}}' -p '{{password}}' --pass-pol" },
         ],
       },
     ],

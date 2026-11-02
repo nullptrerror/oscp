@@ -6,8 +6,8 @@ Fieldnotes keeps four things together:
 
 - a phase-based checklist with copy-ready command examples;
 - reusable command variables such as `lhost`, `rhost`, ports, domain, user, password, hash, subnet, and wordlist;
-- target-scoped accounts, loot, notes, command output, and screenshots;
-- an OSCP-style target PDF with the complete workspace and evidence embedded for later restoration.
+- machine-scoped endpoints, accounts, loot, notes, command output, and screenshots;
+- an OSCP-style machine report with the complete workspace and evidence embedded for later restoration.
 
 The app has no backend, login, cloud sync, database, rich-text editor, or plugin system. State is stored in browser `localStorage` and can be exported at any time.
 
@@ -34,17 +34,20 @@ If Vite reports that it cannot resolve `pdf-lib` after pulling newer commits, st
 
 ## Workflow
 
-1. Add a host under **Targets** and choose **Use in commands**.
-2. Set `LHOST`, ports, domain, credentials, and the default wordlist in the checklist's **Variables** panel. Target work is organized under `/home/kali/oscp/<target>/`.
-3. Work down the checklist. Expand a point to copy its rendered commands.
-4. Paste, upload, or drag command output onto the item. The global evidence inbox routes common Nmap, SMB, Kerberos, web, and proof files automatically.
-5. Review parsed ports, domains, credentials, hashes, and tickets under **Findings**. Parsed credentials are added to the active target and generate follow-up commands.
-6. Attach user and root/Administrator proof screenshots under **Report**, write the short narrative, and generate the target PDF.
-7. Import that PDF on another machine to restore the full workspace. JSON export remains available as a fallback under **Backup**.
+1. Add a box under **Machines** with its initial IP. The machine name is the stable folder name, such as `/home/kali/oscp/active/`.
+2. Add or select endpoints inside that machine. Parsed IP addresses and hostname/IP pairs are attached automatically; changing endpoints never creates another machine folder.
+3. Set `LHOST`, ports, domain, credentials, and the default wordlist in the checklist's **Variables** panel.
+4. Work down the checklist. Copying a command records the exact rendered command, endpoint, and time for the final report.
+5. Paste, upload, or drag command output onto the item. The global evidence inbox routes common Nmap, SMB, Kerberos, web, and proof files automatically.
+6. Review parsed ports, domains, credentials, hashes, tickets, endpoints, and copied commands under **Findings**.
+7. Attach user and root/Administrator proof screenshots under **Report**, write the short narrative, and generate the machine PDF.
+8. Import that PDF on another machine to restore the full workspace. JSON export remains available as a fallback under **Backup**.
 
 A checklist item requires a pasted or uploaded result before it can be marked complete. A short note describing a failed or empty result is enough; the goal is to preserve what was actually tested.
 
 TCP and UDP ports are tracked separately and accumulated across scan files. Nmap `open` and `open|filtered` UDP results populate `UDP PORT(S)`, and the focused UDP command automatically uses that list.
+
+The bounded spray check builds target-scoped username, password, and NT-hash files from Findings. It provides one-password, discovered-secret, and limited-rockyou NetExec variants with jitter and saved logs. Review lockout policy before using anything beyond a single candidate password.
 
 ## Kali assumptions
 
@@ -63,7 +66,7 @@ Exact resource contents can vary with the Kali package snapshot, so commands tha
 
 Passwords, hashes, notes, and results are stored as plain text in browser storage, exported JSON, and the PDF's embedded workspace. This is an exam notebook, not a password manager. Lock the workstation, protect reports and backups, and reset the workspace when the data is no longer needed.
 
-If the browser reports a storage error, export a backup and remove large saved results. Text files are limited to 1 MB and screenshots/files to 3 MB. Keep large binaries and full scan archives in `/home/kali/oscp/<target>/`; save useful excerpts or paths in the app.
+If the browser reports a storage error, export a backup and remove large saved results. Text files are limited to 1 MB and screenshots/files to 3 MB. Keep large binaries and full scan archives in `/home/kali/oscp/<machine>/`; save useful excerpts or paths in the app.
 
 ## Customize the methodology
 

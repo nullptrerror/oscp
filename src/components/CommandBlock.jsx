@@ -7,7 +7,7 @@ export default function CommandBlock({ command, variables, onCopy }) {
 
   const copy = async () => {
     await navigator.clipboard.writeText(rendered.command);
-    onCopy?.(command);
+    onCopy?.(command, rendered.command);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1200);
   };

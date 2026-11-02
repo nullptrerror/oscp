@@ -14,6 +14,16 @@ import { guidanceForDiscoveries, mergePortLists, parseEvidence } from "../lib/ev
 
 const WorkspaceContext = createContext(null);
 
+const activeEndpoint = (target) => target?.endpoints?.find((endpoint) => endpoint.id === target.activeEndpointId) || target?.endpoints?.[0];
+const endpointVariables = (target, endpoint = activeEndpoint(target)) => ({
+  targetName: target?.name || "",
+  rhost: endpoint?.address || target?.host || "",
+  rport: endpoint?.tcpPorts || target?.port || "",
+  uport: endpoint?.udpPorts || target?.udpPorts || "",
+  domain: target?.domain || "",
+  baseDn: domainToBaseDn(target?.domain),
+});
+
 export function WorkspaceProvider({ children }) {
   const [workspace, setWorkspace] = useState(loadWorkspace);
   const [saveState, setSaveState] = useState({ status: "saved", message: "Saved locally" });
@@ -47,18 +57,29 @@ export function WorkspaceProvider({ children }) {
             && values.baseDn === undefined
             && (!current.variables.baseDn || current.variables.baseDn === domainToBaseDn(current.variables.domain));
           const variableValues = shouldDeriveBaseDn ? { ...values, baseDn: domainToBaseDn(values.domain) } : values;
-          const targetPatch = {
-            ...(variableValues.targetName !== undefined ? { name: variableValues.targetName } : {}),
-            ...(variableValues.rhost !== undefined ? { host: variableValues.rhost } : {}),
-            ...(variableValues.rport !== undefined ? { port: variableValues.rport } : {}),
-            ...(variableValues.uport !== undefined ? { udpPorts: variableValues.uport } : {}),
-            ...(variableValues.domain !== undefined ? { domain: variableValues.domain } : {}),
-          };
           return {
             ...current,
             variables: { ...current.variables, ...variableValues },
             targets: current.activeTargetId
-              ? current.targets.map((target) => (target.id === current.activeTargetId ? { ...target, ...targetPatch } : target))
+              ? current.targets.map((target) => {
+                if (target.id !== current.activeTargetId) return target;
+                const endpoints = (target.endpoints || []).map((endpoint) => endpoint.id === target.activeEndpointId ? {
+                  ...endpoint,
+                  ...(variableValues.rhost !== undefined ? { address: variableValues.rhost } : {}),
+                  ...(variableValues.rport !== undefined ? { tcpPorts: variableValues.rport } : {}),
+                  ...(variableValues.uport !== undefined ? { udpPorts: variableValues.uport } : {}),
+                } : endpoint);
+                const selected = endpoints.find((endpoint) => endpoint.id === target.activeEndpointId) || endpoints[0];
+                return {
+                  ...target,
+                  ...(variableValues.targetName !== undefined ? { name: variableValues.targetName } : {}),
+                  ...(variableValues.domain !== undefined ? { domain: variableValues.domain } : {}),
+                  endpoints,
+                  host: selected?.address || target.host,
+                  port: selected?.tcpPorts || "",
+                  udpPorts: selected?.udpPorts || "",
+                };
+              })
               : current.targets,
           };
         });
@@ -102,6 +123,7 @@ export function WorkspaceProvider({ children }) {
             saved.targetId === current.activeTargetId
             && saved.type === candidate.type
             && (saved.protocol || "") === (candidate.protocol || "")
+            && (saved.address || "") === (candidate.address || "")
             && String(saved.value).toLowerCase() === String(candidate.value).toLowerCase()
           ))).map((candidate) => ({
             id: createId("discovery"),
@@ -114,9 +136,15 @@ export function WorkspaceProvider({ children }) {
           }));
           const foundTcpPorts = parsed.filter((entry) => entry.type === "port" && entry.protocol === "tcp").map((entry) => entry.value);
           const foundUdpPorts = parsed.filter((entry) => entry.type === "port" && entry.protocol === "udp").map((entry) => entry.value);
-          const tcpPorts = mergePortLists(target?.port || current.variables.rport, foundTcpPorts);
-          const udpPorts = mergePortLists(target?.udpPorts || current.variables.uport, foundUdpPorts);
+          const selectedEndpoint = activeEndpoint(target);
+          const tcpPorts = mergePortLists(selectedEndpoint?.tcpPorts || current.variables.rport, foundTcpPorts);
+          const udpPorts = mergePortLists(selectedEndpoint?.udpPorts || current.variables.uport, foundUdpPorts);
           const foundDomain = parsed.find((entry) => entry.type === "domain")?.value;
+          const discoveredAddresses = [...new Set([...parsed.flatMap((entry) => (
+            entry.type === "ip" ? [entry.value] : entry.type === "hostname" && entry.address ? [entry.address] : []
+          )), ...(parsed.some((entry) => entry.type === "hostname" && !entry.address) ? [current.variables.rhost] : [])]
+            .filter((address) => address && address !== current.variables.lhost))];
+          const hostnamesFor = (address) => parsed.filter((entry) => entry.type === "hostname" && (entry.address === address || (!entry.address && address === current.variables.rhost))).map((entry) => entry.value);
           const parsedAccounts = parsed.filter((entry) => entry.type === "credential").filter((entry) => !current.accounts.some((saved) => (
             saved.targetId === current.activeTargetId
             && saved.username?.toLowerCase() === entry.username?.toLowerCase()
@@ -158,12 +186,37 @@ export function WorkspaceProvider({ children }) {
             accounts: [...current.accounts, ...parsedAccounts],
             users: [...current.users, ...parsedUsers],
             discoveries: [...current.discoveries, ...newDiscoveries],
-            targets: current.targets.map((entry) => entry.id === current.activeTargetId ? {
-              ...entry,
-              ...(foundTcpPorts.length > 0 ? { port: tcpPorts } : {}),
-              ...(foundUdpPorts.length > 0 ? { udpPorts } : {}),
-              ...(foundDomain && !entry.domain ? { domain: foundDomain } : {}),
-            } : entry),
+            targets: current.targets.map((entry) => {
+              if (entry.id !== current.activeTargetId) return entry;
+              const baseEndpoints = entry.endpoints?.length ? entry.endpoints : [{
+                id: createId("endpoint"), address: entry.host || current.variables.rhost, hostnames: [], tcpPorts: entry.port || "", udpPorts: entry.udpPorts || "", source: "initial",
+              }];
+              const selectedId = entry.activeEndpointId || baseEndpoints[0]?.id;
+              let endpoints = baseEndpoints.map((endpoint) => endpoint.id === selectedId ? {
+                ...endpoint,
+                ...(foundTcpPorts.length > 0 ? { tcpPorts } : {}),
+                ...(foundUdpPorts.length > 0 ? { udpPorts } : {}),
+              } : endpoint);
+              for (const address of discoveredAddresses) {
+                const existing = endpoints.find((endpoint) => endpoint.address === address);
+                const names = hostnamesFor(address);
+                if (existing) {
+                  endpoints = endpoints.map((endpoint) => endpoint.id === existing.id ? { ...endpoint, hostnames: [...new Set([...(endpoint.hostnames || []), ...names])] } : endpoint);
+                } else {
+                  endpoints.push({ id: createId("endpoint"), address, hostnames: names, tcpPorts: "", udpPorts: "", source: evidence.filename || evidence.label || "parsed evidence" });
+                }
+              }
+              const selected = endpoints.find((endpoint) => endpoint.id === selectedId) || endpoints[0];
+              return {
+                ...entry,
+                endpoints,
+                activeEndpointId: selected?.id || null,
+                host: selected?.address || entry.host,
+                port: selected?.tcpPorts || "",
+                udpPorts: selected?.udpPorts || "",
+                ...(foundDomain && !entry.domain ? { domain: foundDomain } : {}),
+              };
+            }),
             evidence: {
               ...current.evidence,
               [key]: [
@@ -190,19 +243,23 @@ export function WorkspaceProvider({ children }) {
         const id = createId("target");
         update((current) => {
           const becomesActive = !current.activeTargetId;
+          const endpoint = {
+            id: createId("endpoint"),
+            address: target.host,
+            hostnames: target.hostnames || [],
+            tcpPorts: target.port || "",
+            udpPorts: target.udpPorts || "",
+            source: "initial",
+          };
+          const machine = { ...target, id, createdAt: new Date().toISOString(), endpoints: [endpoint], activeEndpointId: endpoint.id };
           return {
             ...current,
             activeTargetId: current.activeTargetId ?? id,
             variables: becomesActive ? {
               ...current.variables,
-              targetName: target.name || current.variables.targetName,
-              rhost: target.host || current.variables.rhost,
-              rport: target.port || "",
-              uport: target.udpPorts || "",
-              domain: target.domain || "",
-              baseDn: domainToBaseDn(target.domain),
+              ...endpointVariables(machine, endpoint),
             } : current.variables,
-            targets: [...current.targets, { id, createdAt: new Date().toISOString(), ...target }],
+            targets: [...current.targets, machine],
           };
         });
       },
@@ -212,9 +269,6 @@ export function WorkspaceProvider({ children }) {
           variables: current.activeTargetId === id ? {
             ...current.variables,
             ...(patch.name !== undefined ? { targetName: patch.name } : {}),
-            ...(patch.host !== undefined ? { rhost: patch.host } : {}),
-            ...(patch.port !== undefined ? { rport: patch.port } : {}),
-            ...(patch.udpPorts !== undefined ? { uport: patch.udpPorts } : {}),
             ...(patch.domain !== undefined ? { domain: patch.domain } : {}),
             ...(patch.domain !== undefined ? { baseDn: domainToBaseDn(patch.domain) } : {}),
           } : current.variables,
@@ -229,23 +283,72 @@ export function WorkspaceProvider({ children }) {
         }));
       },
       useTarget(target) {
+        const endpoint = activeEndpoint(target);
         update((current) => ({
           ...current,
           activeTargetId: target.id,
           variables: {
             ...current.variables,
-            targetName: target.name,
-            rhost: target.host,
-            rport: target.port || "",
-            uport: target.udpPorts || "",
-            domain: target.domain || "",
-            baseDn: domainToBaseDn(target.domain),
+            ...endpointVariables(target, endpoint),
             dc: "",
             user: "",
             password: "",
             gppCpassword: "",
             hash: "",
           },
+        }));
+      },
+      addEndpoint(targetId, endpoint) {
+        update((current) => ({
+          ...current,
+          targets: current.targets.map((target) => {
+            if (target.id !== targetId || target.endpoints?.some((saved) => saved.address === endpoint.address)) return target;
+            const created = { id: createId("endpoint"), hostnames: [], tcpPorts: "", udpPorts: "", source: "manual", ...endpoint };
+            return { ...target, endpoints: [...(target.endpoints || []), created] };
+          }),
+        }));
+      },
+      updateEndpoint(targetId, endpointId, patch) {
+        update((current) => ({
+          ...current,
+          targets: current.targets.map((target) => {
+            if (target.id !== targetId) return target;
+            const endpoints = (target.endpoints || []).map((endpoint) => endpoint.id === endpointId ? { ...endpoint, ...patch } : endpoint);
+            const selected = endpoints.find((endpoint) => endpoint.id === target.activeEndpointId) || endpoints[0];
+            return { ...target, endpoints, host: selected?.address || "", port: selected?.tcpPorts || "", udpPorts: selected?.udpPorts || "" };
+          }),
+          variables: current.activeTargetId === targetId && current.targets.find((target) => target.id === targetId)?.activeEndpointId === endpointId ? {
+            ...current.variables,
+            ...(patch.address !== undefined ? { rhost: patch.address } : {}),
+            ...(patch.tcpPorts !== undefined ? { rport: patch.tcpPorts } : {}),
+            ...(patch.udpPorts !== undefined ? { uport: patch.udpPorts } : {}),
+          } : current.variables,
+        }));
+      },
+      useEndpoint(target, endpoint) {
+        update((current) => ({
+          ...current,
+          activeTargetId: target.id,
+          targets: current.targets.map((entry) => entry.id === target.id ? {
+            ...entry, activeEndpointId: endpoint.id, host: endpoint.address, port: endpoint.tcpPorts || "", udpPorts: endpoint.udpPorts || "",
+          } : entry),
+          variables: {
+            ...current.variables,
+            ...endpointVariables(target, endpoint),
+            user: "", password: "", gppCpassword: "", hash: "",
+          },
+        }));
+      },
+      deleteEndpoint(targetId, endpointId) {
+        update((current) => ({
+          ...current,
+          targets: current.targets.map((target) => {
+            if (target.id !== targetId || (target.endpoints || []).length <= 1) return target;
+            const endpoints = target.endpoints.filter((endpoint) => endpoint.id !== endpointId);
+            const activeEndpointId = target.activeEndpointId === endpointId ? endpoints[0]?.id : target.activeEndpointId;
+            const selected = endpoints.find((endpoint) => endpoint.id === activeEndpointId) || endpoints[0];
+            return { ...target, endpoints, activeEndpointId, host: selected?.address || "", port: selected?.tcpPorts || "", udpPorts: selected?.udpPorts || "" };
+          }),
         }));
       },
       addRecord(kind, record) {
@@ -261,6 +364,25 @@ export function WorkspaceProvider({ children }) {
             ...(['accounts', 'users'].includes(kind) ? { domain: record.domain || current.variables.domain } : {}),
           }],
         }));
+      },
+      recordCommand(itemId, command) {
+        update((current) => {
+          const target = current.targets.find((entry) => entry.id === current.activeTargetId);
+          const endpoint = activeEndpoint(target);
+          return {
+            ...current,
+            commandHistory: [...current.commandHistory, {
+              id: createId("command"),
+              copiedAt: new Date().toISOString(),
+              targetId: current.activeTargetId,
+              targetName: target?.name || current.variables.targetName,
+              endpointId: endpoint?.id || null,
+              address: current.variables.rhost,
+              itemId,
+              ...command,
+            }],
+          };
+        });
       },
       updateReport(patch) {
         update((current) => {
