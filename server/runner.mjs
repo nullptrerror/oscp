@@ -6,7 +6,20 @@ import { spawnSync } from "node:child_process";
 import * as pty from "node-pty";
 import { WebSocketServer } from "ws";
 
-const REQUIRED_TOOLS = ["bash", "nmap", "nxc", "smbclient", "ldapsearch", "hashcat", "impacket-GetUserSPNs", "evil-winrm"];
+const REQUIRED_TOOLS = [
+  "bash",
+  "nmap",
+  "nxc",
+  "smbclient",
+  "ldapsearch",
+  "hashcat",
+  "impacket-Get-GPPPassword",
+  "impacket-GetNPUsers",
+  "impacket-GetUserSPNs",
+  "impacket-wmiexec",
+  "impacket-psexec",
+  "evil-winrm",
+];
 const token = crypto.randomBytes(24).toString("hex");
 const allowedRoot = path.resolve(process.env.FIELDNOTES_WORKSPACE_ROOT || (process.platform === "win32" ? process.cwd() : "/home/kali/oscp"));
 
