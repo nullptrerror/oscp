@@ -5,9 +5,11 @@ import EvidenceInbox from "../components/EvidenceInbox";
 import { CHECKLIST } from "../data/checklist";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { getScopedItemValue } from "../lib/workspace";
+import { useLocalRunner } from "../context/LocalRunnerContext";
 
 export default function ChecklistPage() {
   const { workspace } = useWorkspace();
+  const runner = useLocalRunner();
   const [query, setQuery] = useState("");
   const [hideComplete, setHideComplete] = useState(false);
   const searchRef = useRef(null);
@@ -64,6 +66,19 @@ export default function ChecklistPage() {
           </div>
           <p><strong>{completedItems}</strong> of {totalItems} checks</p>
         </div>
+      </section>
+
+      <section className={`runner-readiness ${runner.available ? "is-local" : "is-static"}`}>
+        <div>
+          <p className="eyebrow">Execution mode</p>
+          <strong>{runner.available ? "Local Kali runner connected" : "Static documentation mode"}</strong>
+          <span>{runner.available ? `Commands run under ${runner.workspaceRoot}. Successful runs save evidence and complete the check.` : "Commands cannot execute from a statically hosted browser. Paste or attach each command's result instead."}</span>
+        </div>
+        {runner.available && (
+          <div className="runner-tool-list" aria-label="Local tool readiness">
+            {runner.tools.map((tool) => <span className={tool.ready ? "ready" : "missing"} key={tool.name}>{tool.ready ? "✓" : "×"} {tool.name}</span>)}
+          </div>
+        )}
       </section>
 
       <div className="checklist-toolbar">

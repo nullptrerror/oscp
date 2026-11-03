@@ -11,7 +11,7 @@ const localRunner = () => ({
 });
 
 export default defineConfig(({ mode }) => ({
-  plugins: [react(), ...(mode === "local" ? [localRunner()] : [])],
+  plugins: [react(), ...(mode === "runner" ? [localRunner()] : [])],
   optimizeDeps: {
     entries: ["index.html"],
   },

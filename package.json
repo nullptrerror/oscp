@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:local": "vite --mode local --host 127.0.0.1",
+    "dev:local": "vite --mode runner --host 127.0.0.1",
     "build": "vite build",
     "preview": "vite preview",
     "serve:local": "node server/local-server.mjs",

@@ -6,6 +6,8 @@ import FindingsPage from "./pages/FindingsPage";
 import BackupPage from "./pages/BackupPage";
 import ReportPage from "./pages/ReportPage";
 import ExamClock from "./components/ExamClock";
+import RunnerStatus from "./components/RunnerStatus";
+import { LocalRunnerProvider } from "./context/LocalRunnerContext";
 
 const pages = [
   { to: "/", label: "Checklist" },
@@ -32,6 +34,7 @@ function AppRoutes() {
           ))}
         </nav>
         <div className="topbar-status">
+          <RunnerStatus />
           <ExamClock />
           <div className={`storage-status ${saveState.status}`} title={saveState.message}>
             <span aria-hidden="true" /> {saveState.status === "error" ? "Storage error" : "Local"}
@@ -67,8 +70,10 @@ function AppRoutes() {
 
 export default function App() {
   return (
-    <WorkspaceProvider>
-      <AppRoutes />
-    </WorkspaceProvider>
+    <LocalRunnerProvider>
+      <WorkspaceProvider>
+        <AppRoutes />
+      </WorkspaceProvider>
+    </LocalRunnerProvider>
   );
 }

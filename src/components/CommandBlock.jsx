@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { renderCommand } from "../lib/workspace";
+import CommandResultPanel from "./CommandResultPanel";
 
-export default function CommandBlock({ command, variables, onCopy }) {
+export default function CommandBlock({ command, variables, onCopy, itemId, commandKey, evidence }) {
   const [copied, setCopied] = useState(false);
   const rendered = renderCommand(command.value, variables);
 
@@ -24,6 +25,14 @@ export default function CommandBlock({ command, variables, onCopy }) {
       {rendered.missing.length > 0 && (
         <p className="command-warning">Set {rendered.missing.join(", ")} before running.</p>
       )}
+      <CommandResultPanel
+        itemId={itemId}
+        commandKey={commandKey}
+        commandLabel={command.label}
+        commandText={rendered.command}
+        missing={rendered.missing}
+        entries={evidence}
+      />
     </div>
   );
 }

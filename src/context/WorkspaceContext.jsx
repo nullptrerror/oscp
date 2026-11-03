@@ -108,6 +108,12 @@ export function WorkspaceProvider({ children }) {
           };
         });
       },
+      setCompleted(itemId, value = true) {
+        update((current) => {
+          const key = getItemStateKey(current, itemId);
+          return { ...current, completed: { ...current.completed, [key]: Boolean(value) } };
+        });
+      },
       updateNote(itemId, note) {
         update((current) => {
           const key = getItemStateKey(current, itemId);
@@ -522,6 +528,7 @@ export function WorkspaceProvider({ children }) {
           ));
           return {
             ...current,
+            parserSettings: { ...current.parserSettings, [restored.type]: true },
             ignoredDiscoveries: current.ignoredDiscoveries.filter((entry) => entry.id !== ignoredId),
             discoveries: alreadyPresent ? current.discoveries : [...current.discoveries, restored],
             users: shouldRestoreUser ? [...current.users, {
