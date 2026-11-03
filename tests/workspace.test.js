@@ -31,6 +31,7 @@ test("a backup is normalized without dropping default variables", () => {
   assert.equal(restored.variables.interface, "tun0");
   assert.equal(restored.targets.length, 1);
   assert.deepEqual(restored.accounts, []);
+  assert.deepEqual(restored.nextSteps, {});
 });
 
 test("unsupported backup versions are rejected", () => {
@@ -66,6 +67,17 @@ test("checklist state is scoped to the active target", () => {
 
   workspace.activeTargetId = "target-other";
   assert.equal(getScopedItemValue(workspace.completed, workspace, "svc-smb", false), false);
+});
+
+test("attack-narrative decisions persist when a workspace is normalized", () => {
+  const restored = normalizeWorkspace({
+    version: WORKSPACE_VERSION,
+    notes: { "target-active::svc-smb": "Anonymous access exposed a readable share." },
+    nextSteps: { "target-active::svc-smb": "The share contents justified searching for reusable credentials." },
+  });
+
+  assert.equal(restored.notes["target-active::svc-smb"], "Anonymous access exposed a readable share.");
+  assert.equal(restored.nextSteps["target-active::svc-smb"], "The share contents justified searching for reusable credentials.");
 });
 
 test("the default Kali workspace root is /home/kali/oscp", () => {

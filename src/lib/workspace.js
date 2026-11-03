@@ -27,6 +27,7 @@ export const createDefaultWorkspace = () => ({
   loot: [],
   completed: {},
   notes: {},
+  nextSteps: {},
   evidence: {},
   discoveries: [],
   parserSettings: { ...DEFAULT_PARSER_SETTINGS },
@@ -91,6 +92,7 @@ export function normalizeWorkspace(value) {
     loot: asArray(value.loot),
     completed: asRecord(value.completed),
     notes: asRecord(value.notes),
+    nextSteps: asRecord(value.nextSteps),
     evidence: asRecord(value.evidence),
     discoveries: asArray(value.discoveries).filter((entry) => {
       if (entry.type === "hostname" && ["nmap.org", "www.nmap.org"].includes(String(entry.value).toLowerCase())) return false;

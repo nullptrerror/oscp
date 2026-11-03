@@ -21,7 +21,7 @@ import {
 } from "pdf-lib";
 import { ALL_ITEMS, CHECKLIST } from "../data/checklist.js";
 import { getActiveScope, getTargetItemValue, normalizeWorkspace } from "./workspace.js";
-import { discoveryContext, formatDiscovery, PARSER_TAGS, visibleDiscoveries } from "./evidence.js";
+import { discoveryContext, discoveryKey, formatDiscovery, PARSER_TAGS, visibleDiscoveries } from "./evidence.js";
 import { describeCommand } from "./commandInsights.js";
 import { getOperatorProfile, githubProfile, initials } from "./profile.js";
 import { TERMINAL_THEME, terminalLines } from "./terminalText.js";
@@ -36,7 +36,7 @@ const RIGHT = PAGE_W - 56;
 const CONTENT_W = RIGHT - LEFT;
 const CONTENT_TOP = PAGE_H - 104;
 const CONTENT_BOTTOM = 76;
-const TERMINAL_LINE_LIMIT = 220;
+const TERMINAL_LINE_LIMIT = 18;
 const TOC_ENTRIES_PER_PAGE = 34;
 
 const PALETTE = {
@@ -329,11 +329,12 @@ function targetData(workspace, targetId) {
     ...item,
     completed: Boolean(getTargetItemValue(workspace.completed, scope, item.id, false)),
     note: getTargetItemValue(workspace.notes, scope, item.id, ""),
+    nextStep: getTargetItemValue(workspace.nextSteps, scope, item.id, ""),
     evidence: getTargetItemValue(workspace.evidence, scope, item.id, []).map((entry) => ({
       ...entry,
       discoveries: visibleDiscoveries(entry.discoveries, discoveryOptions),
     })),
-  })).filter((item) => item.completed || item.note || item.evidence.length > 0 || commandHistory.some((command) => command.itemId === item.id));
+  })).filter((item) => item.completed || item.note || item.nextStep || item.evidence.length > 0 || commandHistory.some((command) => command.itemId === item.id));
   const evidence = items.flatMap((item) => item.evidence);
   return {
     target,
@@ -870,16 +871,7 @@ async function buildReportPdf(workspace, targetId, { fonts: fontBytes, rasterize
 
   // ---- 1. Executive summary ---------------------------------------------
   section("Executive Summary");
-  prose(data.report.executiveSummary || "Summarize the compromise path, its impact, and the final level of access here before submission.", { color: data.report.executiveSummary ? PALETTE.body : PALETTE.faint });
-  space(6);
-  eyebrow("Compromise at a glance");
-  keyValues([
-    ["Target", `${targetName}${data.target?.host ? ` (${data.target.host})` : ""}`],
-    ["Local / user proof", data.userProof.length ? `Captured — ${data.userProof.length} screenshot${data.userProof.length === 1 ? "" : "s"}` : "Not captured", { color: data.userProof.length ? PALETTE.accent : PALETTE.warn, bold: true }],
-    ["Root / Admin proof", data.rootProof.length ? `Captured — ${data.rootProof.length} screenshot${data.rootProof.length === 1 ? "" : "s"}` : "Not captured", { color: data.rootProof.length ? PALETTE.accent : PALETTE.warn, bold: true }],
-    ["Credentials recovered", String(data.accounts.length)],
-    ["Steps documented", String(data.items.length)],
-  ]);
+  prose(data.report.executiveSummary || "Explain in plain language whether unauthorized access was achieved, what that access would mean to the organization, and the most important corrective action. Avoid commands, tool names, port numbers, and acronyms.", { color: data.report.executiveSummary ? PALETTE.body : PALETTE.faint });
 
   // ---- 2. Scope and attack surface --------------------------------------
   section("Scope and Attack Surface");
@@ -925,64 +917,35 @@ async function buildReportPdf(workspace, targetId, { fonts: fontBytes, rasterize
     { empty: "No standalone usernames were saved." },
   );
 
-  // ---- 4. Technical walkthrough -----------------------------------------
-  section("Technical Walkthrough");
-  paragraph(span("The run timeline preserves the exact order in which commands were launched, including repeated runs of an earlier checklist command. Notes and other captured evidence follow in checklist order. Terminal colors are preserved from the original output.", { size: 9.4, color: PALETTE.muted }), { after: 12 });
-  if (data.items.length === 0) callout("No steps documented", "No checklist results have been saved for this target yet.", { fg: PALETTE.warn, bg: PALETTE.warnSoft });
+  // ---- 4. Attack narrative ----------------------------------------------
+  section("Attack Narrative");
+  paragraph(span("This section explains the assessment as a chain of decisions: what was being tested, what the evidence established, and why that result justified the next action. Exact commands and short console excerpts are retained in the appendix for reproducibility.", { size: 9.4, color: PALETTE.muted }), { after: 12 });
+  const narrativeItems = data.items.filter((item) => item.note || item.nextStep || item.evidence.some((evidence) => evidence.dataUrl && !PROOF_CATEGORIES.has(evidence.category)));
+  if (narrativeItems.length === 0) callout("Narrative incomplete", "Recorded activity is preserved in the appendix, but no readable attack narrative has been written. Complete the two narrative prompts on the checklist before submission.", { fg: PALETTE.warn, bg: PALETTE.warnSoft });
   const orderedCommands = orderCommandRuns(data.commandHistory);
-  const terminalEvidence = data.items.flatMap((item) => item.evidence).filter((evidence) => evidence.commandRunId);
-  const renderedTerminalEvidenceIds = new Set();
-  if (orderedCommands.length > 0) {
-    subheading("Command run timeline");
-    for (const command of orderedCommands) {
-      const item = data.items.find((candidate) => candidate.id === command.itemId);
-      const insight = describeCommand(command.command, command.label);
-      paragraph(span(item?.title || command.label || "Checklist command", { size: 8, bold: true, color: PALETTE.muted }), { after: 5 });
-      paragraph([span("Purpose  ", { size: 8, bold: true, color: PALETTE.muted }), span(insight.purpose, { size: 8.4, color: PALETTE.body })], { lineHeight: 12, after: 4 });
-      paragraph([span("Returns  ", { size: 8, bold: true, color: PALETTE.muted }), span(insight.returns, { size: 8.4, color: PALETTE.body })], { lineHeight: 12, after: 8 });
-      terminal({
-        title: command.label || "Command",
-        meta: [command.address, formatTimestamp(command.startedAt || command.copiedAt)].filter(Boolean).join(" · "),
-        lines: kaliPrompt(command.command),
-      });
-      for (const evidence of terminalEvidence.filter((candidate) => candidate.commandRunId === command.id)) {
-        renderedTerminalEvidenceIds.add(evidence.id);
-        if (evidence.content) outputBlock(evidence, attachmentNames.get(evidence));
-        parsedFindingsBlock(evidence.discoveries);
-      }
-    }
-  }
   const phaseNumbers = new Map(CHECKLIST.map((phase) => [phase.id, phase.number]));
   let currentPhase = null;
-  for (const item of data.items) {
+  for (const item of narrativeItems) {
     if (item.phaseId !== currentPhase) {
       currentPhase = item.phaseId;
       space(4);
       eyebrow(`Phase ${phaseNumbers.get(item.phaseId) || ""} — ${item.phaseTitle}`, { keep: 140 });
     }
     subheading(item.title);
-    ensure(20);
-    let chipLeft = LEFT;
-    chipLeft += chip(item.completed ? "✓ Complete" : "In progress", item.completed ? { fg: PALETTE.accent, bg: PALETTE.accentSoft } : { fg: PALETTE.warn, bg: PALETTE.warnSoft }, chipLeft, y) + 8;
     const commands = data.commandHistory.filter((command) => command.itemId === item.id);
-    const counts = [commands.length && `${commands.length} command${commands.length === 1 ? "" : "s"}`, item.evidence.length && `${item.evidence.length} evidence item${item.evidence.length === 1 ? "" : "s"}`].filter(Boolean).join("  ·  ");
-    if (counts) ts.draw(page, ts.shape([span(counts, { size: 8, color: PALETTE.muted })]), chipLeft, y, 13);
-    y -= 22;
-    if (item.detail) paragraph(span(item.detail, { size: 9.2, color: PALETTE.muted }), { after: 10 });
-    if (item.note) callout("Operator note", item.note);
+    const objective = item.detail || (commands[0] ? describeCommand(commands[0].command, commands[0].label).purpose : "Review the available evidence for this stage of the assessment.");
+    paragraph([span("Objective  ", { size: 8, bold: true, color: PALETTE.muted }), span(objective, { size: 9, color: PALETTE.body })], { lineHeight: 13, after: 8 });
+    if (item.note) callout("What the evidence established", item.note, { fg: PALETTE.ink, bg: PALETTE.tint });
+    else callout("Narrative needed", "Explain the useful fact established by this step in plain language. Do not repeat the command.", { fg: PALETTE.warn, bg: PALETTE.warnSoft });
+    if (item.nextStep) callout("Why the next action followed", item.nextStep, { fg: PALETTE.accent, bg: PALETTE.accentSoft });
+    else callout("Decision needed", "Explain how the result narrowed the attack path or justified the next test.", { fg: PALETTE.warn, bg: PALETTE.warnSoft });
+    const itemDiscoveries = [...new Map(item.evidence.flatMap((evidence) => evidence.discoveries || []).map((entry) => [discoveryKey(entry), entry])).values()];
+    parsedFindingsBlock(itemDiscoveries);
     for (const evidence of item.evidence) {
-      if (renderedTerminalEvidenceIds.has(evidence.id)) continue;
-      if (evidence.content) {
-        outputBlock(evidence, attachmentNames.get(evidence));
-        parsedFindingsBlock(evidence.discoveries);
-      }
       if (evidence.dataUrl && PROOF_CATEGORIES.has(evidence.category)) {
         paragraph([span("Proof screenshot  ", { size: 8.6, bold: true, color: PALETTE.accent }), span(`${evidence.label} — shown under Proof of Compromise.`, { size: 8.6, color: PALETTE.muted })], { after: 8 });
       } else if (evidence.dataUrl) {
         figure(await loadFigure(evidence.dataUrl, evidence.mimeType), `${item.title} — ${evidence.label}`);
-      }
-      if (!evidence.content && !evidence.dataUrl && evidence.fileDataUrl) {
-        paragraph([span("Attached file  ", { size: 8.4, bold: true, color: PALETTE.muted }), mono(attachmentNames.get(evidence) || evidence.label, { size: 8.2, color: PALETTE.ink })], { after: 8 });
       }
     }
     space(14);
@@ -1012,7 +975,35 @@ async function buildReportPdf(workspace, targetId, { fonts: fontBytes, rasterize
     { empty: "No loot records were saved." },
   );
 
-  // ---- Appendix ------------------------------------------------------------
+  // ---- Appendix: concise command evidence --------------------------------
+  section("Appendix — Commands and Evidence", { startPage: true });
+  paragraph(span(`Commands are listed in execution order. Console output is limited to ${TERMINAL_LINE_LIMIT} lines per result to keep the report readable; complete logs remain embedded as PDF attachments.`, { size: 9.4, color: PALETTE.muted }), { after: 12 });
+  const terminalEvidence = data.items.flatMap((item) => item.evidence).filter((evidence) => evidence.commandRunId);
+  if (orderedCommands.length === 0) callout("No terminal runs", "No commands were launched through the local runner for this target.", { fg: PALETTE.warn, bg: PALETTE.warnSoft });
+  for (const [commandIndex, command] of orderedCommands.entries()) {
+    const item = data.items.find((candidate) => candidate.id === command.itemId);
+    const insight = describeCommand(command.command, command.label);
+    subheading(`${commandIndex + 1}. ${command.label || "Command"}`);
+    paragraph([
+      span(`${item?.title || "Checklist command"}  ·  `, { size: 8, bold: true, color: PALETTE.muted }),
+      span(insight.purpose, { size: 8.4, color: PALETTE.body }),
+    ], { lineHeight: 12, after: 7 });
+    terminal({
+      title: command.label || "Command",
+      meta: [command.address, formatTimestamp(command.startedAt || command.copiedAt)].filter(Boolean).join(" · "),
+      lines: kaliPrompt(command.command),
+    });
+    const results = terminalEvidence.filter((candidate) => candidate.commandRunId === command.id);
+    if (results.length === 0) paragraph(span("No captured console result was linked to this run.", { size: 8, color: PALETTE.warn }), { after: 9 });
+    for (const evidence of results) if (evidence.content) outputBlock(evidence, attachmentNames.get(evidence));
+  }
+  const additionalOutputs = data.items.flatMap((item) => item.evidence).filter((evidence) => evidence.content && !evidence.commandRunId);
+  if (additionalOutputs.length > 0) {
+    subheading("Additional pasted or attached output");
+    for (const evidence of additionalOutputs) outputBlock(evidence, attachmentNames.get(evidence));
+  }
+
+  // ---- Appendix: embedded files ------------------------------------------
   section("Appendix — Embedded Files", { startPage: data.loot.length > 6 });
   paragraph(span(`Open the PDF's attachments panel to extract these files. ${WORKSPACE_ATTACHMENT} restores the complete Fieldnotes workspace through Report → Restore workspace from PDF.`, { size: 9.4, color: PALETTE.muted }), { after: 10 });
   table(

@@ -20,8 +20,8 @@ test("report starters use target-scoped runs, findings, and proof without invent
   workspace.accounts = [{ targetId: "active", username: "svc_backup", secret: "Password1!" }];
 
   const starters = buildReportStarters(workspace, "active");
-  assert.match(starters.executiveSummary, /1 command run/);
-  assert.match(starters.executiveSummary, /No user or administrative proof/);
+  assert.match(starters.executiveSummary, /does not yet demonstrate confirmed unauthorized access/);
+  assert.doesNotMatch(starters.executiveSummary, /command run|TCP port|SMB/i);
   assert.match(starters.scope, /10\.0\.0\.10/);
   assert.match(starters.scope, /53, 445/);
   assert.match(starters.recommendations, /Rotate recovered credentials/);

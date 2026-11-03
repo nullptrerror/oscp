@@ -14,6 +14,8 @@ export default function ChecklistItem({ item, searchActive = false, expandedResu
   const [copiedReminder, setCopiedReminder] = useState(false);
   const commands = useMemo(() => getChecklistCommands(item, workspace), [item, workspace]);
   const unassignedEvidence = evidence.filter((entry) => !entry.commandKey);
+  const finding = getScopedItemValue(workspace.notes, workspace, item.id, "");
+  const nextStep = getScopedItemValue(workspace.nextSteps, workspace, item.id, "");
 
   const toggleComplete = () => {
     if (!completed && evidence.length === 0) {
@@ -38,6 +40,7 @@ export default function ChecklistItem({ item, searchActive = false, expandedResu
           <small>
             {commands.length} {commands.length === 1 ? "command" : "commands"}
             {evidence.length > 0 && ` · ${evidence.length} saved result${evidence.length === 1 ? "" : "s"}`}
+            {finding.trim() && nextStep.trim() && " · narrative ready"}
           </small>
         </button>
         <button type="button" className="disclosure-button" onClick={() => setOpen((value) => !value)} aria-expanded={open} aria-label={`${open ? "Collapse" : "Expand"} ${item.title}`}>
@@ -75,15 +78,31 @@ export default function ChecklistItem({ item, searchActive = false, expandedResu
           </div>
           {copiedReminder && <p className="copy-reminder">After running the command, save its output directly beneath that command.</p>}
 
-          <div className="operator-notes">
-            <label htmlFor={`note-${item.id}`}>Operator note</label>
-            <textarea
-              id={`note-${item.id}`}
-              rows="2"
-              value={getScopedItemValue(workspace.notes, workspace, item.id, "")}
-              onChange={(event) => actions.updateNote(item.id, event.target.value)}
-              placeholder="What changed, what failed, or what to try next…"
-            />
+          <div className="operator-notes narrative-prompts">
+            <div className="narrative-prompt-head">
+              <span>Report narrative</span>
+              <small>Explain the reasoning; the PDF keeps raw commands in an appendix.</small>
+            </div>
+            <label htmlFor={`note-${item.id}`}>
+              <span>What this established</span>
+              <textarea
+                id={`note-${item.id}`}
+                rows="3"
+                value={finding}
+                onChange={(event) => actions.updateNote(item.id, event.target.value)}
+                placeholder="In plain language: what useful fact did the output prove? Include the relevant service, access, weakness, or failed hypothesis—not the command itself."
+              />
+            </label>
+            <label htmlFor={`next-step-${item.id}`}>
+              <span>Why the next action followed</span>
+              <textarea
+                id={`next-step-${item.id}`}
+                rows="3"
+                value={nextStep}
+                onChange={(event) => actions.updateNextStep(item.id, event.target.value)}
+                placeholder="Explain the decision: how did this finding narrow the attack path, and what did it justify testing next?"
+              />
+            </label>
           </div>
           {completionError && <p className="form-error">{completionError}</p>}
           {unassignedEvidence.length > 0 && (

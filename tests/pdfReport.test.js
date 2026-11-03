@@ -69,6 +69,7 @@ test("Unicode fonts render ANSI-colored output, emoji, and the workspace profile
   const bytes = await generateReportPdf(workspace, "target-active", { fonts: await loadFonts(), rasterizeEmoji });
   const pdf = await PDFDocument.load(bytes);
   assert.equal(pdf.getAuthor(), "Zoë Operator");
+  assert.ok(pdf.getPageCount() < 15, "long console output is excerpted instead of expanding the report indefinitely");
   assert.deepEqual(rasterized, ["🔥"]);
   assert.ok(pdf.catalog.get(PDFName.of("Outlines")), "PDF has bookmarks");
   const linkCount = pdf.getPages().reduce((total, page) => total + (page.node.Annots()?.size() ?? 0), 0);

@@ -1,13 +1,5 @@
-import { ALL_ITEMS } from "../data/checklist.js";
 import { visibleDiscoveries } from "./evidence.js";
 import { getActiveScope, getTargetItemValue } from "./workspace.js";
-
-const sentenceList = (values) => {
-  const unique = [...new Set(values.filter(Boolean))];
-  if (unique.length < 2) return unique[0] || "";
-  if (unique.length === 2) return `${unique[0]} and ${unique[1]}`;
-  return `${unique.slice(0, -1).join(", ")}, and ${unique.at(-1)}`;
-};
 
 const portList = (values) => [...new Set(values.flatMap((value) => String(value || "").split(",")).map((value) => value.trim()).filter(Boolean))]
   .sort((left, right) => Number(left) - Number(right));
@@ -23,9 +15,7 @@ export function buildReportStarters(workspace, targetId = workspace.activeTarget
     ignored: workspace.ignoredDiscoveries,
     targetId: target.id,
   });
-  const evidence = ALL_ITEMS.flatMap((item) => getTargetItemValue(workspace.evidence, scope, item.id, []));
   const commandItems = new Set(commands.map((entry) => entry.itemId));
-  const phases = [...new Set(ALL_ITEMS.filter((item) => commandItems.has(item.id)).map((item) => item.phaseTitle.toLowerCase()))];
   const endpoints = target.endpoints?.length ? target.endpoints : [{ address: target.host || workspace.variables.rhost, hostnames: [], tcpPorts: target.port, udpPorts: target.udpPorts }];
   const addresses = [...new Set(endpoints.map((endpoint) => endpoint.address).filter(Boolean))];
   const hostnames = [...new Set(endpoints.flatMap((endpoint) => endpoint.hostnames || []).filter(Boolean))];
@@ -36,21 +26,18 @@ export function buildReportStarters(workspace, targetId = workspace.activeTarget
   const userProof = proof.some((entry) => entry.category === "user-flag");
   const rootProof = proof.some((entry) => entry.category === "root-flag");
   const access = rootProof
-    ? "Administrative/root-level access is supported by saved proof evidence."
+    ? `The assessment showed that an attacker could take full control of ${target.name || "the target"}. With this level of access, an attacker could view or alter sensitive information, disrupt normal operations, and use the system to reach other parts of the environment.`
     : userProof
-      ? "Local user-level access is supported by saved proof evidence; administrative/root-level proof has not yet been saved."
-      : "No user or administrative proof screenshot has been saved yet, so the final access level should not be stated as confirmed.";
-  const activity = phases.length ? sentenceList(phases) : "the recorded checklist activity";
-  const findingSummary = [
-    tcpPorts.length ? `${tcpPorts.length} TCP port${tcpPorts.length === 1 ? "" : "s"}` : "",
-    udpPorts.length ? `${udpPorts.length} UDP port${udpPorts.length === 1 ? "" : "s"}` : "",
-    accounts.length ? `${accounts.length} credential${accounts.length === 1 ? "" : "s"}` : "",
-  ].filter(Boolean);
+      ? `The assessment showed that an attacker could gain unauthorized user-level access to ${target.name || "the target"}. This foothold could expose information available to that user and provide a starting point for attempts to gain broader control.`
+      : `Testing identified areas that require review on ${target.name || "the target"}, but the saved evidence does not yet demonstrate confirmed unauthorized access. The final report should not claim a compromise until the required proof has been captured.`;
+  const credentialImpact = accounts.length
+    ? "Credentials were also recovered during testing. If those credentials are reused or have excessive access, a single weakness could affect additional systems and accounts."
+    : "The primary business concern is the possibility that an exposed weakness could be used to access information or capabilities beyond what an unauthenticated user should have.";
 
   const executiveSummary = [
-    `A penetration test was performed against ${target.name || "the target"}${addresses.length ? ` (${addresses.join(", ")})` : ""}. Recorded terminal activity covered ${activity}, with ${commands.length} command run${commands.length === 1 ? "" : "s"} and ${evidence.length} saved evidence item${evidence.length === 1 ? "" : "s"}.`,
-    `${findingSummary.length ? `Parsed evidence currently records ${sentenceList(findingSummary)}. ` : ""}${access}`,
-    "[Before submission: replace this line with the confirmed initial-access weakness, privilege-escalation path, and practical impact in plain language.]",
+    access,
+    credentialImpact,
+    "[Before submission: add one plain-language sentence describing the weakness that enabled access and the single most important action the organization should take. Avoid tool names, port numbers, commands, and acronyms.]",
   ].join("\n\n");
 
   const scopeLines = [

@@ -276,6 +276,13 @@ button { color: inherit; }
 
 .operator-notes, .results-panel { margin-top: 18px; }
 .operator-notes label, .field-label { display: block; margin: 0 0 7px; color: #c8d3cb; font-size: 0.74rem; font-weight: 760; text-transform: uppercase; letter-spacing: 0.07em; }
+.narrative-prompts { display: grid; gap: 12px; padding: 14px; border: 1px solid #3d4d42; border-radius: 8px; background: #101612; }
+.narrative-prompt-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.narrative-prompt-head > span { color: var(--lime); font-size: 0.74rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.07em; }
+.narrative-prompt-head small { color: var(--muted); font-size: 0.64rem; text-align: right; }
+.operator-notes.narrative-prompts label { display: grid; gap: 7px; margin: 0; }
+.operator-notes.narrative-prompts label > span { color: #c8d3cb; font-size: 0.69rem; font-weight: 760; text-transform: uppercase; letter-spacing: 0.06em; }
+.operator-notes.narrative-prompts textarea { text-transform: none; letter-spacing: normal; }
 textarea, input[type="text"], input[type="password"] { width: 100%; border: 1px solid #334038; border-radius: 6px; outline: 0; color: var(--text); background: #0b0f0c; }
 textarea { padding: 11px 12px; resize: vertical; font-family: var(--mono); font-size: 0.78rem; line-height: 1.55; }
 input[type="text"], input[type="password"] { height: 40px; padding: 0 11px; }

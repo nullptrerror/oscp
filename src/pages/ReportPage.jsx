@@ -65,11 +65,21 @@ export default function ReportPage() {
     const completed = ALL_ITEMS.filter((item) => getScopedItemValue(workspace.completed, workspace, item.id, false)).length;
     const documented = ALL_ITEMS.filter((item) => getScopedItemValue(workspace.evidence, workspace, item.id, []).length > 0).length;
     const proof = getScopedItemValue(workspace.evidence, workspace, "proof-artifacts", []);
-    const terminalRuns = (workspace.commandHistory || []).filter((entry) => entry.targetId === workspace.activeTargetId && entry.source === "local runner").length;
+    const targetRuns = (workspace.commandHistory || []).filter((entry) => entry.targetId === workspace.activeTargetId && entry.source === "local runner");
+    const activityItems = [...new Set([
+      ...targetRuns.map((entry) => entry.itemId),
+      ...ALL_ITEMS.filter((item) => getScopedItemValue(workspace.evidence, workspace, item.id, []).some((entry) => !["user-flag", "root-flag"].includes(entry.category))).map((item) => item.id),
+    ])];
+    const narrated = activityItems.filter((itemId) => (
+      getScopedItemValue(workspace.notes, workspace, itemId, "").trim()
+      && getScopedItemValue(workspace.nextSteps, workspace, itemId, "").trim()
+    )).length;
     return {
       completed,
       documented,
-      terminalRuns,
+      terminalRuns: targetRuns.length,
+      narrated,
+      narrativeTotal: activityItems.length,
       userFlag: proof.some((entry) => entry.category === "user-flag"),
       rootFlag: proof.some((entry) => entry.category === "root-flag"),
     };
@@ -77,9 +87,10 @@ export default function ReportPage() {
 
   const checks = [
     { label: "Name and OSID", done: Boolean(profile.name && profile.osid), hint: "Fill in the operator profile." },
-    { label: "Executive summary", done: Boolean(report.executiveSummary?.trim()), hint: "Two or three sentences on the attack path and impact." },
+    { label: "Executive summary", done: Boolean(report.executiveSummary?.trim()), hint: "Explain the access and business impact in plain language; omit tools, ports, and command counts." },
     { label: "Steps with evidence", done: readiness.documented > 0, detail: `${readiness.documented}`, hint: "Save command output on the checklist." },
     { label: "Terminal runs", done: readiness.terminalRuns > 0, detail: `${readiness.terminalRuns}`, hint: "Run commands from the checklist so their exact arguments and results are recorded." },
+    { label: "Reasoning documented", done: readiness.narrativeTotal > 0 && readiness.narrated === readiness.narrativeTotal, detail: `${readiness.narrated}/${readiness.narrativeTotal}`, hint: "For every tested step, write what the result established and why the next action followed." },
     { label: "User / local proof", done: readiness.userFlag, hint: "Screenshot with local.txt and the IP address.", action: () => userFlagRef.current?.click(), actionLabel: "Add" },
     { label: "Root / Admin proof", done: readiness.rootFlag, hint: "Screenshot with proof.txt and the IP address.", action: () => rootFlagRef.current?.click(), actionLabel: "Add" },
     { label: "Proof screenshot verified", done: Boolean(report.proofVerified), hint: "Confirm original location, interactive shell, identity, IP, and proof contents are visible." },
@@ -243,8 +254,8 @@ export default function ReportPage() {
             <label><span>Report title</span><input type="text" value={report.title || ""} onChange={(event) => actions.updateReport({ title: event.target.value })} placeholder={`${targetName} Penetration Test Report`} /></label>
             <label>
               <span>Executive summary</span>
-              <textarea rows="6" value={report.executiveSummary || ""} onChange={(event) => actions.updateReport({ executiveSummary: event.target.value })} placeholder="Summarize the compromise path, impact, and final access in plain language." />
-              <small className="field-hint">Blank lines start new paragraphs. Lines starting with "-" or "1." become lists in the PDF.</small>
+              <textarea rows="6" value={report.executiveSummary || ""} onChange={(event) => actions.updateReport({ executiveSummary: event.target.value })} placeholder="For a non-technical reader: what access was achieved, why it matters to the organization, and what should be fixed first?" />
+              <small className="field-hint">Write for a manager. Avoid commands, tool names, ports, acronyms, and a chronological play-by-play. Blank lines start new paragraphs.</small>
             </label>
             <label><span>Scope</span><textarea rows="3" value={report.scope || ""} onChange={(event) => actions.updateReport({ scope: event.target.value })} placeholder="Target IP, hostname, domain, and any scope limitations." /></label>
             <label><span>Recommendations</span><textarea rows="5" value={report.recommendations || ""} onChange={(event) => actions.updateReport({ recommendations: event.target.value })} placeholder={"1. Fix for the initial foothold\n2. Fix for the privilege escalation"} /></label>

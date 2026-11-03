@@ -120,6 +120,12 @@ export function WorkspaceProvider({ children }) {
           return { ...current, notes: { ...current.notes, [key]: note } };
         });
       },
+      updateNextStep(itemId, nextStep) {
+        update((current) => {
+          const key = getItemStateKey(current, itemId);
+          return { ...current, nextSteps: { ...current.nextSteps, [key]: nextStep } };
+        });
+      },
       addEvidence(itemId, evidence) {
         update((current) => {
           const key = getItemStateKey(current, itemId);
@@ -359,6 +365,7 @@ export function WorkspaceProvider({ children }) {
             commandHistory: current.commandHistory.map(retarget),
             completed: mergeScopedState(current.completed, sourceId, destinationId, (destinationValue, sourceValue) => Boolean(destinationValue || sourceValue)),
             notes: mergeScopedState(current.notes, sourceId, destinationId, (destinationValue, sourceValue) => [destinationValue, sourceValue].filter(Boolean).join("\n\n")),
+            nextSteps: mergeScopedState(current.nextSteps, sourceId, destinationId, (destinationValue, sourceValue) => [destinationValue, sourceValue].filter(Boolean).join("\n\n")),
             evidence: mergeScopedState(current.evidence, sourceId, destinationId, (destinationValue = [], sourceValue = []) => [...destinationValue, ...sourceValue.map(retarget)]),
             reports,
           };
