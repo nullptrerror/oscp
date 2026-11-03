@@ -89,6 +89,18 @@ test("parser switches and target-scoped ignore rules filter discoveries", () => 
   assert.deepEqual(visibleDiscoveries([{ type: "user", value: "Policies" }], { ignored, targetId: "other" }).length, 1);
 });
 
+test("flags and Kerberos ticket material are not mislabeled as NTLM hashes", () => {
+  const flag = "ed7471e27363eaa77b804cd997ac8fe2";
+  const ticket = "$krb5tgs$23$*Administrator$ACTIVE.HTB$svc/host*$2cd835587a22aca9883346c32d3ea3ae";
+  assert.deepEqual(parseEvidence(`${flag}\n`, "user.txt").filter((entry) => entry.type === "flag"), [
+    { type: "flag", value: flag, kind: "user" },
+  ]);
+  assert.equal(parseEvidence(ticket, "tgs.hashes").some((entry) => entry.type === "ntlm-hash"), false);
+  assert.deepEqual(parseEvidence("Administrator:500:aad3b435b51404eeaad3b435b51404ee:8846f7eaee8fb117ad06bdd830b7586c:::")
+    .filter((entry) => entry.type === "ntlm-hash")
+    .map((entry) => entry.value), ["8846f7eaee8fb117ad06bdd830b7586c"]);
+});
+
 test("scan and SMB output associate hostnames with endpoint addresses", () => {
   const output = `Nmap scan report for dc.active.htb (10.129.81.60)
 SMB 10.129.81.60 445 DC [*] Windows (name:DC) (domain:active.htb)`;

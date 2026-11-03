@@ -21,6 +21,7 @@ export const PARSER_TAGS = [
   { type: "share", label: "SMB shares" },
   { type: "kerberos-ticket", label: "Kerberos tickets" },
   { type: "ntlm-hash", label: "NTLM hashes" },
+  { type: "flag", label: "Flags" },
   { type: "gpp-cpassword", label: "GPP cpasswords" },
   { type: "cve", label: "CVEs" },
   { type: "url", label: "URLs" },
@@ -99,7 +100,11 @@ export function parseEvidence(content = "", filename = "") {
 
   for (const match of text.matchAll(/\$krb5tgs\$\d+\$\*?([^$*:\s]+)[*$]/gi)) add("kerberos-ticket", match[0], { username: match[1], ticket: "TGS" });
   for (const match of text.matchAll(/\$krb5asrep\$\d+\$([^@:]+)@([^:]+):[^\s]+/gi)) add("kerberos-ticket", match[0], { username: match[1], domain: match[2], ticket: "AS-REP" });
-  for (const match of text.matchAll(/\b[a-f0-9]{32}\b/gi)) add("ntlm-hash", match[0].toLowerCase());
+  const flagFile = String(filename).match(/^(user|local|root|proof)(?:[-_.]?flag)?\.txt$/i);
+  if (flagFile) {
+    const flag = text.match(/^\s*([a-f0-9]{32,64})\s*$/im);
+    if (flag) add("flag", flag[1].toLowerCase(), { kind: /root|proof/i.test(flagFile[1]) ? "root" : "user" });
+  }
   for (const match of text.matchAll(/\bcpassword\s*=\s*["']([^"']+)["']/gi)) add("gpp-cpassword", match[1]);
 
   for (const line of text.split(/\r?\n/)) {
@@ -116,6 +121,10 @@ export function parseEvidence(content = "", filename = "") {
     if (toolHost) add("endpoint", toolHost[1], { confidence: "high", source: "service-host" });
     const cracked = line.match(/^\$krb5(?:tgs|asrep)\$\d+\$\*?([^$*:\s]+)[*$].*:(\S+)$/i);
     if (cracked) add("credential", `${cracked[1]}:${cracked[2]}`, { username: cracked[1], secret: cracked[2], source: filename || "Kerberos crack" });
+    const labeledNtHash = line.match(/\b(?:ntlm|nt[ _-]?hash|nthash)\s*[:=]\s*([a-f0-9]{32})\b/i);
+    if (labeledNtHash) add("ntlm-hash", labeledNtHash[1].toLowerCase());
+    const secretsDump = line.match(/^([^:\s]+):\d+:([a-f0-9]{32}):([a-f0-9]{32}):::/i);
+    if (secretsDump) add("ntlm-hash", secretsDump[3].toLowerCase(), { username: secretsDump[1] });
     const explicit = line.match(/\b([A-Za-z0-9_.-]+)\\([A-Za-z0-9.$_-]+):([^\s]+)\b/);
     if (explicit && !/STATUS_LOGON_FAILURE|STATUS_ACCOUNT_LOCKED_OUT/i.test(line)) {
       add("credential", `${explicit[1]}\\${explicit[2]}:${explicit[3]}`, { domain: explicit[1], username: explicit[2], secret: explicit[3], source: filename || "command output" });

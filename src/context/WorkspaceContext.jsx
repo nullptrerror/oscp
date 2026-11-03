@@ -481,14 +481,13 @@ export function WorkspaceProvider({ children }) {
       ignoreDiscovery(discovery) {
         update((current) => {
           const targetId = discovery.targetId ?? current.activeTargetId;
+          const { id: sourceDiscoveryId, ...snapshot } = discovery;
           const rule = {
+            ...snapshot,
             id: createId("ignored"),
             createdAt: new Date().toISOString(),
             targetId,
-            type: discovery.type,
-            value: discovery.value,
-            ...(discovery.protocol ? { protocol: discovery.protocol } : {}),
-            ...(discovery.address ? { address: discovery.address } : {}),
+            ...(sourceDiscoveryId ? { sourceDiscoveryId } : {}),
           };
           const sameRule = (entry) => entry.targetId === targetId && discoveryKey(entry) === discoveryKey(rule);
           return {
@@ -504,10 +503,38 @@ export function WorkspaceProvider({ children }) {
         });
       },
       restoreIgnoredDiscovery(id) {
-        update((current) => ({
-          ...current,
-          ignoredDiscoveries: current.ignoredDiscoveries.filter((entry) => entry.id !== id),
-        }));
+        update((current) => {
+          const ignored = current.ignoredDiscoveries.find((entry) => entry.id === id);
+          if (!ignored) return current;
+          const target = current.targets.find((entry) => entry.id === ignored.targetId);
+          const { id: ignoredId, sourceDiscoveryId, ...snapshot } = ignored;
+          const restored = {
+            ...snapshot,
+            id: createId("discovery"),
+            restoredAt: new Date().toISOString(),
+            targetName: snapshot.targetName || target?.name || current.variables.targetName,
+          };
+          const alreadyPresent = current.discoveries.some((entry) => (
+            entry.targetId === restored.targetId && discoveryKey(entry) === discoveryKey(restored)
+          ));
+          const shouldRestoreUser = restored.type === "user" && !current.users.some((entry) => (
+            entry.targetId === restored.targetId && entry.username?.toLowerCase() === String(restored.value).toLowerCase()
+          ));
+          return {
+            ...current,
+            ignoredDiscoveries: current.ignoredDiscoveries.filter((entry) => entry.id !== ignoredId),
+            discoveries: alreadyPresent ? current.discoveries : [...current.discoveries, restored],
+            users: shouldRestoreUser ? [...current.users, {
+              id: createId("user"),
+              createdAt: new Date().toISOString(),
+              targetId: restored.targetId,
+              target: target?.name || current.variables.targetName,
+              domain: restored.domain || target?.domain || current.variables.domain,
+              username: restored.value,
+              source: "restored parser finding",
+            }] : current.users,
+          };
+        });
       },
       deleteRecord(kind, id) {
         if (!['accounts', 'users', 'loot'].includes(kind)) return;
