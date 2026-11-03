@@ -10,7 +10,7 @@ import {
   normalizeWorkspace,
   saveWorkspace,
 } from "../lib/workspace";
-import { discoveriesForChecklistItem, guidanceForDiscoveries, mergePortLists, parseEvidence } from "../lib/evidence";
+import { discoveriesForChecklistItem, discoveryKey, guidanceForDiscoveries, mergePortLists, parseEvidence, visibleDiscoveries } from "../lib/evidence";
 import { stripAnsi } from "../lib/terminalText";
 
 const WorkspaceContext = createContext(null);
@@ -118,10 +118,17 @@ export function WorkspaceProvider({ children }) {
         update((current) => {
           const key = getItemStateKey(current, itemId);
           const target = current.targets.find((entry) => entry.id === current.activeTargetId);
-          const parsed = discoveriesForChecklistItem(
-            itemId,
-            evidence.discoveries ?? parseEvidence(stripAnsi(evidence.content), evidence.filename || evidence.label),
-            { lhost: current.variables.lhost },
+          const parsed = visibleDiscoveries(
+            discoveriesForChecklistItem(
+              itemId,
+              evidence.discoveries ?? parseEvidence(stripAnsi(evidence.content), evidence.filename || evidence.label),
+              { lhost: current.variables.lhost },
+            ),
+            {
+              settings: current.parserSettings,
+              ignored: current.ignoredDiscoveries,
+              targetId: current.activeTargetId,
+            },
           );
           const guidance = guidanceForDiscoveries(parsed);
           const createdAt = new Date().toISOString();
@@ -342,6 +349,7 @@ export function WorkspaceProvider({ children }) {
             users: current.users.map(retarget),
             loot: current.loot.map(retarget),
             discoveries: current.discoveries.map(retarget),
+            ignoredDiscoveries: current.ignoredDiscoveries.map(retarget),
             commandHistory: current.commandHistory.map(retarget),
             completed: mergeScopedState(current.completed, sourceId, destinationId, (destinationValue, sourceValue) => Boolean(destinationValue || sourceValue)),
             notes: mergeScopedState(current.notes, sourceId, destinationId, (destinationValue, sourceValue) => [destinationValue, sourceValue].filter(Boolean).join("\n\n")),
@@ -463,6 +471,43 @@ export function WorkspaceProvider({ children }) {
           const scope = getActiveScope(current);
           return { ...current, reports: { ...current.reports, [scope]: { ...(current.reports[scope] ?? {}), ...patch } } };
         });
+      },
+      updateParserSetting(type, enabled) {
+        update((current) => ({
+          ...current,
+          parserSettings: { ...current.parserSettings, [type]: Boolean(enabled) },
+        }));
+      },
+      ignoreDiscovery(discovery) {
+        update((current) => {
+          const targetId = discovery.targetId ?? current.activeTargetId;
+          const rule = {
+            id: createId("ignored"),
+            createdAt: new Date().toISOString(),
+            targetId,
+            type: discovery.type,
+            value: discovery.value,
+            ...(discovery.protocol ? { protocol: discovery.protocol } : {}),
+            ...(discovery.address ? { address: discovery.address } : {}),
+          };
+          const sameRule = (entry) => entry.targetId === targetId && discoveryKey(entry) === discoveryKey(rule);
+          return {
+            ...current,
+            ignoredDiscoveries: current.ignoredDiscoveries.some(sameRule)
+              ? current.ignoredDiscoveries
+              : [...current.ignoredDiscoveries, rule],
+            discoveries: current.discoveries.filter((entry) => !sameRule(entry)),
+            users: discovery.type === "user"
+              ? current.users.filter((entry) => !(entry.targetId === targetId && entry.username?.toLowerCase() === String(discovery.value).toLowerCase()))
+              : current.users,
+          };
+        });
+      },
+      restoreIgnoredDiscovery(id) {
+        update((current) => ({
+          ...current,
+          ignoredDiscoveries: current.ignoredDiscoveries.filter((entry) => entry.id !== id),
+        }));
       },
       deleteRecord(kind, id) {
         if (!['accounts', 'users', 'loot'].includes(kind)) return;

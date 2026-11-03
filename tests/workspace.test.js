@@ -45,6 +45,17 @@ test("new workspaces have independent variable objects", () => {
   assert.notEqual(first.variables.rhost, second.variables.rhost);
 });
 
+test("parser settings and ignored findings persist with safe defaults", () => {
+  const restored = normalizeWorkspace({
+    version: WORKSPACE_VERSION,
+    parserSettings: { cve: false },
+    ignoredDiscoveries: [{ type: "user", value: "Policies", targetId: "active" }],
+  });
+  assert.equal(restored.parserSettings.cve, false);
+  assert.equal(restored.parserSettings.user, true);
+  assert.equal(restored.ignoredDiscoveries[0].value, "Policies");
+});
+
 test("checklist state is scoped to the active target", () => {
   const workspace = createDefaultWorkspace();
   workspace.activeTargetId = "target-active";

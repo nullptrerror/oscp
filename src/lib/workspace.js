@@ -1,4 +1,5 @@
 import { DEFAULT_VARIABLES } from "../data/checklist.js";
+import { DEFAULT_PARSER_SETTINGS } from "./evidence.js";
 
 export const STORAGE_KEY = "fieldnotes.oscp.workspace.v1";
 export const WORKSPACE_VERSION = 1;
@@ -28,6 +29,8 @@ export const createDefaultWorkspace = () => ({
   notes: {},
   evidence: {},
   discoveries: [],
+  parserSettings: { ...DEFAULT_PARSER_SETTINGS },
+  ignoredDiscoveries: [],
   commandHistory: [],
   reports: {},
   profile: {},
@@ -94,6 +97,8 @@ export function normalizeWorkspace(value) {
       if (["ip", "endpoint"].includes(entry.type) && entry.value === variables.lhost) return false;
       return true;
     }),
+    parserSettings: { ...DEFAULT_PARSER_SETTINGS, ...asRecord(value.parserSettings) },
+    ignoredDiscoveries: asArray(value.ignoredDiscoveries),
     commandHistory: asArray(value.commandHistory),
     reports: asRecord(value.reports),
     profile: asRecord(value.profile),

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { discoveriesForChecklistItem, guidanceForDiscoveries, mergePortLists, parseEvidence, routeEvidence } from "../src/lib/evidence.js";
+import { discoveriesForChecklistItem, guidanceForDiscoveries, mergePortLists, parseEvidence, routeEvidence, visibleDiscoveries } from "../src/lib/evidence.js";
 
 test("nmap output yields ports and useful guidance", () => {
   const discoveries = parseEvidence("445/tcp open microsoft-ds\n5985/tcp open wsman", "tcp-detail.nmap");
@@ -76,6 +76,17 @@ userName : active.htb\\SVC_TGS`;
   const users = parseEvidence(output).filter((entry) => entry.type === "user");
   assert.deepEqual(users.map((entry) => entry.value), ["SVC_TGS"]);
   assert.equal(users[0].domain, "active.htb");
+});
+
+test("parser switches and target-scoped ignore rules filter discoveries", () => {
+  const discoveries = [
+    { type: "user", value: "Policies", targetId: "active" },
+    { type: "user", value: "alice", targetId: "other" },
+    { type: "cve", value: "CVE-2024-12345", targetId: "active" },
+  ];
+  const ignored = [{ type: "user", value: "Policies", targetId: "active" }];
+  assert.deepEqual(visibleDiscoveries(discoveries, { ignored, settings: { cve: false } }), [discoveries[1]]);
+  assert.deepEqual(visibleDiscoveries([{ type: "user", value: "Policies" }], { ignored, targetId: "other" }).length, 1);
 });
 
 test("scan and SMB output associate hostnames with endpoint addresses", () => {

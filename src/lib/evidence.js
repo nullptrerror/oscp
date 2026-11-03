@@ -11,6 +11,8 @@ export const mergePortLists = (existing, found) => [...new Set([
 export const PARSER_TAGS = [
   { type: "port", label: "Ports" },
   { type: "endpoint", label: "Targets" },
+  { type: "ip", label: "Other IPs" },
+  { type: "local-ip", label: "VPN address" },
   { type: "hostname", label: "Hostnames" },
   { type: "domain", label: "Domains" },
   { type: "user", label: "Users" },
@@ -32,6 +34,24 @@ export const discoveryKey = (entry) => [
   entry.address || "",
   String(entry.value || "").toLowerCase(),
 ].join(":");
+
+export const isParserTagEnabled = (type, settings = DEFAULT_PARSER_SETTINGS) => settings?.[type] !== false;
+
+export function isDiscoveryIgnored(discovery, ignored = [], targetId = null) {
+  const scope = discovery.targetId ?? targetId;
+  const key = discoveryKey(discovery);
+  return ignored.some((entry) => (
+    (!entry.targetId || entry.targetId === scope)
+    && discoveryKey(entry) === key
+  ));
+}
+
+export function visibleDiscoveries(discoveries = [], { settings, ignored, targetId } = {}) {
+  return discoveries.filter((entry) => (
+    isParserTagEnabled(entry.type, settings)
+    && !isDiscoveryIgnored(entry, ignored, targetId)
+  ));
+}
 
 const unique = (items) => {
   const seen = new Set();
