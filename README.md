@@ -40,8 +40,12 @@ If Vite reports that it cannot resolve `pdf-lib` after pulling newer commits, st
 4. Work down the checklist. Copying a command records the exact rendered command, endpoint, and time for the final report.
 5. Paste, upload, or drag command output onto the item. The global evidence inbox routes common Nmap, SMB, Kerberos, web, and proof files automatically.
 6. Review parsed ports, domains, credentials, hashes, tickets, endpoints, and copied commands under **Findings**.
-7. Attach user and root/Administrator proof screenshots under **Report**, write the short narrative, and generate the machine PDF.
+7. Fill in the operator profile under **Report** once (name, OSID, GitHub, photo — shared by every machine), attach user and root/Administrator proof screenshots, write the short narrative, and generate the machine PDF.
 8. Import that PDF on another machine to restore the full workspace. JSON export remains available as a fallback under **Backup**.
+
+The PDF has a cover page, clickable contents and bookmarks, and a header on every page with your circular profile photo, name, OSID, and linked GitHub profile. Commands and output appear as dark terminal blocks that keep ANSI colors (16/256/truecolor), Unicode box drawing, and emoji. Save output with colors intact (for example `nxc ... | tee out.log`, or `script -q out.log`) to keep them. Fonts ship with the app (DejaVu), so export works offline. Emoji are drawn with the system color-emoji font (`fonts-noto-color-emoji` on Kali). CJK text is not covered by the bundled fonts.
+
+The exam clock in the top bar counts down the exam window and then the report deadline. Its start time and length are editable and saved with the workspace. Press `/` on the checklist to jump to search.
 
 A checklist item requires a pasted or uploaded result before it can be marked complete. A short note describing a failed or empty result is enough; the goal is to preserve what was actually tested.
 

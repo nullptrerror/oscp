@@ -4,6 +4,7 @@ import { getScopedItemValue } from "../lib/workspace";
 import { fileToEvidence, formatDiscovery } from "../lib/evidence";
 import { getChecklistCommands } from "../lib/checklistCommands";
 import CommandBlock from "./CommandBlock";
+import TerminalOutput from "./TerminalOutput";
 
 const MAX_RESULT_SIZE = 1024 * 1024;
 
@@ -177,7 +178,7 @@ export default function ChecklistItem({ item, searchActive = false }) {
                       <time>{new Date(entry.createdAt).toLocaleString()}</time>
                     </summary>
                     {entry.dataUrl && <img className="evidence-image" src={entry.dataUrl} alt={entry.label} />}
-                    {entry.content && <pre>{entry.content}</pre>}
+                    {entry.content && <TerminalOutput content={entry.content} />}
                     {entry.discoveries?.length > 0 && (
                       <div className="discovery-chips">
                         {entry.discoveries.map((discovery) => (

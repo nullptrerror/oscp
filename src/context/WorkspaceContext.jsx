@@ -11,6 +11,7 @@ import {
   saveWorkspace,
 } from "../lib/workspace";
 import { discoveriesForChecklistItem, guidanceForDiscoveries, mergePortLists, parseEvidence } from "../lib/evidence";
+import { stripAnsi } from "../lib/terminalText";
 
 const WorkspaceContext = createContext(null);
 
@@ -119,7 +120,7 @@ export function WorkspaceProvider({ children }) {
           const target = current.targets.find((entry) => entry.id === current.activeTargetId);
           const parsed = discoveriesForChecklistItem(
             itemId,
-            evidence.discoveries ?? parseEvidence(evidence.content, evidence.filename || evidence.label),
+            evidence.discoveries ?? parseEvidence(stripAnsi(evidence.content), evidence.filename || evidence.label),
             { lhost: current.variables.lhost },
           );
           const guidance = guidanceForDiscoveries(parsed);
@@ -450,6 +451,12 @@ export function WorkspaceProvider({ children }) {
             }],
           };
         });
+      },
+      updateProfile(patch) {
+        update((current) => ({ ...current, profile: { ...(current.profile ?? {}), ...patch } }));
+      },
+      updateExam(patch) {
+        update((current) => ({ ...current, exam: { ...(current.exam ?? {}), ...patch } }));
       },
       updateReport(patch) {
         update((current) => {

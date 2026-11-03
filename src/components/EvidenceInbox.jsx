@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { ALL_ITEMS } from "../data/checklist";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { fileToEvidence, routeEvidence } from "../lib/evidence";
+import { stripAnsi } from "../lib/terminalText";
 
 const itemTitles = Object.fromEntries(ALL_ITEMS.map((item) => [item.id, item.title]));
 
@@ -17,7 +18,7 @@ export default function EvidenceInbox() {
     for (const file of files) {
       try {
         const evidence = await fileToEvidence(file);
-        const itemId = routeEvidence(file.name, evidence.content);
+        const itemId = routeEvidence(file.name, stripAnsi(evidence.content));
         actions.addEvidence(itemId, evidence);
         routed.push(`${file.name} → ${itemTitles[itemId] || itemId}`);
       } catch (error) {

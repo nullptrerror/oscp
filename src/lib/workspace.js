@@ -30,6 +30,8 @@ export const createDefaultWorkspace = () => ({
   discoveries: [],
   commandHistory: [],
   reports: {},
+  profile: {},
+  exam: {},
 });
 
 const isRecord = (value) => value && typeof value === "object" && !Array.isArray(value);
@@ -94,6 +96,8 @@ export function normalizeWorkspace(value) {
     }),
     commandHistory: asArray(value.commandHistory),
     reports: asRecord(value.reports),
+    profile: asRecord(value.profile),
+    exam: asRecord(value.exam),
   };
 }
 

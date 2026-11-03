@@ -8,10 +8,35 @@ export const mergePortLists = (existing, found) => [...new Set([
   .sort((a, b) => Number(a) - Number(b))
   .join(",");
 
+export const PARSER_TAGS = [
+  { type: "port", label: "Ports" },
+  { type: "endpoint", label: "Targets" },
+  { type: "hostname", label: "Hostnames" },
+  { type: "domain", label: "Domains" },
+  { type: "user", label: "Users" },
+  { type: "group", label: "Groups" },
+  { type: "credential", label: "Credentials" },
+  { type: "share", label: "SMB shares" },
+  { type: "kerberos-ticket", label: "Kerberos tickets" },
+  { type: "ntlm-hash", label: "NTLM hashes" },
+  { type: "gpp-cpassword", label: "GPP cpasswords" },
+  { type: "cve", label: "CVEs" },
+  { type: "url", label: "URLs" },
+];
+
+export const DEFAULT_PARSER_SETTINGS = Object.fromEntries(PARSER_TAGS.map(({ type }) => [type, true]));
+
+export const discoveryKey = (entry) => [
+  entry.type,
+  entry.protocol || "",
+  entry.address || "",
+  String(entry.value || "").toLowerCase(),
+].join(":");
+
 const unique = (items) => {
   const seen = new Set();
   return items.filter((item) => {
-    const key = `${item.type}:${item.protocol || ""}:${item.address || ""}:${String(item.value).toLowerCase()}`;
+    const key = discoveryKey(item);
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -50,7 +75,6 @@ export function parseEvidence(content = "", filename = "") {
     const hostname = match[1].toLowerCase();
     if (!["nmap.org", "www.nmap.org"].includes(hostname)) add("url", match[0]);
   }
-  for (const match of text.matchAll(/\bCVE-\d{4}-\d{4,7}\b/gi)) add("cve", match[0].toUpperCase());
   for (const match of text.matchAll(/^Disk\|([^|\r\n]+)\|/gim)) add("share", match[1]);
 
   for (const match of text.matchAll(/\$krb5tgs\$\d+\$\*?([^$*:\s]+)[*$]/gi)) add("kerberos-ticket", match[0], { username: match[1], ticket: "TGS" });
@@ -59,6 +83,10 @@ export function parseEvidence(content = "", filename = "") {
   for (const match of text.matchAll(/\bcpassword\s*=\s*["']([^"']+)["']/gi)) add("gpp-cpassword", match[1]);
 
   for (const line of text.split(/\r?\n/)) {
+    const negativeFinding = /\b(?:false|not vulnerable|not affected|could not|cannot|failed|failure|error|timed?\s*out|unreachable|not found|no match)\b/i.test(line);
+    if (!negativeFinding) {
+      for (const match of line.matchAll(/\bCVE-\d{4}-\d{4,7}\b/gi)) add("cve", match[0].toUpperCase());
+    }
     const smbIdentity = line.match(/\bSMB\s+((?:\d{1,3}\.){3}\d{1,3}).*\(name:([^\s)]+)\).*\(domain:([^\s)]+)\)/i);
     if (smbIdentity) {
       add("endpoint", smbIdentity[1], { confidence: "high", source: "smb-host" });
@@ -73,12 +101,13 @@ export function parseEvidence(content = "", filename = "") {
       add("credential", `${explicit[1]}\\${explicit[2]}:${explicit[3]}`, { domain: explicit[1], username: explicit[2], secret: explicit[3], source: filename || "command output" });
     }
     const user = line.match(/^\s*(?:user(?:name)?|samaccountname)\s*[:=]\s*([^\s,;]+)/i);
-    if (user) add("user", user[1]);
-    const nxcUser = line.match(/^(?:SMB|LDAP)\s+\S+\s+\d+\s+\S+\s+([A-Za-z0-9._$-]+)\s+/i);
-    if (nxcUser && !/^(?:username|[-*+]+)$/i.test(nxcUser[1]) && !nxcUser[1].endsWith("$")) add("user", nxcUser[1]);
-    for (const principal of line.matchAll(/\b([A-Za-z0-9][A-Za-z0-9_.-]{1,})\\([A-Za-z0-9._$-]+)\b/g)) {
-      if (!principal[2].endsWith("$")) add("user", principal[2], { domain: principal[1] });
+    if (user) {
+      const principal = user[1].match(/^([^\\]+)\\(.+)$/);
+      if (principal && !principal[2].endsWith("$")) add("user", principal[2], { domain: principal[1] });
+      else if (!user[1].endsWith("$")) add("user", user[1]);
     }
+    const nxcUser = line.match(/^(?:SMB|LDAP)\s+(?:\d{1,3}\.){3}\d{1,3}\s+\d+\s+\S+\s+([A-Za-z0-9._$-]+)\s+(?:\d{4}-\d{2}-\d{2}|badpwdcount\b)/i);
+    if (nxcUser && !nxcUser[1].endsWith("$")) add("user", nxcUser[1]);
     const group = line.match(/^\s*(?:group|memberof)\s*[:=]\s*(.+)$/i);
     if (group) add("group", group[1]);
   }

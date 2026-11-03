@@ -4,6 +4,7 @@ import { useWorkspace } from "../context/WorkspaceContext";
 import { getScopedItemValue } from "../lib/workspace";
 import { formatDiscovery } from "../lib/evidence";
 import { credentialVariables } from "../lib/credentials";
+import TerminalOutput from "../components/TerminalOutput";
 
 const EMPTY_ACCOUNT = { target: "", domain: "", username: "", secret: "", source: "", status: "untested" };
 const EMPTY_LOOT = { target: "", label: "", location: "", value: "" };
@@ -199,7 +200,7 @@ export default function FindingsPage() {
                   <time>{new Date(entry.createdAt).toLocaleString()}</time>
                 </summary>
                 {entry.dataUrl && <img className="evidence-image" src={entry.dataUrl} alt={entry.label} />}
-                {entry.content && <pre>{entry.content}</pre>}
+                {entry.content && <TerminalOutput content={entry.content} />}
                 <p>{entry.phaseTitle}</p>
               </details>
             ))}

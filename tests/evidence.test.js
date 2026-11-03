@@ -55,6 +55,29 @@ active.htb\\alice`;
   assert.deepEqual(users, ["SVC_TGS", "Administrator", "alice"]);
 });
 
+test("negative and errored Nmap script results do not become CVE findings", () => {
+  const output = `Host script results:
+|_smb-vuln-ms10-054: false
+|_samba-vuln-cve-2012-1182: Could not negotiate a connection: ERROR
+| smb-vuln-example:
+|   State: VULNERABLE
+|_  IDs: CVE:CVE-2024-12345`;
+  const cves = parseEvidence(output).filter((entry) => entry.type === "cve").map((entry) => entry.value);
+  assert.deepEqual(cves, ["CVE-2024-12345"]);
+});
+
+test("SMB paths and share tables are not interpreted as usernames", () => {
+  const output = `SMB 10.129.81.76 445 DC [*] Enumerated shares
+SMB 10.129.81.76 445 DC Share Permissions Remark
+SMB 10.129.81.76 445 DC NETLOGON Logon server share
+getting file \\active.htb\\Policies\\MACHINE\\Preferences\\Groups\\Groups.xml
+file : \\active.htb\\Policies\\MACHINE\\Preferences\\Groups\\Groups.xml
+userName : active.htb\\SVC_TGS`;
+  const users = parseEvidence(output).filter((entry) => entry.type === "user");
+  assert.deepEqual(users.map((entry) => entry.value), ["SVC_TGS"]);
+  assert.equal(users[0].domain, "active.htb");
+});
+
 test("scan and SMB output associate hostnames with endpoint addresses", () => {
   const output = `Nmap scan report for dc.active.htb (10.129.81.60)
 SMB 10.129.81.60 445 DC [*] Windows (name:DC) (domain:active.htb)`;

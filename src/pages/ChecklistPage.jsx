@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import ChecklistItem from "../components/ChecklistItem";
 import VariablesPanel from "../components/VariablesPanel";
 import EvidenceInbox from "../components/EvidenceInbox";
@@ -10,6 +10,18 @@ export default function ChecklistPage() {
   const { workspace } = useWorkspace();
   const [query, setQuery] = useState("");
   const [hideComplete, setHideComplete] = useState(false);
+  const searchRef = useRef(null);
+
+  useEffect(() => {
+    const focusSearch = (event) => {
+      if (event.key !== "/" || event.ctrlKey || event.metaKey || event.altKey) return;
+      if (event.target.closest?.("input, textarea, select, [contenteditable='true']")) return;
+      event.preventDefault();
+      searchRef.current?.focus();
+    };
+    window.addEventListener("keydown", focusSearch);
+    return () => window.removeEventListener("keydown", focusSearch);
+  }, []);
   const normalizedQuery = query.trim().toLowerCase();
 
   const totalItems = CHECKLIST.reduce((total, phase) => total + phase.items.length, 0);
@@ -59,11 +71,14 @@ export default function ChecklistPage() {
           <span className="sr-only">Search checklist</span>
           <span aria-hidden="true">⌕</span>
           <input
+            ref={searchRef}
             type="search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => { if (event.key === "Escape") { setQuery(""); event.currentTarget.blur(); } }}
             placeholder="Search checks, tools, ports, or commands…"
           />
+          <kbd aria-hidden="true">/</kbd>
         </label>
         <label className="toggle-field">
           <input type="checkbox" checked={hideComplete} onChange={(event) => setHideComplete(event.target.checked)} />

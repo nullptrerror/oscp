@@ -5,6 +5,7 @@ import TargetsPage from "./pages/TargetsPage";
 import FindingsPage from "./pages/FindingsPage";
 import BackupPage from "./pages/BackupPage";
 import ReportPage from "./pages/ReportPage";
+import ExamClock from "./components/ExamClock";
 
 const pages = [
   { to: "/", label: "Checklist" },
@@ -30,8 +31,11 @@ function AppRoutes() {
             </NavLink>
           ))}
         </nav>
-        <div className={`storage-status ${saveState.status}`} title={saveState.message}>
-          <span aria-hidden="true" /> {saveState.status === "error" ? "Storage error" : "Local"}
+        <div className="topbar-status">
+          <ExamClock />
+          <div className={`storage-status ${saveState.status}`} title={saveState.message}>
+            <span aria-hidden="true" /> {saveState.status === "error" ? "Storage error" : "Local"}
+          </div>
         </div>
       </header>
 
