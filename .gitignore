@@ -5,3 +5,4 @@ dist/
 
 # Local reference only; never ship or copy its implementation.
 drgoteee.github.io/
+examples/

@@ -1,3 +1,5 @@
+import { visibleDiscoveries } from "./evidence.js";
+
 const shellQuote = (value) => `'${String(value).replaceAll("'", "'\"'\"'")}'`;
 
 export function trackedUsernames(workspace) {
@@ -8,7 +10,11 @@ export function trackedUsernames(workspace) {
     workspace.variables.user,
     ...workspace.accounts.filter(belongs).map((entry) => entry.username),
     ...(workspace.users || []).filter(belongs).map((entry) => entry.username),
-    ...workspace.discoveries.filter(belongs).filter((entry) => entry.type === "user").map((entry) => entry.value),
+    ...visibleDiscoveries(workspace.discoveries, {
+      settings: workspace.parserSettings,
+      ignored: workspace.ignoredDiscoveries,
+      targetId: activeTargetId,
+    }).filter(belongs).filter((entry) => entry.type === "user").map((entry) => entry.value),
   ].map((name) => String(name || "").trim()).filter((name) => name && !/^(guest|anonymous)$/i.test(name));
   return [...new Map(names.map((name) => [name.toLowerCase(), name])).values()].sort((a, b) => a.localeCompare(b));
 }

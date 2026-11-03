@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { ALL_ITEMS } from "../data/checklist";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { getScopedItemValue } from "../lib/workspace";
-import { formatDiscovery } from "../lib/evidence";
+import { formatDiscovery, PARSER_TAGS, visibleDiscoveries } from "../lib/evidence";
 import { credentialVariables } from "../lib/credentials";
 import TerminalOutput from "../components/TerminalOutput";
 
@@ -32,7 +32,12 @@ export default function FindingsPage() {
   const targetAccounts = workspace.accounts.filter((entry) => !workspace.activeTargetId || entry.targetId === workspace.activeTargetId);
   const targetLoot = workspace.loot.filter((entry) => !workspace.activeTargetId || entry.targetId === workspace.activeTargetId);
   const targetUsers = (workspace.users || []).filter((entry) => !workspace.activeTargetId || entry.targetId === workspace.activeTargetId);
-  const targetDiscoveries = workspace.discoveries.filter((entry) => !workspace.activeTargetId || entry.targetId === workspace.activeTargetId);
+  const targetDiscoveries = visibleDiscoveries(workspace.discoveries, {
+    settings: workspace.parserSettings,
+    ignored: workspace.ignoredDiscoveries,
+    targetId: workspace.activeTargetId,
+  }).filter((entry) => !workspace.activeTargetId || entry.targetId === workspace.activeTargetId);
+  const targetIgnored = workspace.ignoredDiscoveries.filter((entry) => !workspace.activeTargetId || entry.targetId === workspace.activeTargetId);
   const targetCommands = (workspace.commandHistory || []).filter((entry) => !workspace.activeTargetId || entry.targetId === workspace.activeTargetId).sort((a, b) => b.copiedAt.localeCompare(a.copiedAt));
 
   const addAccount = (event) => {
@@ -69,6 +74,39 @@ export default function FindingsPage() {
         </button>
       </section>
 
+      <details className="parser-controls">
+        <summary>
+          <div><p className="eyebrow">Output parser</p><h2>Automatic tag controls</h2></div>
+          <span>{PARSER_TAGS.filter(({ type }) => workspace.parserSettings[type] !== false).length}/{PARSER_TAGS.length} enabled</span>
+        </summary>
+        <p className="parser-help">These switches are global. Disabled tags stay in raw evidence but are hidden and are not added from new output. Ignored values are remembered only for the current machine.</p>
+        <div className="parser-toggle-grid">
+          {PARSER_TAGS.map(({ type, label }) => (
+            <label className="toggle-field" key={type}>
+              <input
+                type="checkbox"
+                checked={workspace.parserSettings[type] !== false}
+                onChange={(event) => actions.updateParserSetting(type, event.target.checked)}
+              />
+              <span>{label}</span>
+            </label>
+          ))}
+        </div>
+        {targetIgnored.length > 0 && (
+          <div className="ignored-findings">
+            <strong>Ignored on this machine</strong>
+            <div className="discovery-chips">
+              {targetIgnored.map((entry) => (
+                <div className="discovery-chip is-ignored" key={entry.id}>
+                  <span>{formatDiscovery(entry)}</span>
+                  <button type="button" onClick={() => actions.restoreIgnoredDiscovery(entry.id)}>Restore</button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </details>
+
       <section className="finding-section users-ledger">
         <div className="finding-section-head">
           <div><p className="eyebrow">Enumeration</p><h2>Tracked users</h2></div>
@@ -86,6 +124,7 @@ export default function FindingsPage() {
               <code>{entry.domain ? `${entry.domain}\\` : ""}{entry.username}</code>
               <span>{entry.source || "manual"}</span>
               <button type="button" className="text-button" onClick={() => actions.updateVariables({ domain: entry.domain || workspace.variables.domain, user: entry.username })}>Use</button>
+              <button type="button" className="text-button danger" onClick={() => actions.ignoreDiscovery({ type: "user", value: entry.username, targetId: entry.targetId })}>Ignore</button>
               <button type="button" className="text-button danger" onClick={() => actions.deleteRecord("users", entry.id)}>Delete</button>
             </div>
           ))}
@@ -169,7 +208,12 @@ export default function FindingsPage() {
         </div>
         {targetDiscoveries.length === 0 ? <EmptyMessage>No parsed ports, domains, accounts, hashes, or tickets yet.</EmptyMessage> : (
           <div className="discovery-chips discovery-ledger-chips">
-            {targetDiscoveries.map((entry) => <span key={entry.id}>{formatDiscovery(entry)}</span>)}
+            {targetDiscoveries.map((entry) => (
+              <div className="discovery-chip" key={entry.id}>
+                <span>{formatDiscovery(entry)}</span>
+                <button type="button" onClick={() => actions.ignoreDiscovery(entry)}>Ignore</button>
+              </div>
+            ))}
           </div>
         )}
       </section>

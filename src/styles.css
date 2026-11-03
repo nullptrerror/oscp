@@ -234,6 +234,12 @@ textarea:focus, input[type="text"]:focus, input[type="password"]:focus { border-
 .evidence-image { display: block; width: auto; max-width: calc(100% - 24px); max-height: 440px; margin: 12px; border: 1px solid var(--line); border-radius: 5px; }
 .discovery-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 12px; border-top: 1px solid var(--line); }
 .discovery-chips span { padding: 4px 7px; border: 1px solid #42563f; border-radius: 999px; color: #cce5c5; background: #142016; font-family: var(--mono); font-size: 0.65rem; overflow-wrap: anywhere; }
+.discovery-chip { display: inline-flex; align-items: stretch; overflow: hidden; border: 1px solid #42563f; border-radius: 999px; background: #142016; }
+.discovery-chips .discovery-chip > span { display: inline-flex; align-items: center; padding: 4px 7px; border: 0; border-radius: 0; background: transparent; }
+.discovery-chip > button { padding: 4px 8px; border: 0; border-left: 1px solid #42563f; color: var(--muted); background: #0e1710; font-size: 0.62rem; font-weight: 750; cursor: pointer; }
+.discovery-chip > button:hover { color: var(--red); background: #211311; }
+.discovery-chip.is-ignored { opacity: 0.82; border-color: #514b38; }
+.discovery-chip.is-ignored > button:hover { color: var(--lime); background: var(--lime-dark); }
 .evidence-guidance { display: grid; gap: 5px; padding: 10px 12px; border-top: 1px solid var(--line); }
 .evidence-guidance strong { color: var(--amber); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; }
 .evidence-guidance .text-button { padding: 3px 0; text-align: left; }
@@ -295,6 +301,18 @@ textarea:focus, input[type="text"]:focus, input[type="password"]:focus { border-
 .empty-state.compact { padding: 90px 20px; }
 
 .finding-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+.parser-controls { margin-bottom: 20px; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+.parser-controls > summary { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 18px 20px; cursor: pointer; list-style: none; }
+.parser-controls > summary::-webkit-details-marker { display: none; }
+.parser-controls > summary .eyebrow { margin-bottom: 5px; }
+.parser-controls > summary h2 { margin: 0; font-size: 1.15rem; }
+.parser-controls > summary > span { color: var(--lime); font-family: var(--mono); font-size: 0.72rem; }
+.parser-help { margin: 0; padding: 0 20px 14px; color: var(--muted); font-size: 0.72rem; line-height: 1.5; }
+.parser-toggle-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; padding: 0 20px 20px; }
+.parser-toggle-grid .toggle-field { min-height: 38px; padding: 0 11px; }
+.ignored-findings { border-top: 1px solid var(--line); }
+.ignored-findings > strong { display: block; padding: 14px 20px 2px; color: var(--amber); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.07em; }
+.ignored-findings .discovery-chips { border-top: 0; padding: 10px 20px 18px; }
 .users-ledger { margin-bottom: 20px; }
 .user-entry-form { grid-template-columns: 1fr 1fr 1fr auto; align-items: center; }
 .tracked-users-list { display: flex; flex-wrap: wrap; gap: 8px; padding: 14px 20px; }

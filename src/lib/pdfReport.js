@@ -21,7 +21,7 @@ import {
 } from "pdf-lib";
 import { ALL_ITEMS, CHECKLIST } from "../data/checklist.js";
 import { getActiveScope, getTargetItemValue, normalizeWorkspace } from "./workspace.js";
-import { formatDiscovery } from "./evidence.js";
+import { formatDiscovery, visibleDiscoveries } from "./evidence.js";
 import { getOperatorProfile, githubProfile, initials } from "./profile.js";
 import { TERMINAL_THEME, terminalLines } from "./terminalText.js";
 
@@ -317,12 +317,20 @@ function targetData(workspace, targetId) {
   const scope = target?.id || getActiveScope(workspace);
   const report = workspace.reports[scope] || {};
   const belongs = (entry) => entry.targetId ? entry.targetId === target?.id : entry.target === target?.name;
+  const discoveryOptions = {
+    settings: workspace.parserSettings,
+    ignored: workspace.ignoredDiscoveries,
+    targetId: target?.id,
+  };
   const commandHistory = (workspace.commandHistory || []).filter(belongs);
   const items = ALL_ITEMS.map((item) => ({
     ...item,
     completed: Boolean(getTargetItemValue(workspace.completed, scope, item.id, false)),
     note: getTargetItemValue(workspace.notes, scope, item.id, ""),
-    evidence: getTargetItemValue(workspace.evidence, scope, item.id, []),
+    evidence: getTargetItemValue(workspace.evidence, scope, item.id, []).map((entry) => ({
+      ...entry,
+      discoveries: visibleDiscoveries(entry.discoveries, discoveryOptions),
+    })),
   })).filter((item) => item.completed || item.note || item.evidence.length > 0 || commandHistory.some((command) => command.itemId === item.id));
   const evidence = items.flatMap((item) => item.evidence);
   return {
@@ -334,7 +342,7 @@ function targetData(workspace, targetId) {
     accounts: workspace.accounts.filter(belongs),
     users: (workspace.users || []).filter(belongs),
     loot: workspace.loot.filter(belongs),
-    discoveries: workspace.discoveries.filter(belongs),
+    discoveries: visibleDiscoveries(workspace.discoveries, discoveryOptions).filter(belongs),
     commandHistory,
     userProof: evidence.filter((entry) => entry.category === "user-flag"),
     rootProof: evidence.filter((entry) => entry.category === "root-flag"),

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { VARIABLE_GROUPS } from "../data/checklist";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { credentialVariables, isNtHash } from "../lib/credentials";
+import { visibleDiscoveries } from "../lib/evidence";
 
 const LABELS = {
   workspaceRoot: "Root path",
@@ -35,7 +36,11 @@ export default function VariablesPanel() {
   const activeEndpoint = activeTarget?.endpoints?.find((endpoint) => endpoint.id === activeTarget.activeEndpointId) || activeTarget?.endpoints?.[0];
   const activeAccounts = workspace.accounts.filter((entry) => entry.targetId ? entry.targetId === workspace.activeTargetId : entry.target === workspace.variables.targetName);
   const activeUsers = (workspace.users || []).filter((entry) => entry.targetId ? entry.targetId === workspace.activeTargetId : entry.target === workspace.variables.targetName);
-  const activeDiscoveries = workspace.discoveries.filter((entry) => entry.targetId ? entry.targetId === workspace.activeTargetId : entry.targetName === workspace.variables.targetName);
+  const activeDiscoveries = visibleDiscoveries(workspace.discoveries, {
+    settings: workspace.parserSettings,
+    ignored: workspace.ignoredDiscoveries,
+    targetId: workspace.activeTargetId,
+  }).filter((entry) => entry.targetId ? entry.targetId === workspace.activeTargetId : entry.targetName === workspace.variables.targetName);
   const unique = (values) => [...new Set(values.filter(Boolean))];
   const suggestions = {
     rhost: unique(workspace.targets.flatMap((target) => (target.endpoints || []).map((endpoint) => endpoint.address))),

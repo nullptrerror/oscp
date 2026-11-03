@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { getScopedItemValue } from "../lib/workspace";
-import { fileToEvidence, formatDiscovery } from "../lib/evidence";
+import { fileToEvidence, formatDiscovery, guidanceForDiscoveries, visibleDiscoveries } from "../lib/evidence";
 import { getChecklistCommands } from "../lib/checklistCommands";
 import CommandBlock from "./CommandBlock";
 import TerminalOutput from "./TerminalOutput";
@@ -171,7 +171,14 @@ export default function ChecklistItem({ item, searchActive = false }) {
 
             {evidence.length > 0 && (
               <div className="evidence-list">
-                {evidence.map((entry) => (
+                {evidence.map((entry) => {
+                  const entryDiscoveries = visibleDiscoveries(entry.discoveries, {
+                    settings: workspace.parserSettings,
+                    ignored: workspace.ignoredDiscoveries,
+                    targetId: entry.targetId ?? workspace.activeTargetId,
+                  });
+                  const entryGuidance = guidanceForDiscoveries(entryDiscoveries);
+                  return (
                   <details key={entry.id} className="evidence-entry">
                     <summary>
                       <span>{entry.label}</span>
@@ -179,17 +186,20 @@ export default function ChecklistItem({ item, searchActive = false }) {
                     </summary>
                     {entry.dataUrl && <img className="evidence-image" src={entry.dataUrl} alt={entry.label} />}
                     {entry.content && <TerminalOutput content={entry.content} />}
-                    {entry.discoveries?.length > 0 && (
+                    {entryDiscoveries.length > 0 && (
                       <div className="discovery-chips">
-                        {entry.discoveries.map((discovery) => (
-                          <span key={`${discovery.type}-${discovery.protocol || ""}-${discovery.value}`}>{formatDiscovery(discovery)}</span>
+                        {entryDiscoveries.map((discovery) => (
+                          <div className="discovery-chip" key={`${discovery.type}-${discovery.protocol || ""}-${discovery.value}`}>
+                            <span>{formatDiscovery(discovery)}</span>
+                            <button type="button" onClick={() => actions.ignoreDiscovery({ ...discovery, targetId: entry.targetId })}>Ignore</button>
+                          </div>
                         ))}
                       </div>
                     )}
-                    {entry.guidance?.length > 0 && (
+                    {entryGuidance.length > 0 && (
                       <div className="evidence-guidance">
                         <strong>Suggested next checks</strong>
-                        {entry.guidance.map((step) => (
+                        {entryGuidance.map((step) => (
                           <button
                             type="button"
                             className="text-button"
@@ -209,7 +219,8 @@ export default function ChecklistItem({ item, searchActive = false }) {
                       Delete result
                     </button>
                   </details>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
