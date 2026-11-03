@@ -91,6 +91,9 @@ export function attachRunnerWebSocket(server) {
     let commandLog = null;
     let journeyLog = null;
     let started = false;
+    let proofConfig = null;
+    let proofBuffer = "";
+    let proofReported = false;
 
     socket.on("message", (raw) => {
       let message;
@@ -104,6 +107,12 @@ export function attachRunnerWebSocket(server) {
       if (message.type === "start" && !started) {
         started = true;
         try {
+          const commandText = String(message.command || "").toLowerCase();
+          const configuredFlags = [
+            { kind: "user", name: String(message.flagNames?.user || "") },
+            { kind: "root", name: String(message.flagNames?.root || "") },
+          ];
+          proofConfig = configuredFlags.find((entry) => entry.name && commandText.includes(entry.name.toLowerCase())) || null;
           const cwd = resolveWorkingDirectory(message.cwd);
           const logDirectory = path.join(cwd, "notes", "commands");
           fs.mkdirSync(logDirectory, { recursive: true });
@@ -132,6 +141,14 @@ export function attachRunnerWebSocket(server) {
             commandLog.write(data);
             journeyLog.write(data);
             send(socket, { type: "output", data });
+            if (proofConfig && !proofReported) {
+              proofBuffer = `${proofBuffer}${data.replace(/\x1b\[[0-9;:]*[A-Za-z]/g, "")}`.slice(-2048);
+              const candidate = proofBuffer.match(/(?:^|\s)([a-f0-9]{32,64})(?=\s|$)/i);
+              if (candidate) {
+                proofReported = true;
+                send(socket, { type: "flag", kind: proofConfig.kind, flagName: proofConfig.name, value: candidate[1].toLowerCase() });
+              }
+            }
           });
           terminal.onExit(({ exitCode, signal }) => {
             const ending = `\n[Fieldnotes] exit=${exitCode} signal=${signal ?? "none"}\n`;

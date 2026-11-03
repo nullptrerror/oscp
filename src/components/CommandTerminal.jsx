@@ -5,13 +5,14 @@ import { useLocalRunner } from "../context/LocalRunnerContext";
 
 const CAPTURE_LIMIT = 1024 * 1024;
 
-export default function CommandTerminal({ command, cwd, label, onClose, onStart, onFinish }) {
+export default function CommandTerminal({ command, cwd, label, flagNames, onClose, onStart, onFinish }) {
   const runner = useLocalRunner();
   const hostRef = useRef(null);
   const outputRef = useRef("");
   const socketRef = useRef(null);
   const onStartRef = useRef(onStart);
   const onFinishRef = useRef(onFinish);
+  const detectedFlagRef = useRef(null);
   const [state, setState] = useState({ status: "connecting", logPath: "", message: "" });
   onStartRef.current = onStart;
   onFinishRef.current = onFinish;
@@ -25,6 +26,7 @@ export default function CommandTerminal({ command, cwd, label, onClose, onStart,
     let disposed = false;
     let finished = false;
     outputRef.current = "";
+    detectedFlagRef.current = null;
     setState({ status: "connecting", logPath: "", message: "" });
 
     // Deferring setup prevents React Strict Mode's development-only probe mount
@@ -60,7 +62,7 @@ export default function CommandTerminal({ command, cwd, label, onClose, onStart,
           socket.close();
           return;
         }
-        socket.send(JSON.stringify({ type: "start", command, cwd, label, cols: terminal.cols, rows: terminal.rows }));
+        socket.send(JSON.stringify({ type: "start", command, cwd, label, flagNames, cols: terminal.cols, rows: terminal.rows }));
       });
       socket.addEventListener("message", (event) => {
         let message;
@@ -80,10 +82,16 @@ export default function CommandTerminal({ command, cwd, label, onClose, onStart,
           if (outputRef.current.length < CAPTURE_LIMIT) outputRef.current += message.data.slice(0, CAPTURE_LIMIT - outputRef.current.length);
           return;
         }
+        if (message.type === "flag") {
+          detectedFlagRef.current = message;
+          setState((current) => ({ ...current, flag: message }));
+          terminal.writeln(`\r\n\x1b[1;33m[Fieldnotes] ${message.kind === "root" ? "Root / administrator" : "User-level"} proof candidate detected. Keep the full proof context visible for your screenshot.\x1b[0m`);
+          return;
+        }
         if (message.type === "exit") {
           finished = true;
-          setState({ status: message.exitCode === 0 ? "complete" : "failed", logPath: message.logPath, message: `Exit ${message.exitCode}` });
-          onFinishRef.current?.({ content: outputRef.current, exitCode: message.exitCode, signal: message.signal, logPath: message.logPath, journeyPath: message.journeyPath });
+          setState((current) => ({ ...current, status: message.exitCode === 0 ? "complete" : "failed", logPath: message.logPath, message: `Exit ${message.exitCode}` }));
+          onFinishRef.current?.({ content: outputRef.current, exitCode: message.exitCode, signal: message.signal, logPath: message.logPath, journeyPath: message.journeyPath, flag: detectedFlagRef.current });
           return;
         }
         if (message.type === "error") {
@@ -111,7 +119,7 @@ export default function CommandTerminal({ command, cwd, label, onClose, onStart,
       }
       socketRef.current = null;
     };
-  }, [command, cwd, label, runner.available, runner.terminalUrl]);
+  }, [command, cwd, flagNames, label, runner.available, runner.terminalUrl]);
 
   const stop = () => socketRef.current?.readyState === WebSocket.OPEN && socketRef.current.send(JSON.stringify({ type: "kill" }));
 
@@ -124,6 +132,7 @@ export default function CommandTerminal({ command, cwd, label, onClose, onStart,
         <button type="button" className="text-button" onClick={onClose}>Hide</button>
       </div>
       <div className="xterm-host" ref={hostRef} />
+      {state.flag && <div className="terminal-proof-alert"><strong>{state.flag.kind === "root" ? "Root / administrator" : "User-level"} proof candidate</strong><code>{state.flag.value}</code><span>Verify the target identity and IP are visible, then capture the entire terminal before hiding it.</span></div>}
       {state.message && <p className={state.status === "failed" ? "form-error" : "terminal-message"}>{state.message}</p>}
     </div>
   );

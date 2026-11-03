@@ -2,16 +2,21 @@ import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import {
   createDefaultWorkspace,
   createId,
+  clearMachineVariables,
+  deleteMachineData,
   domainToBaseDn,
   getActiveScope,
   getItemStateKey,
   getScopedItemValue,
   loadWorkspace,
   normalizeWorkspace,
+  pickMachineVariables,
   saveWorkspace,
 } from "../lib/workspace";
 import { discoveriesForChecklistItem, discoveryKey, guidanceForDiscoveries, mergePortLists, parseEvidence, visibleDiscoveries } from "../lib/evidence";
 import { stripAnsi } from "../lib/terminalText";
+import { normalizeFlagSettings } from "../lib/flagProfiles";
+import { commandNarrativeDraft, isAutomaticNarrative, narrativeFromDiscoveries } from "../lib/narrative";
 
 const WorkspaceContext = createContext(null);
 
@@ -23,6 +28,8 @@ const endpointVariables = (target, endpoint = activeEndpoint(target)) => ({
   uport: endpoint?.udpPorts || target?.udpPorts || "",
   domain: target?.domain || "",
   baseDn: domainToBaseDn(target?.domain),
+  userFlagName: target ? normalizeFlagSettings(target).userFlagName : "",
+  rootFlagName: target ? normalizeFlagSettings(target).rootFlagName : "",
 });
 
 const mergeScopedState = (record, sourceId, destinationId, combine) => {
@@ -90,6 +97,10 @@ export function WorkspaceProvider({ children }) {
                   host: selected?.address || target.host,
                   port: selected?.tcpPorts || "",
                   udpPorts: selected?.udpPorts || "",
+                  commandContext: {
+                    ...(target.commandContext || {}),
+                    ...pickMachineVariables(variableValues),
+                  },
                 };
               })
               : current.targets,
@@ -98,6 +109,7 @@ export function WorkspaceProvider({ children }) {
       },
       toggleCompleted(itemId) {
         update((current) => {
+          if (!current.activeTargetId) return current;
           const key = getItemStateKey(current, itemId);
           return {
             ...current,
@@ -110,30 +122,38 @@ export function WorkspaceProvider({ children }) {
       },
       setCompleted(itemId, value = true) {
         update((current) => {
+          if (!current.activeTargetId) return current;
           const key = getItemStateKey(current, itemId);
           return { ...current, completed: { ...current.completed, [key]: Boolean(value) } };
         });
       },
       updateNote(itemId, note) {
         update((current) => {
+          if (!current.activeTargetId) return current;
           const key = getItemStateKey(current, itemId);
           return { ...current, notes: { ...current.notes, [key]: note } };
         });
       },
       updateNextStep(itemId, nextStep) {
         update((current) => {
+          if (!current.activeTargetId) return current;
           const key = getItemStateKey(current, itemId);
           return { ...current, nextSteps: { ...current.nextSteps, [key]: nextStep } };
         });
       },
       addEvidence(itemId, evidence) {
         update((current) => {
+          if (!current.activeTargetId) return current;
           const key = getItemStateKey(current, itemId);
           const target = current.targets.find((entry) => entry.id === current.activeTargetId);
           const parsed = visibleDiscoveries(
             discoveriesForChecklistItem(
               itemId,
-              evidence.discoveries ?? parseEvidence(stripAnsi(evidence.content), evidence.filename || evidence.label),
+              evidence.discoveries ?? parseEvidence(
+                stripAnsi(evidence.content),
+                [evidence.filename, evidence.label, evidence.commandText].filter(Boolean).join(" "),
+                normalizeFlagSettings(target),
+              ),
               { lhost: current.variables.lhost },
             ),
             {
@@ -143,6 +163,14 @@ export function WorkspaceProvider({ children }) {
             },
           );
           const guidance = guidanceForDiscoveries(parsed);
+          const existingEvidence = getScopedItemValue(current.evidence, current, itemId, []);
+          const combinedDiscoveries = [...new Map([...existingEvidence.flatMap((entry) => entry.discoveries || []), ...parsed].map((entry) => [discoveryKey(entry), entry])).values()];
+          const automaticNarrative = narrativeFromDiscoveries(combinedDiscoveries, { exitCode: evidence.exitCode });
+          const currentFinding = getScopedItemValue(current.notes, current, itemId, "");
+          const currentNextStep = getScopedItemValue(current.nextSteps, current, itemId, "");
+          const narrativeSource = getScopedItemValue(current.narrativeSources, current, itemId, {});
+          const updateFinding = automaticNarrative.finding && (isAutomaticNarrative(currentFinding) || currentFinding === narrativeSource.finding);
+          const updateNextStep = automaticNarrative.nextStep && (isAutomaticNarrative(currentNextStep) || currentNextStep === narrativeSource.nextStep);
           const createdAt = new Date().toISOString();
           const enrichedEvidence = {
             id: createId("evidence"),
@@ -252,6 +280,12 @@ export function WorkspaceProvider({ children }) {
                 port: selected?.tcpPorts || "",
                 udpPorts: selected?.udpPorts || "",
                 ...(foundDomain && !entry.domain ? { domain: foundDomain } : {}),
+                commandContext: {
+                  ...(entry.commandContext || {}),
+                  ...(foundTcpPorts.length > 0 ? { rport: tcpPorts } : {}),
+                  ...(foundUdpPorts.length > 0 ? { uport: udpPorts } : {}),
+                  ...(foundDomain && !entry.domain ? { domain: foundDomain, baseDn: domainToBaseDn(foundDomain) } : {}),
+                },
               };
             }),
             evidence: {
@@ -261,6 +295,20 @@ export function WorkspaceProvider({ children }) {
                 enrichedEvidence,
               ],
             },
+            notes: updateFinding
+              ? { ...current.notes, [key]: automaticNarrative.finding }
+              : current.notes,
+            nextSteps: updateNextStep
+              ? { ...current.nextSteps, [key]: automaticNarrative.nextStep }
+              : current.nextSteps,
+            narrativeSources: updateFinding || updateNextStep ? {
+              ...current.narrativeSources,
+              [key]: {
+                ...(narrativeSource || {}),
+                ...(updateFinding ? { finding: automaticNarrative.finding } : {}),
+                ...(updateNextStep ? { nextStep: automaticNarrative.nextStep } : {}),
+              },
+            } : current.narrativeSources,
           };
         });
       },
@@ -288,12 +336,24 @@ export function WorkspaceProvider({ children }) {
             udpPorts: target.udpPorts || "",
             source: "initial",
           };
-          const machine = { ...target, id, createdAt: new Date().toISOString(), endpoints: [endpoint], activeEndpointId: endpoint.id };
+          const machine = {
+            ...target,
+            ...normalizeFlagSettings(target),
+            id,
+            createdAt: new Date().toISOString(),
+            endpoints: [endpoint],
+            activeEndpointId: endpoint.id,
+            commandContext: pickMachineVariables({
+              ...target,
+              ...endpointVariables(target, endpoint),
+            }),
+          };
           return {
             ...current,
             activeTargetId: current.activeTargetId ?? id,
             variables: becomesActive ? {
-              ...current.variables,
+              ...clearMachineVariables(current.variables),
+              ...machine.commandContext,
               ...endpointVariables(machine, endpoint),
             } : current.variables,
             targets: [...current.targets, machine],
@@ -301,23 +361,45 @@ export function WorkspaceProvider({ children }) {
         });
       },
       updateTarget(id, patch) {
-        update((current) => ({
-          ...current,
-          variables: current.activeTargetId === id ? {
-            ...current.variables,
-            ...(patch.name !== undefined ? { targetName: patch.name } : {}),
-            ...(patch.domain !== undefined ? { domain: patch.domain } : {}),
-            ...(patch.domain !== undefined ? { baseDn: domainToBaseDn(patch.domain) } : {}),
-          } : current.variables,
-          targets: current.targets.map((target) => (target.id === id ? { ...target, ...patch } : target)),
-        }));
+        update((current) => {
+          const existing = current.targets.find((target) => target.id === id);
+          const updated = existing ? { ...existing, ...patch } : null;
+          const updatedFlagSettings = updated ? normalizeFlagSettings(updated) : null;
+          return {
+            ...current,
+            variables: current.activeTargetId === id ? {
+              ...current.variables,
+              ...(patch.name !== undefined ? { targetName: patch.name } : {}),
+              ...(patch.domain !== undefined ? { domain: patch.domain, baseDn: domainToBaseDn(patch.domain) } : {}),
+              ...(updated && (patch.labType !== undefined || patch.userFlagName !== undefined || patch.rootFlagName !== undefined) ? {
+                userFlagName: updatedFlagSettings.userFlagName,
+                rootFlagName: updatedFlagSettings.rootFlagName,
+              } : {}),
+            } : current.variables,
+            targets: current.targets.map((target) => (target.id === id ? {
+              ...target,
+              ...patch,
+              ...(updatedFlagSettings || {}),
+              commandContext: {
+                ...(target.commandContext || {}),
+                ...pickMachineVariables({
+                  ...(patch.name !== undefined ? { targetName: patch.name } : {}),
+                  ...(patch.domain !== undefined ? { domain: patch.domain, baseDn: domainToBaseDn(patch.domain) } : {}),
+                  ...(updatedFlagSettings ? {
+                    userFlagName: updatedFlagSettings.userFlagName,
+                    rootFlagName: updatedFlagSettings.rootFlagName,
+                  } : {}),
+                }),
+              },
+            } : target)),
+          };
+        });
       },
       deleteTarget(id) {
-        update((current) => ({
-          ...current,
-          activeTargetId: current.activeTargetId === id ? null : current.activeTargetId,
-          targets: current.targets.filter((target) => target.id !== id),
-        }));
+        update((current) => deleteMachineData(current, id));
+      },
+      clearTargetSelection() {
+        update((current) => ({ ...current, activeTargetId: null, variables: clearMachineVariables(current.variables) }));
       },
       mergeTarget(sourceId, destinationId) {
         if (!sourceId || !destinationId || sourceId === destinationId) return;
@@ -339,6 +421,9 @@ export function WorkspaceProvider({ children }) {
             } else endpoints.push(endpoint);
           }
           const selected = endpoints.find((endpoint) => endpoint.id === destination.activeEndpointId) || endpoints[0];
+          const activeContext = current.activeTargetId === sourceId
+            ? pickMachineVariables(current.variables)
+            : current.activeTargetId === destinationId ? pickMachineVariables(current.variables) : {};
           const mergedTarget = {
             ...destination,
             endpoints,
@@ -347,6 +432,11 @@ export function WorkspaceProvider({ children }) {
             port: selected?.tcpPorts || "",
             udpPorts: selected?.udpPorts || "",
             notes: [destination.notes, source.notes].filter(Boolean).join("\n\n"),
+            commandContext: {
+              ...(source.commandContext || {}),
+              ...(destination.commandContext || {}),
+              ...activeContext,
+            },
           };
           const retarget = (entry) => entry.targetId === sourceId ? { ...entry, targetId: destinationId, target: destination.name, targetName: destination.name } : entry;
           const becomesActive = current.activeTargetId === sourceId;
@@ -355,7 +445,11 @@ export function WorkspaceProvider({ children }) {
           return {
             ...current,
             activeTargetId: becomesActive ? destinationId : current.activeTargetId,
-            variables: becomesActive ? { ...current.variables, ...endpointVariables(mergedTarget, selected) } : current.variables,
+            variables: becomesActive ? {
+              ...clearMachineVariables(current.variables),
+              ...mergedTarget.commandContext,
+              ...endpointVariables(mergedTarget, selected),
+            } : current.variables,
             targets: current.targets.filter((target) => target.id !== sourceId).map((target) => target.id === destinationId ? mergedTarget : target),
             accounts: current.accounts.map(retarget),
             users: current.users.map(retarget),
@@ -366,6 +460,7 @@ export function WorkspaceProvider({ children }) {
             completed: mergeScopedState(current.completed, sourceId, destinationId, (destinationValue, sourceValue) => Boolean(destinationValue || sourceValue)),
             notes: mergeScopedState(current.notes, sourceId, destinationId, (destinationValue, sourceValue) => [destinationValue, sourceValue].filter(Boolean).join("\n\n")),
             nextSteps: mergeScopedState(current.nextSteps, sourceId, destinationId, (destinationValue, sourceValue) => [destinationValue, sourceValue].filter(Boolean).join("\n\n")),
+            narrativeSources: mergeScopedState(current.narrativeSources, sourceId, destinationId, (destinationValue = {}, sourceValue = {}) => ({ ...sourceValue, ...destinationValue })),
             evidence: mergeScopedState(current.evidence, sourceId, destinationId, (destinationValue = [], sourceValue = []) => [...destinationValue, ...sourceValue.map(retarget)]),
             reports,
           };
@@ -377,13 +472,9 @@ export function WorkspaceProvider({ children }) {
           ...current,
           activeTargetId: target.id,
           variables: {
-            ...current.variables,
+            ...clearMachineVariables(current.variables),
+            ...(target.commandContext || {}),
             ...endpointVariables(target, endpoint),
-            dc: "",
-            user: "",
-            password: "",
-            gppCpassword: "",
-            hash: "",
           },
         }));
       },
@@ -422,9 +513,9 @@ export function WorkspaceProvider({ children }) {
             ...entry, activeEndpointId: endpoint.id, host: endpoint.address, port: endpoint.tcpPorts || "", udpPorts: endpoint.udpPorts || "",
           } : entry),
           variables: {
-            ...current.variables,
+            ...clearMachineVariables(current.variables),
+            ...(target.commandContext || {}),
             ...endpointVariables(target, endpoint),
-            user: "", password: "", gppCpassword: "", hash: "",
           },
         }));
       },
@@ -442,7 +533,7 @@ export function WorkspaceProvider({ children }) {
       },
       addRecord(kind, record) {
         if (!['accounts', 'users', 'loot'].includes(kind)) return;
-        update((current) => ({
+        update((current) => !current.activeTargetId ? current : ({
           ...current,
           [kind]: [...current[kind], {
             id: createId(kind.slice(0, -1)),
@@ -456,10 +547,25 @@ export function WorkspaceProvider({ children }) {
       },
       recordCommand(itemId, command) {
         update((current) => {
+          if (!current.activeTargetId) return current;
           const target = current.targets.find((entry) => entry.id === current.activeTargetId);
           const endpoint = activeEndpoint(target);
+          const key = getItemStateKey(current, itemId);
+          const draft = commandNarrativeDraft(command.command, command.label);
+          const hasFinding = Boolean(getScopedItemValue(current.notes, current, itemId, ""));
+          const hasNextStep = Boolean(getScopedItemValue(current.nextSteps, current, itemId, ""));
           return {
             ...current,
+            notes: hasFinding ? current.notes : { ...current.notes, [key]: draft.finding },
+            nextSteps: hasNextStep ? current.nextSteps : { ...current.nextSteps, [key]: draft.nextStep },
+            narrativeSources: hasFinding && hasNextStep ? current.narrativeSources : {
+              ...current.narrativeSources,
+              [key]: {
+                ...getScopedItemValue(current.narrativeSources, current, itemId, {}),
+                ...(!hasFinding ? { finding: draft.finding } : {}),
+                ...(!hasNextStep ? { nextStep: draft.nextStep } : {}),
+              },
+            },
             commandHistory: [...current.commandHistory, {
               id: createId("command"),
               copiedAt: new Date().toISOString(),
@@ -481,6 +587,7 @@ export function WorkspaceProvider({ children }) {
       },
       updateReport(patch) {
         update((current) => {
+          if (!current.activeTargetId) return current;
           const scope = getActiveScope(current);
           return { ...current, reports: { ...current.reports, [scope]: { ...(current.reports[scope] ?? {}), ...patch } } };
         });

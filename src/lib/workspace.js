@@ -1,8 +1,18 @@
 import { DEFAULT_VARIABLES } from "../data/checklist.js";
 import { DEFAULT_PARSER_SETTINGS } from "./evidence.js";
+import { normalizeFlagSettings } from "./flagProfiles.js";
 
 export const STORAGE_KEY = "fieldnotes.oscp.workspace.v1";
 export const WORKSPACE_VERSION = 1;
+export const MACHINE_VARIABLE_KEYS = [
+  "targetName", "rhost", "rport", "uport", "subnet", "domain", "baseDn", "dc",
+  "user", "password", "gppCpassword", "hash", "smbShare", "smbDirectory",
+  "sprayPassword", "userFlagName", "rootFlagName",
+];
+
+export const pickMachineVariables = (values = {}) => Object.fromEntries(
+  MACHINE_VARIABLE_KEYS.filter((key) => values[key] !== undefined).map((key) => [key, values[key]]),
+);
 
 export const domainToBaseDn = (domain = "") => String(domain)
   .trim()
@@ -16,6 +26,57 @@ export const createId = (prefix = "item") => {
   return `${prefix}-${suffix}`;
 };
 
+export const clearMachineVariables = (variables) => ({
+  ...variables,
+  targetName: "",
+  rhost: "",
+  rport: "",
+  uport: "",
+  domain: "",
+  baseDn: "",
+  dc: "",
+  user: "",
+  password: "",
+  gppCpassword: "",
+  hash: "",
+  smbShare: "",
+  smbDirectory: "",
+  subnet: "",
+  sprayPassword: "",
+  userFlagName: "",
+  rootFlagName: "",
+});
+
+const withoutTargetScope = (record, targetId) => Object.fromEntries(
+  Object.entries(record || {}).filter(([key]) => !key.startsWith(`${targetId}::`)),
+);
+
+export function deleteMachineData(workspace, targetId) {
+  const target = workspace.targets.find((entry) => entry.id === targetId);
+  if (!target) return workspace;
+  const belongs = (entry) => entry.targetId === targetId || (!entry.targetId && [entry.target, entry.targetName].includes(target.name));
+  const reports = { ...workspace.reports };
+  delete reports[targetId];
+  return {
+    ...workspace,
+    activeTargetId: workspace.activeTargetId === targetId ? null : workspace.activeTargetId,
+    variables: workspace.activeTargetId === targetId ? clearMachineVariables(workspace.variables) : workspace.variables,
+    targets: workspace.targets.filter((entry) => entry.id !== targetId),
+    accounts: workspace.accounts.filter((entry) => !belongs(entry)),
+    users: workspace.users.filter((entry) => !belongs(entry)),
+    loot: workspace.loot.filter((entry) => !belongs(entry)),
+    discoveries: workspace.discoveries.filter((entry) => !belongs(entry)),
+    ignoredDiscoveries: workspace.ignoredDiscoveries.filter((entry) => !belongs(entry)),
+    commandHistory: workspace.commandHistory.filter((entry) => !belongs(entry)),
+    completed: withoutTargetScope(workspace.completed, targetId),
+    notes: withoutTargetScope(workspace.notes, targetId),
+    nextSteps: withoutTargetScope(workspace.nextSteps, targetId),
+    narrativeSources: withoutTargetScope(workspace.narrativeSources, targetId),
+    evidence: withoutTargetScope(workspace.evidence, targetId),
+    reports,
+  };
+}
+
 export const createDefaultWorkspace = () => ({
   version: WORKSPACE_VERSION,
   updatedAt: new Date().toISOString(),
@@ -28,6 +89,7 @@ export const createDefaultWorkspace = () => ({
   completed: {},
   notes: {},
   nextSteps: {},
+  narrativeSources: {},
   evidence: {},
   discoveries: [],
   parserSettings: { ...DEFAULT_PARSER_SETTINGS },
@@ -65,6 +127,8 @@ const normalizeTarget = (target, index) => {
   const activeEndpoint = endpoints.find((endpoint) => endpoint.id === activeEndpointId);
   return {
     ...target,
+    ...normalizeFlagSettings(target),
+    commandContext: isRecord(target.commandContext) ? target.commandContext : {},
     endpoints,
     activeEndpointId,
     host: activeEndpoint?.address || target.host || "",
@@ -82,26 +146,63 @@ export function normalizeWorkspace(value) {
   const base = createDefaultWorkspace();
   const variables = { ...base.variables, ...asRecord(value.variables) };
   if (!variables.baseDn && variables.domain) variables.baseDn = domainToBaseDn(variables.domain);
+  const targets = asArray(value.targets).map(normalizeTarget);
+  const activeTargetId = targets.some((target) => target.id === value.activeTargetId) ? value.activeTargetId : null;
+  const fallbackTargetId = activeTargetId || (targets.length === 1 ? targets[0].id : null);
+  const normalizedTargets = targets.map((target) => target.id === fallbackTargetId ? {
+    ...target,
+    commandContext: {
+      ...pickMachineVariables(variables),
+      ...(target.commandContext || {}),
+    },
+  } : target);
+  const activeTarget = normalizedTargets.find((target) => target.id === activeTargetId);
+  const normalizedVariables = activeTarget ? {
+    ...variables,
+    ...activeTarget.commandContext,
+    userFlagName: activeTarget.userFlagName,
+    rootFlagName: activeTarget.rootFlagName,
+  } : clearMachineVariables(variables);
+  const normalizeScopedRecord = (input) => {
+    const record = asRecord(input);
+    if (!fallbackTargetId) return record;
+    const next = { ...record };
+    for (const [key, entry] of Object.entries(record)) {
+      if (key.includes("::")) continue;
+      const scopedKey = `${fallbackTargetId}::${key}`;
+      if (next[scopedKey] === undefined) next[scopedKey] = entry;
+      delete next[key];
+    }
+    return next;
+  };
+  const scopeEntry = (entry) => {
+    if (entry.targetId && targets.some((target) => target.id === entry.targetId)) return entry;
+    const namedTarget = targets.find((target) => [entry.target, entry.targetName].includes(target.name));
+    const target = namedTarget || targets.find((candidate) => candidate.id === fallbackTargetId);
+    return target ? { ...entry, targetId: target.id, target: entry.target || target.name, targetName: entry.targetName || target.name } : entry;
+  };
   return {
     ...base,
     ...value,
-    variables,
-    targets: asArray(value.targets).map(normalizeTarget),
-    accounts: asArray(value.accounts),
-    users: asArray(value.users),
-    loot: asArray(value.loot),
-    completed: asRecord(value.completed),
-    notes: asRecord(value.notes),
-    nextSteps: asRecord(value.nextSteps),
-    evidence: asRecord(value.evidence),
+    activeTargetId,
+    variables: normalizedVariables,
+    targets: normalizedTargets,
+    accounts: asArray(value.accounts).map(scopeEntry),
+    users: asArray(value.users).map(scopeEntry),
+    loot: asArray(value.loot).map(scopeEntry),
+    completed: normalizeScopedRecord(value.completed),
+    notes: normalizeScopedRecord(value.notes),
+    nextSteps: normalizeScopedRecord(value.nextSteps),
+    narrativeSources: normalizeScopedRecord(value.narrativeSources),
+    evidence: normalizeScopedRecord(value.evidence),
     discoveries: asArray(value.discoveries).filter((entry) => {
       if (entry.type === "hostname" && ["nmap.org", "www.nmap.org"].includes(String(entry.value).toLowerCase())) return false;
       if (["ip", "endpoint"].includes(entry.type) && entry.value === variables.lhost) return false;
       return true;
-    }),
+    }).map(scopeEntry),
     parserSettings: { ...DEFAULT_PARSER_SETTINGS, ...asRecord(value.parserSettings) },
-    ignoredDiscoveries: asArray(value.ignoredDiscoveries),
-    commandHistory: asArray(value.commandHistory),
+    ignoredDiscoveries: asArray(value.ignoredDiscoveries).map(scopeEntry),
+    commandHistory: asArray(value.commandHistory).map(scopeEntry),
     reports: asRecord(value.reports),
     profile: asRecord(value.profile),
     exam: asRecord(value.exam),

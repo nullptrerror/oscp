@@ -14,7 +14,7 @@ const segmentStyle = (style) => {
     fontWeight: style.bold ? 700 : undefined,
     opacity: style.dim ? 0.6 : undefined,
     fontStyle: style.italic ? "italic" : undefined,
-    textDecoration: style.underline ? "underline" : undefined,
+    textDecoration: [style.underline && "underline", style.strike && "line-through"].filter(Boolean).join(" ") || undefined,
   };
 };
 

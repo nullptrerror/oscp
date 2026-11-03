@@ -5,13 +5,19 @@ import CommandResultPanel from "./CommandResultPanel";
 
 export default function CommandBlock({ command, variables, onCopy, itemId, commandKey, evidence, expandedResultsKey, onExpandedResultsChange, commandHistory, targetId, targetName }) {
   const [copied, setCopied] = useState(false);
+  const [contextError, setContextError] = useState("");
   const rendered = renderCommand(command.value, variables);
   const insight = describeCommand(rendered.command, command.label);
   const runCount = exactCommandRunCount(commandHistory, rendered.command, { targetId, targetName });
 
   const copy = async () => {
+    if (!targetId) {
+      setContextError("Select or create a machine before copying this command.");
+      return;
+    }
     await navigator.clipboard.writeText(rendered.command);
     onCopy?.(command, rendered.command);
+    setContextError("");
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1200);
   };
@@ -32,6 +38,7 @@ export default function CommandBlock({ command, variables, onCopy, itemId, comma
       {rendered.missing.length > 0 && (
         <p className="command-warning">Set {rendered.missing.join(", ")} before running.</p>
       )}
+      {contextError && <p className="command-warning">{contextError}</p>}
       <CommandResultPanel
         itemId={itemId}
         commandKey={commandKey}

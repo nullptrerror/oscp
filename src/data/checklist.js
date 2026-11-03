@@ -2,10 +2,12 @@ export const DEFAULT_VARIABLES = {
   workspaceRoot: "/home/kali/oscp",
   lhost: "10.10.14.2",
   lport: "443",
-  rhost: "192.168.45.100",
+  rhost: "",
   rport: "",
   uport: "",
-  targetName: "target-01",
+  targetName: "",
+  userFlagName: "local.txt",
+  rootFlagName: "proof.txt",
   domain: "",
   baseDn: "",
   dc: "",
@@ -26,7 +28,7 @@ export const DEFAULT_VARIABLES = {
 export const VARIABLE_GROUPS = [
   { label: "Workspace", keys: ["workspaceRoot"] },
   { label: "Operator", keys: ["lhost", "lport", "interface"] },
-  { label: "Target", keys: ["targetName", "rhost", "rport", "uport", "subnet"] },
+  { label: "Target", keys: ["targetName", "rhost", "rport", "uport", "subnet", "userFlagName", "rootFlagName"] },
   { label: "Identity", keys: ["domain", "baseDn", "dc", "user", "password", "gppCpassword", "hash"] },
   { label: "Resources", keys: ["smbShare", "smbDirectory", "sprayPassword", "sprayJitter", "sprayRockyouLimit", "wordlist"] },
 ];
@@ -511,8 +513,8 @@ export const CHECKLIST = [
         title: "Capture Linux proof context",
         detail: "Capture the proof value from its original location in an interactive shell. Keep the target IP, current identity, file path, and file contents visible together in the screenshot.",
         commands: [
-          { label: "Local proof block", value: "hostname; whoami; id; ip addr; find /home -name local.txt -print -exec cat {} \\; 2>/dev/null" },
-          { label: "Root proof block", value: "hostname; whoami; id; ip addr; ls -l /root/proof.txt; cat /root/proof.txt" },
+          { label: "User-level proof block", value: "hostname; whoami; id; ip addr; find /home -name '{{userFlagName}}' -print -exec cat {} \\; 2>/dev/null" },
+          { label: "Root proof block", value: "hostname; whoami; id; ip addr; flag_path=$(find /root -name '{{rootFlagName}}' -print -quit 2>/dev/null); echo \"$flag_path\"; test -n \"$flag_path\" && cat \"$flag_path\"" },
         ],
       },
       {
@@ -520,8 +522,8 @@ export const CHECKLIST = [
         title: "Capture Windows proof context",
         detail: "Capture the proof value from its original location in an interactive shell. Keep ipconfig, whoami, the original file path, and file contents visible together in the screenshot.",
         commands: [
-          { label: "Local proof block", value: "hostname & whoami & ipconfig & dir C:\\Users\\%USERNAME%\\Desktop\\local.txt & type C:\\Users\\%USERNAME%\\Desktop\\local.txt" },
-          { label: "Administrator proof block", value: "hostname & whoami & ipconfig & dir C:\\Users\\Administrator\\Desktop\\proof.txt & type C:\\Users\\Administrator\\Desktop\\proof.txt" },
+          { label: "User-level proof block", value: "hostname & whoami & ipconfig & dir C:\\Users\\%USERNAME%\\Desktop\\{{userFlagName}} & type C:\\Users\\%USERNAME%\\Desktop\\{{userFlagName}}" },
+          { label: "Administrator proof block", value: "hostname & whoami & ipconfig & dir C:\\Users\\Administrator\\Desktop\\{{rootFlagName}} & type C:\\Users\\Administrator\\Desktop\\{{rootFlagName}}" },
         ],
       },
       {

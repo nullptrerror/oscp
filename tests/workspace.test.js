@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   createDefaultWorkspace,
+  deleteMachineData,
   domainToBaseDn,
   getItemStateKey,
   getScopedItemValue,
@@ -27,7 +28,8 @@ test("a backup is normalized without dropping default variables", () => {
     targets: [{ id: "target-1", name: "lab" }],
   });
 
-  assert.equal(restored.variables.rhost, "198.51.100.25");
+  assert.equal(restored.variables.rhost, "");
+  assert.equal(restored.targets[0].commandContext.rhost, "198.51.100.25");
   assert.equal(restored.variables.interface, "tun0");
   assert.equal(restored.targets.length, 1);
   assert.deepEqual(restored.accounts, []);
@@ -80,13 +82,61 @@ test("attack-narrative decisions persist when a workspace is normalized", () => 
   assert.equal(restored.nextSteps["target-active::svc-smb"], "The share contents justified searching for reusable credentials.");
 });
 
+test("active command variables migrate into and restore from the selected machine", () => {
+  const migrated = normalizeWorkspace({
+    version: WORKSPACE_VERSION,
+    activeTargetId: "target-active",
+    variables: { user: "operator", password: "legacy-secret", domain: "corp.local" },
+    targets: [{ id: "target-active", name: "active", host: "192.0.2.12" }],
+  });
+  assert.equal(migrated.targets[0].commandContext.user, "operator");
+  assert.equal(migrated.targets[0].commandContext.password, "legacy-secret");
+
+  const restored = normalizeWorkspace({
+    ...migrated,
+    variables: { ...migrated.variables, user: "", password: "", domain: "" },
+  });
+  assert.equal(restored.variables.user, "operator");
+  assert.equal(restored.variables.password, "legacy-secret");
+  assert.equal(restored.variables.domain, "corp.local");
+});
+
+test("deleting a machine removes every machine-scoped record and preserves other machines", () => {
+  const workspace = createDefaultWorkspace();
+  workspace.activeTargetId = "delete-me";
+  workspace.targets = [{ id: "delete-me", name: "old" }, { id: "keep-me", name: "keep" }];
+  for (const key of ["accounts", "users", "loot", "discoveries", "ignoredDiscoveries", "commandHistory"]) {
+    workspace[key] = [{ id: `${key}-old`, targetId: "delete-me" }, { id: `${key}-keep`, targetId: "keep-me" }];
+  }
+  for (const key of ["completed", "notes", "nextSteps", "narrativeSources", "evidence"]) {
+    workspace[key] = { [`delete-me::item`]: key === "evidence" ? [] : true, [`keep-me::item`]: key === "evidence" ? [] : true };
+  }
+  workspace.reports = { "delete-me": { title: "old" }, "keep-me": { title: "keep" } };
+  workspace.variables.targetName = "old";
+  workspace.variables.rhost = "10.0.0.1";
+
+  const result = deleteMachineData(workspace, "delete-me");
+  assert.equal(result.activeTargetId, null);
+  assert.equal(result.targets.length, 1);
+  assert.equal(result.variables.targetName, "");
+  assert.equal(result.variables.rhost, "");
+  for (const key of ["accounts", "users", "loot", "discoveries", "ignoredDiscoveries", "commandHistory"]) assert.deepEqual(result[key].map((entry) => entry.targetId), ["keep-me"]);
+  for (const key of ["completed", "notes", "nextSteps", "narrativeSources", "evidence"]) assert.deepEqual(Object.keys(result[key]), ["keep-me::item"]);
+  assert.deepEqual(Object.keys(result.reports), ["keep-me"]);
+});
+
 test("the default Kali workspace root is /home/kali/oscp", () => {
   assert.equal(createDefaultWorkspace().variables.workspaceRoot, "/home/kali/oscp");
 });
 
 test("domains derive LDAP base DNs when one is not supplied", () => {
   assert.equal(domainToBaseDn("active.htb"), "DC=active,DC=htb");
-  const restored = normalizeWorkspace({ version: WORKSPACE_VERSION, variables: { domain: "corp.example.com", baseDn: "" } });
+  const restored = normalizeWorkspace({
+    version: WORKSPACE_VERSION,
+    activeTargetId: "target-active",
+    targets: [{ id: "target-active", name: "active", host: "192.0.2.12" }],
+    variables: { domain: "corp.example.com", baseDn: "" },
+  });
   assert.equal(restored.variables.baseDn, "DC=corp,DC=example,DC=com");
 });
 

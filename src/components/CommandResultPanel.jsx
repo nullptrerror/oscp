@@ -18,6 +18,8 @@ export default function CommandResultPanel({ itemId, commandKey, commandLabel, c
   const activeRunId = useRef(null);
   const recordedRunId = useRef(null);
   const resultBytes = useMemo(() => new Blob([result]).size, [result]);
+  const activeTarget = workspace.targets.find((target) => target.id === workspace.activeTargetId);
+  const flagNames = useMemo(() => ({ user: activeTarget?.userFlagName, root: activeTarget?.rootFlagName }), [activeTarget?.rootFlagName, activeTarget?.userFlagName]);
   const cwd = `${String(workspace.variables.workspaceRoot || "/home/kali/oscp").replace(/\/$/, "")}/${workspace.variables.targetName || "unassigned"}`;
 
   const metadata = {
@@ -29,6 +31,10 @@ export default function CommandResultPanel({ itemId, commandKey, commandLabel, c
   const save = (payload) => actions.addEvidence(itemId, { ...metadata, ...payload });
 
   const savePaste = () => {
+    if (!workspace.activeTargetId) {
+      setError("Select or create a machine before saving command output.");
+      return;
+    }
     if (!result.trim() || resultBytes > MAX_RESULT_SIZE) return;
     save({ label: `${commandLabel} · pasted result`, content: result, source: "paste" });
     setResult("");
@@ -36,6 +42,10 @@ export default function CommandResultPanel({ itemId, commandKey, commandLabel, c
   };
 
   const addFiles = async (files) => {
+    if (!workspace.activeTargetId) {
+      setError("Select or create a machine before attaching command evidence.");
+      return;
+    }
     for (const file of files) {
       try {
         save({ ...await fileToEvidence(file), ...metadata, label: `${commandLabel} · ${file.name}` });
@@ -47,6 +57,10 @@ export default function CommandResultPanel({ itemId, commandKey, commandLabel, c
   };
 
   const startTerminal = () => {
+    if (!workspace.activeTargetId) {
+      setError("Select or create a machine before running this command.");
+      return;
+    }
     const runId = createId("command");
     activeRunId.current = runId;
     recordedRunId.current = null;
@@ -74,7 +88,8 @@ export default function CommandResultPanel({ itemId, commandKey, commandLabel, c
     });
     if (execution.exitCode === 0) actions.setCompleted(itemId, true);
     activeRunId.current = null;
-    setTerminalOpen(false);
+    if (!execution.flag) setTerminalOpen(false);
+    else setError(`${execution.flag.kind === "root" ? "Root / administrator" : "User-level"} proof candidate detected. Keep this terminal visible, verify the full proof context, and capture the screenshot before hiding it.`);
   }, [actions, commandKey, commandLabel, commandText, itemId]);
 
   return (
@@ -107,6 +122,7 @@ export default function CommandResultPanel({ itemId, commandKey, commandLabel, c
             command={commandText}
             cwd={cwd}
             label={commandLabel}
+            flagNames={flagNames}
             onClose={() => setTerminalOpen(false)}
             onStart={recordTerminalStart}
             onFinish={finishTerminal}

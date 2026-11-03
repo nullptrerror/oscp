@@ -1,8 +1,11 @@
 import { useState } from "react";
-import { VARIABLE_GROUPS } from "../data/checklist";
+import { CHECKLIST, VARIABLE_GROUPS } from "../data/checklist";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { credentialVariables, isNtHash } from "../lib/credentials";
 import { visibleDiscoveries } from "../lib/evidence";
+import { getScopedItemValue } from "../lib/workspace";
+
+const PHASE_ICONS = ["⌂", "⌕", "▦", "◎", "↟", "♜", "⊞", "◇", "⇄", "✓", "▣"];
 
 const LABELS = {
   workspaceRoot: "Root path",
@@ -12,6 +15,8 @@ const LABELS = {
   rport: "RPORT(S)",
   uport: "UDP PORT(S)",
   targetName: "Target name",
+  userFlagName: "User flag file",
+  rootFlagName: "Root flag file",
   domain: "Domain",
   baseDn: "LDAP base DN",
   dc: "Domain controller",
@@ -70,15 +75,21 @@ export default function VariablesPanel() {
         </button>
       </div>
       {activeTarget && <p className="active-target">Active: <strong>{activeTarget.name}</strong></p>}
+      {!activeTarget && <p className="machine-required-note">Select or create a machine before copying, running, or saving command evidence.</p>}
       <p className="panel-copy">Commands update as you type. Values stay in this browser until you export a backup.</p>
 
       {workspace.targets.length > 0 && (
         <label className="context-picker">
           <span>Target</span>
           <select value={workspace.activeTargetId || ""} onChange={(event) => {
+            if (!event.target.value) {
+              actions.clearTargetSelection();
+              return;
+            }
             const target = workspace.targets.find((entry) => entry.id === event.target.value);
             if (target) actions.useTarget(target);
           }}>
+            <option value="">No machine selected</option>
             {workspace.targets.map((target) => <option key={target.id} value={target.id}>{target.name} · {target.host}</option>)}
           </select>
         </label>
@@ -102,11 +113,30 @@ export default function VariablesPanel() {
           <select value={selectedAccountId} onChange={(event) => {
             const account = activeAccounts.find((entry) => entry.id === event.target.value);
             if (account) actions.updateVariables(credentialVariables(account));
+            else actions.updateVariables({ user: "", password: "", hash: "", gppCpassword: "" });
           }}>
             <option value="">Choose credential…</option>
             {activeAccounts.map((account) => <option key={account.id} value={account.id}>{account.domain ? `${account.domain}\\` : ""}{account.username}</option>)}
           </select>
         </label>
+      )}
+
+      {activeTarget && (
+        <nav className="methodology-nav" aria-label="Checklist phases">
+          <div className="methodology-nav-head"><span>Methodology</span><small>runs</small></div>
+          {CHECKLIST.map((phase, index) => {
+            const itemIds = new Set(phase.items.map((item) => item.id));
+            const runs = workspace.commandHistory.filter((entry) => entry.targetId === workspace.activeTargetId && entry.source === "local runner" && itemIds.has(entry.itemId)).length;
+            const done = phase.items.filter((item) => getScopedItemValue(workspace.completed, workspace, item.id, false)).length;
+            return (
+              <a href={`#phase-${phase.id}`} key={phase.id} title={phase.summary}>
+                <span className="methodology-icon" aria-hidden="true">{PHASE_ICONS[index] || "•"}</span>
+                <span><strong>{phase.title}</strong><small>{done}/{phase.items.length} checks</small></span>
+                <em className={runs ? "has-runs" : ""}>{runs}</em>
+              </a>
+            );
+          })}
+        </nav>
       )}
 
       {VARIABLE_GROUPS.map((group) => (

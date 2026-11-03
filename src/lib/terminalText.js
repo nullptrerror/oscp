@@ -31,7 +31,9 @@ const ESCAPE = /\x1b(?:\[([0-?]*)[ -/]*([@-~])|\][^\x07\x1b]*(?:\x07|\x1b\\)?|[@
 export const hasAnsi = (text) => /\x1b\[[0-9;:]*m/.test(String(text ?? ""));
 
 function applySgr(style, params) {
-  const codes = params === "" ? [0] : params.split(/[;:]/).map((value) => Number(value || 0));
+  // ISO-8613 colon-form truecolor may include an empty color-space slot (38:2::R:G:B).
+  const normalized = params.replace(/::/g, ":");
+  const codes = normalized === "" ? [0] : normalized.split(/[;:]/).map((value) => Number(value || 0));
   const next = { ...style };
   for (let index = 0; index < codes.length; index += 1) {
     const code = codes[index];
@@ -40,10 +42,12 @@ function applySgr(style, params) {
     else if (code === 2) next.dim = true;
     else if (code === 3) next.italic = true;
     else if (code === 4) next.underline = true;
+    else if (code === 9) next.strike = true;
     else if (code === 7) next.inverse = true;
     else if (code === 22) { delete next.bold; delete next.dim; }
     else if (code === 23) delete next.italic;
     else if (code === 24) delete next.underline;
+    else if (code === 29) delete next.strike;
     else if (code === 27) delete next.inverse;
     else if (code >= 30 && code <= 37) next.fg = NORMAL[code - 30];
     else if (code === 39) delete next.fg;

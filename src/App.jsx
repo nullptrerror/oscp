@@ -1,4 +1,4 @@
-import { NavLink, Route, Routes } from "react-router";
+import { Navigate, NavLink, Route, Routes, useLocation } from "react-router";
 import { WorkspaceProvider, useWorkspace } from "./context/WorkspaceContext";
 import ChecklistPage from "./pages/ChecklistPage";
 import TargetsPage from "./pages/TargetsPage";
@@ -17,7 +17,9 @@ const pages = [
 ];
 
 function AppRoutes() {
-  const { saveState } = useWorkspace();
+  const { workspace, saveState } = useWorkspace();
+  const location = useLocation();
+  if (!workspace.activeTargetId && ["/vault", "/report"].includes(location.pathname)) return <Navigate to="/" replace />;
   return (
     <div className="app-shell">
       <header className="topbar">

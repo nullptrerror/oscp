@@ -28,6 +28,12 @@ test("emoji and Unicode survive parsing", () => {
   assert.equal(stripAnsi("\x1b[33m🔥 ✓ ╔══╣ é\x1b[0m"), "🔥 ✓ ╔══╣ é");
 });
 
+test("colon-form truecolor and strikethrough styles are preserved", () => {
+  const lines = parseAnsi("\x1b[38:2::255:64:32;9mstyled\x1b[0m");
+  assert.equal(lines[0][0].style.fg, "#ff4020");
+  assert.equal(lines[0][0].style.strike, true);
+});
+
 test("plain output gets tool-marker highlighting; ANSI output keeps its own colors", () => {
   const [line] = terminalLines("SMB 10.0.0.1 445 DC [+] corp\\svc:pw (Pwn3d!)");
   assert.ok(line.some((segment) => segment.text === "[+]" && segment.style.fg));

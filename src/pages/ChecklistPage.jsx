@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router";
 import ChecklistItem from "../components/ChecklistItem";
 import VariablesPanel from "../components/VariablesPanel";
 import EvidenceInbox from "../components/EvidenceInbox";
@@ -6,9 +7,33 @@ import { CHECKLIST } from "../data/checklist";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { getScopedItemValue } from "../lib/workspace";
 import { useLocalRunner } from "../context/LocalRunnerContext";
+import { FLAG_PROFILES, flagProfile } from "../lib/flagProfiles";
+
+function MachineRequired({ workspace, actions }) {
+  const [draft, setDraft] = useState({ name: "", host: "", os: "Unknown", labType: "oscp" });
+  const submit = (event) => {
+    event.preventDefault();
+    if (!draft.name.trim() || !draft.host.trim()) return;
+    const profile = flagProfile(draft.labType);
+    actions.addTarget({ ...draft, name: draft.name.trim(), host: draft.host.trim(), userFlagName: profile.userFlagName, rootFlagName: profile.rootFlagName, domain: "", notes: "" });
+  };
+  return (
+    <section className="machine-gate" role="dialog" aria-labelledby="machine-gate-title">
+      <div><p className="eyebrow">Machine required</p><h2 id="machine-gate-title">Choose where this work belongs.</h2><p>Commands, evidence, credentials, flags, notes, and report text are always stored under one machine.</p></div>
+      {workspace.targets.length > 0 && <div className="machine-gate-existing">{workspace.targets.map((target) => <button type="button" className="button secondary" key={target.id} onClick={() => actions.useTarget(target)}>Use {target.name} · {target.host}</button>)}</div>}
+      <form onSubmit={submit}>
+        <label><span>New box name</span><input type="text" value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder="web01" required /></label>
+        <label><span>IP or host</span><input type="text" value={draft.host} onChange={(event) => setDraft({ ...draft, host: event.target.value })} placeholder="192.168.45.100" required /></label>
+        <label><span>Proof style</span><select value={draft.labType} onChange={(event) => setDraft({ ...draft, labType: event.target.value })}>{Object.entries(FLAG_PROFILES).map(([value, profile]) => <option value={value} key={value}>{profile.label}</option>)}</select></label>
+        <button type="submit" className="button" disabled={!draft.name.trim() || !draft.host.trim()}>Create and use box</button>
+      </form>
+      <Link className="text-button machine-gate-link" to="/targets">Open full machine setup</Link>
+    </section>
+  );
+}
 
 export default function ChecklistPage() {
-  const { workspace } = useWorkspace();
+  const { workspace, actions } = useWorkspace();
   const runner = useLocalRunner();
   const [query, setQuery] = useState("");
   const [hideComplete, setHideComplete] = useState(false);
@@ -52,6 +77,15 @@ export default function ChecklistPage() {
     })).filter((phase) => phase.items.length > 0),
     [hideComplete, normalizedQuery, workspace.completed],
   );
+
+  if (!workspace.activeTargetId) {
+    return (
+      <main className="page-shell checklist-page">
+        <section className="checklist-hero"><div><p className="eyebrow">Operator checklist</p><h1>Methodology, not memory.</h1><p>Select a machine before beginning so nothing is saved into an unassigned workspace.</p></div></section>
+        <MachineRequired workspace={workspace} actions={actions} />
+      </main>
+    );
+  }
 
   return (
     <main className="page-shell checklist-page">

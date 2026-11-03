@@ -64,7 +64,7 @@ const unique = (items) => {
   });
 };
 
-export function parseEvidence(content = "", filename = "") {
+export function parseEvidence(content = "", filename = "", { userFlagName = "local.txt", rootFlagName = "proof.txt" } = {}) {
   const text = String(content);
   const discoveries = [];
   const add = (type, value, details = {}) => {
@@ -100,10 +100,15 @@ export function parseEvidence(content = "", filename = "") {
 
   for (const match of text.matchAll(/\$krb5tgs\$\d+\$\*?([^$*:\s]+)[*$]/gi)) add("kerberos-ticket", match[0], { username: match[1], ticket: "TGS" });
   for (const match of text.matchAll(/\$krb5asrep\$\d+\$([^@:]+)@([^:]+):[^\s]+/gi)) add("kerberos-ticket", match[0], { username: match[1], domain: match[2], ticket: "AS-REP" });
-  const flagFile = String(filename).match(/^(user|local|root|proof)(?:[-_.]?flag)?\.txt$/i);
-  if (flagFile) {
+  const flagSource = String(filename);
+  const configuredFlag = [
+    { name: userFlagName, kind: "user" },
+    { name: rootFlagName, kind: "root" },
+  ].find((entry) => entry.name && flagSource.toLowerCase().includes(String(entry.name).toLowerCase()));
+  const flagFile = flagSource.match(/(?:^|[\\/\s])(user|local|root|proof)(?:[-_.]?flag)?\.txt(?:$|[\s'";&])/i);
+  if (configuredFlag || flagFile) {
     const flag = text.match(/^\s*([a-f0-9]{32,64})\s*$/im);
-    if (flag) add("flag", flag[1].toLowerCase(), { kind: /root|proof/i.test(flagFile[1]) ? "root" : "user" });
+    if (flag) add("flag", flag[1].toLowerCase(), { kind: configuredFlag?.kind || (/root|proof/i.test(flagFile[1]) ? "root" : "user") });
   }
   for (const match of text.matchAll(/\bcpassword\s*=\s*["']([^"']+)["']/gi)) add("gpp-cpassword", match[1]);
 
@@ -198,6 +203,8 @@ export function guidanceForDiscoveries(discoveries) {
   if (discoveries.some((item) => item.type === "credential")) steps.push({ itemId: "creds-reuse", text: "A credential was parsed: save it, validate it, then reuse it deliberately across exposed services." });
   if (discoveries.some((item) => item.type === "kerberos-ticket")) steps.push({ itemId: "creds-crack", text: "A Kerberos ticket was parsed: crack the saved hash and record the result." });
   if (discoveries.some((item) => item.type === "cve")) steps.push({ itemId: "access-research", text: "A CVE identifier was parsed: verify the exact product version and research that specific issue." });
+  if (discoveries.some((item) => item.type === "flag" && item.kind === "user")) steps.push({ itemId: "proof-linux", text: "User-level proof was detected: capture the flag, identity, and target IP together, submit the value, then continue privilege escalation." });
+  if (discoveries.some((item) => item.type === "flag" && item.kind === "root")) steps.push({ itemId: "proof-artifacts", text: "Administrative proof was detected: capture the complete proof screenshot and verify submission before moving on." });
   return unique(steps.map((step) => ({ ...step, type: "guidance", value: `${step.itemId}:${step.text}` }))).map(({ type, value, ...step }) => step);
 }
 

@@ -96,6 +96,9 @@ test("flags and Kerberos ticket material are not mislabeled as NTLM hashes", () 
     { type: "flag", value: flag, kind: "user" },
   ]);
   assert.equal(parseEvidence(ticket, "tgs.hashes").some((entry) => entry.type === "ntlm-hash"), false);
+  assert.deepEqual(parseEvidence(`${flag}\n`, "cat objective.token", { userFlagName: "objective.token", rootFlagName: "admin.token" }).filter((entry) => entry.type === "flag"), [
+    { type: "flag", value: flag, kind: "user" },
+  ]);
   assert.deepEqual(parseEvidence("Administrator:500:aad3b435b51404eeaad3b435b51404ee:8846f7eaee8fb117ad06bdd830b7586c:::")
     .filter((entry) => entry.type === "ntlm-hash")
     .map((entry) => entry.value), ["8846f7eaee8fb117ad06bdd830b7586c"]);
