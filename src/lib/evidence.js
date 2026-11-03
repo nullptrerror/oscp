@@ -106,6 +106,10 @@ export function parseEvidence(content = "", filename = "") {
       if (principal && !principal[2].endsWith("$")) add("user", principal[2], { domain: principal[1] });
       else if (!user[1].endsWith("$")) add("user", user[1]);
     }
+    const standalonePrincipal = line.match(/^\s*([A-Za-z0-9][A-Za-z0-9_.-]{1,})\\([A-Za-z0-9._$-]+)\s*$/);
+    if (standalonePrincipal && !standalonePrincipal[2].endsWith("$")) {
+      add("user", standalonePrincipal[2], { domain: standalonePrincipal[1] });
+    }
     const nxcUser = line.match(/^(?:SMB|LDAP)\s+(?:\d{1,3}\.){3}\d{1,3}\s+\d+\s+\S+\s+([A-Za-z0-9._$-]+)\s+(?:\d{4}-\d{2}-\d{2}|badpwdcount\b)/i);
     if (nxcUser && !nxcUser[1].endsWith("$")) add("user", nxcUser[1]);
     const group = line.match(/^\s*(?:group|memberof)\s*[:=]\s*(.+)$/i);
