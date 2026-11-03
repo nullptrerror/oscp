@@ -220,10 +220,10 @@ export const CHECKLIST = [
       {
         id: "web-manual",
         title: "Test inputs and access controls manually",
-        detail: "Proxy interesting requests, change one input at a time, and record the exact request that proves impact.",
+        detail: "Proxy interesting requests, change one input at a time, and record the exact request that proves impact. Avoid automatic exploitation tools during the exam; verify the current OffSec restrictions before starting.",
         commands: [
           { label: "Replay request", value: "curl -k -i -X POST 'http://{{rhost}}:{{rport}}/login' -d 'username={{user}}&password={{password}}'" },
-          { label: "SQLi confirmation", value: "sqlmap -r request.txt --batch --level 2 --risk 1 --output-dir={{workspaceRoot}}/{{targetName}}/web/sqlmap" },
+          { label: "Manual SQLi comparison", value: "for value in \"1\" \"1' AND '1'='1\" \"1' AND '1'='2\"; do echo \"=== id=$value\"; curl -ksS -o /tmp/fieldnotes-response -w 'status=%{http_code} bytes=%{size_download} time=%{time_total}\\n' --get --data-urlencode \"id=$value\" 'http://{{rhost}}:{{rport}}/index.php'; sha256sum /tmp/fieldnotes-response; done" },
         ],
       },
     ],
@@ -509,15 +509,19 @@ export const CHECKLIST = [
       {
         id: "proof-linux",
         title: "Capture Linux proof context",
+        detail: "Capture the proof value from its original location in an interactive shell. Keep the target IP, current identity, file path, and file contents visible together in the screenshot.",
         commands: [
-          { label: "Proof block", value: "hostname; whoami; id; ip -br address; cat /root/proof.txt 2>/dev/null || find /home -name local.txt -exec cat {} \\;" },
+          { label: "Local proof block", value: "hostname; whoami; id; ip addr; find /home -name local.txt -print -exec cat {} \\; 2>/dev/null" },
+          { label: "Root proof block", value: "hostname; whoami; id; ip addr; ls -l /root/proof.txt; cat /root/proof.txt" },
         ],
       },
       {
         id: "proof-windows",
         title: "Capture Windows proof context",
+        detail: "Capture the proof value from its original location in an interactive shell. Keep ipconfig, whoami, the original file path, and file contents visible together in the screenshot.",
         commands: [
-          { label: "Proof block", value: "hostname & whoami & ipconfig & type C:\\Users\\Administrator\\Desktop\\proof.txt" },
+          { label: "Local proof block", value: "hostname & whoami & ipconfig & dir C:\\Users\\%USERNAME%\\Desktop\\local.txt & type C:\\Users\\%USERNAME%\\Desktop\\local.txt" },
+          { label: "Administrator proof block", value: "hostname & whoami & ipconfig & dir C:\\Users\\Administrator\\Desktop\\proof.txt & type C:\\Users\\Administrator\\Desktop\\proof.txt" },
         ],
       },
       {

@@ -5,13 +5,15 @@ import { useLocalRunner } from "../context/LocalRunnerContext";
 
 const CAPTURE_LIMIT = 1024 * 1024;
 
-export default function CommandTerminal({ command, cwd, label, onClose, onFinish }) {
+export default function CommandTerminal({ command, cwd, label, onClose, onStart, onFinish }) {
   const runner = useLocalRunner();
   const hostRef = useRef(null);
   const outputRef = useRef("");
   const socketRef = useRef(null);
+  const onStartRef = useRef(onStart);
   const onFinishRef = useRef(onFinish);
   const [state, setState] = useState({ status: "connecting", logPath: "", message: "" });
+  onStartRef.current = onStart;
   onFinishRef.current = onFinish;
 
   useEffect(() => {
@@ -70,6 +72,7 @@ export default function CommandTerminal({ command, cwd, label, onClose, onFinish
         }
         if (message.type === "started") {
           setState({ status: "running", logPath: message.logPath, message: "" });
+          onStartRef.current?.(message);
           return;
         }
         if (message.type === "output") {

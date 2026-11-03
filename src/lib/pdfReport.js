@@ -21,11 +21,13 @@ import {
 } from "pdf-lib";
 import { ALL_ITEMS, CHECKLIST } from "../data/checklist.js";
 import { getActiveScope, getTargetItemValue, normalizeWorkspace } from "./workspace.js";
-import { formatDiscovery, visibleDiscoveries } from "./evidence.js";
+import { discoveryContext, formatDiscovery, PARSER_TAGS, visibleDiscoveries } from "./evidence.js";
+import { describeCommand } from "./commandInsights.js";
 import { getOperatorProfile, githubProfile, initials } from "./profile.js";
 import { TERMINAL_THEME, terminalLines } from "./terminalText.js";
 
 export const WORKSPACE_ATTACHMENT = "fieldnotes-workspace.json";
+const DISCOVERY_LABELS = Object.fromEntries(PARSER_TAGS.map((entry) => [entry.type, entry.label]));
 
 const PAGE_SIZE = [595.28, 841.89];
 const [PAGE_W, PAGE_H] = PAGE_SIZE;
@@ -746,6 +748,15 @@ async function buildReportPdf(workspace, targetId, { fonts: fontBytes, rasterize
     });
   };
 
+  const parsedFindingsBlock = (discoveries = []) => {
+    if (discoveries.length === 0) return;
+    eyebrow(`Parsed findings · ${discoveries.length}`);
+    table(
+      [{ label: "Type", width: 0.2, bold: true }, { label: "Finding", width: 0.5, mono: true }, { label: "Context", width: 0.3 }],
+      discoveries.map((entry) => [DISCOVERY_LABELS[entry.type] || entry.type.replace(/-/g, " "), entry.value, discoveryContext(entry)]),
+    );
+  };
+
   const loadFigure = async (dataUrl, mimeType) => {
     try {
       const image = await embedDataUrlImage(pdf, dataUrl, mimeType);
@@ -925,7 +936,10 @@ async function buildReportPdf(workspace, targetId, { fonts: fontBytes, rasterize
     subheading("Command run timeline");
     for (const command of orderedCommands) {
       const item = data.items.find((candidate) => candidate.id === command.itemId);
+      const insight = describeCommand(command.command, command.label);
       paragraph(span(item?.title || command.label || "Checklist command", { size: 8, bold: true, color: PALETTE.muted }), { after: 5 });
+      paragraph([span("Purpose  ", { size: 8, bold: true, color: PALETTE.muted }), span(insight.purpose, { size: 8.4, color: PALETTE.body })], { lineHeight: 12, after: 4 });
+      paragraph([span("Returns  ", { size: 8, bold: true, color: PALETTE.muted }), span(insight.returns, { size: 8.4, color: PALETTE.body })], { lineHeight: 12, after: 8 });
       terminal({
         title: command.label || "Command",
         meta: [command.address, formatTimestamp(command.startedAt || command.copiedAt)].filter(Boolean).join(" · "),
@@ -934,9 +948,7 @@ async function buildReportPdf(workspace, targetId, { fonts: fontBytes, rasterize
       for (const evidence of terminalEvidence.filter((candidate) => candidate.commandRunId === command.id)) {
         renderedTerminalEvidenceIds.add(evidence.id);
         if (evidence.content) outputBlock(evidence, attachmentNames.get(evidence));
-        if (evidence.discoveries?.length) {
-          paragraph([span("Parsed  ", { size: 7.6, bold: true, color: PALETTE.muted }), mono(evidence.discoveries.map(formatDiscovery).join("  ·  "), { size: 7.4, color: PALETTE.muted })], { lineHeight: 11, after: 10 });
-        }
+        parsedFindingsBlock(evidence.discoveries);
       }
     }
   }
@@ -962,9 +974,7 @@ async function buildReportPdf(workspace, targetId, { fonts: fontBytes, rasterize
       if (renderedTerminalEvidenceIds.has(evidence.id)) continue;
       if (evidence.content) {
         outputBlock(evidence, attachmentNames.get(evidence));
-        if (evidence.discoveries?.length) {
-          paragraph([span("Parsed  ", { size: 7.6, bold: true, color: PALETTE.muted }), mono(evidence.discoveries.map(formatDiscovery).join("  ·  "), { size: 7.4, color: PALETTE.muted })], { lineHeight: 11, after: 10 });
-        }
+        parsedFindingsBlock(evidence.discoveries);
       }
       if (evidence.dataUrl && PROOF_CATEGORIES.has(evidence.category)) {
         paragraph([span("Proof screenshot  ", { size: 8.6, bold: true, color: PALETTE.accent }), span(`${evidence.label} — shown under Proof of Compromise.`, { size: 8.6, color: PALETTE.muted })], { after: 8 });

@@ -162,6 +162,15 @@ export function formatDiscovery(discovery) {
   return `port: ${discovery.value}/${discovery.protocol || "?"} ${discovery.state || "open"}${discovery.service ? ` ${discovery.service}` : ""}`;
 }
 
+export function discoveryContext(entry) {
+  if (entry.type === "port") return [entry.protocol?.toUpperCase(), entry.state, entry.service].filter(Boolean).join(" · ");
+  if (entry.type === "hostname" && entry.address) return `Resolves to ${entry.address}`;
+  if (entry.type === "credential") return [entry.domain, entry.username, entry.source].filter(Boolean).join(" · ");
+  if (entry.type === "kerberos-ticket") return [entry.ticket, entry.domain, entry.username].filter(Boolean).join(" · ");
+  if (entry.username) return `Account: ${entry.username}`;
+  return "Parsed from captured terminal output";
+}
+
 export function routeEvidence(filename = "", content = "", fallbackItemId = "proof-artifacts") {
   const haystack = `${filename}\n${String(content).slice(0, 12000)}`.toLowerCase();
   if (/getuserspns|krb5tgs|kerberoast|tgs\.hash/.test(haystack)) return "ad-spn-tgs";

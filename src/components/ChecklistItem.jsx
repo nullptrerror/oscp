@@ -59,6 +59,9 @@ export default function ChecklistItem({ item, searchActive = false, expandedResu
                   itemId={item.id}
                   evidence={evidence.filter((entry) => entry.commandKey === commandKey)}
                   variables={workspace.variables}
+                  commandHistory={workspace.commandHistory}
+                  targetId={workspace.activeTargetId}
+                  targetName={workspace.variables.targetName}
                   expandedResultsKey={expandedResultsKey}
                   onExpandedResultsChange={onExpandedResultsChange}
                   onCopy={(copiedCommand, renderedCommand) => {

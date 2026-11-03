@@ -5,6 +5,7 @@ import { useWorkspace } from "../context/WorkspaceContext";
 import { fileToEvidence } from "../lib/evidence";
 import { getActiveScope, getScopedItemValue } from "../lib/workspace";
 import { getOperatorProfile, githubProfile, initials } from "../lib/profile";
+import { buildReportStarters } from "../lib/reportStarters";
 
 const AVATAR_SIZE = 320;
 
@@ -52,6 +53,7 @@ export default function ReportPage() {
   const profile = getOperatorProfile(workspace, report);
   const github = githubProfile(profile.github);
   const reportTitle = report.title || `${targetName} Penetration Test Report`;
+  const reportStarters = useMemo(() => buildReportStarters(workspace, workspace.activeTargetId), [workspace]);
 
   // The first profile edit also moves values from older per-machine reports into the shared profile.
   const updateProfile = (patch) => {
@@ -63,11 +65,11 @@ export default function ReportPage() {
     const completed = ALL_ITEMS.filter((item) => getScopedItemValue(workspace.completed, workspace, item.id, false)).length;
     const documented = ALL_ITEMS.filter((item) => getScopedItemValue(workspace.evidence, workspace, item.id, []).length > 0).length;
     const proof = getScopedItemValue(workspace.evidence, workspace, "proof-artifacts", []);
-    const copiedCommands = (workspace.commandHistory || []).filter((entry) => entry.targetId === workspace.activeTargetId).length;
+    const terminalRuns = (workspace.commandHistory || []).filter((entry) => entry.targetId === workspace.activeTargetId && entry.source === "local runner").length;
     return {
       completed,
       documented,
-      copiedCommands,
+      terminalRuns,
       userFlag: proof.some((entry) => entry.category === "user-flag"),
       rootFlag: proof.some((entry) => entry.category === "root-flag"),
     };
@@ -77,12 +79,24 @@ export default function ReportPage() {
     { label: "Name and OSID", done: Boolean(profile.name && profile.osid), hint: "Fill in the operator profile." },
     { label: "Executive summary", done: Boolean(report.executiveSummary?.trim()), hint: "Two or three sentences on the attack path and impact." },
     { label: "Steps with evidence", done: readiness.documented > 0, detail: `${readiness.documented}`, hint: "Save command output on the checklist." },
-    { label: "Commands logged", done: readiness.copiedCommands > 0, detail: `${readiness.copiedCommands}`, hint: "Copy commands from the checklist so they are recorded." },
+    { label: "Terminal runs", done: readiness.terminalRuns > 0, detail: `${readiness.terminalRuns}`, hint: "Run commands from the checklist so their exact arguments and results are recorded." },
     { label: "User / local proof", done: readiness.userFlag, hint: "Screenshot with local.txt and the IP address.", action: () => userFlagRef.current?.click(), actionLabel: "Add" },
     { label: "Root / Admin proof", done: readiness.rootFlag, hint: "Screenshot with proof.txt and the IP address.", action: () => rootFlagRef.current?.click(), actionLabel: "Add" },
+    { label: "Proof screenshot verified", done: Boolean(report.proofVerified), hint: "Confirm original location, interactive shell, identity, IP, and proof contents are visible." },
+    { label: "Control-panel proof", done: Boolean(report.proofSubmitted), hint: "Submit each proof value before the exam VPN/control panel closes." },
     { label: "Recommendations", done: Boolean(report.recommendations?.trim()), hint: "One fix per weakness you exploited." },
   ];
   const doneCount = checks.filter((check) => check.done).length;
+
+  const applyReportStarters = () => {
+    const patch = Object.fromEntries(Object.entries(reportStarters).filter(([key]) => !report[key]?.trim()));
+    if (Object.keys(patch).length === 0) {
+      setMessage({ type: "info", text: "The narrative fields already contain text. Clear a field before generating a replacement starter for it." });
+      return;
+    }
+    actions.updateReport(patch);
+    setMessage({ type: "success", text: `Generated ${Object.keys(patch).length} starter section${Object.keys(patch).length === 1 ? "" : "s"} from this target's recorded activity. Review every bracketed placeholder before submission.` });
+  };
 
   const generate = async () => {
     setBusy(true);
@@ -224,6 +238,7 @@ export default function ReportPage() {
           <section className="report-editor">
             <div className="finding-section-head no-border">
               <div><p className="eyebrow">Narrative</p><h2>{targetName}</h2></div>
+              <button type="button" className="button secondary report-starter-button" onClick={applyReportStarters}>Fill blanks from activity</button>
             </div>
             <label><span>Report title</span><input type="text" value={report.title || ""} onChange={(event) => actions.updateReport({ title: event.target.value })} placeholder={`${targetName} Penetration Test Report`} /></label>
             <label>
@@ -233,6 +248,12 @@ export default function ReportPage() {
             </label>
             <label><span>Scope</span><textarea rows="3" value={report.scope || ""} onChange={(event) => actions.updateReport({ scope: event.target.value })} placeholder="Target IP, hostname, domain, and any scope limitations." /></label>
             <label><span>Recommendations</span><textarea rows="5" value={report.recommendations || ""} onChange={(event) => actions.updateReport({ recommendations: event.target.value })} placeholder={"1. Fix for the initial foothold\n2. Fix for the privilege escalation"} /></label>
+            <div className="exam-proof-confirmations">
+              <div><p className="eyebrow">Exam safeguard</p><h3>Proof confirmations</h3></div>
+              <label><input type="checkbox" checked={Boolean(report.proofVerified)} onChange={(event) => actions.updateReport({ proofVerified: event.target.checked })} /><span>I verified the screenshot shows an interactive shell reading the proof from its original location, together with the target IP and identity.</span></label>
+              <label><input type="checkbox" checked={Boolean(report.proofSubmitted)} onChange={(event) => actions.updateReport({ proofSubmitted: event.target.checked })} /><span>I submitted the proof value in the exam control panel before the exam ended.</span></label>
+              <p>This app’s starter text is generated locally with fixed rules. Do not use ChatGPT, Codex, or another AI assistant during the exam or report-writing period. Recheck the current OffSec exam guide before your attempt.</p>
+            </div>
           </section>
         </div>
 
@@ -261,6 +282,7 @@ export default function ReportPage() {
           <input ref={rootFlagRef} className="sr-only" type="file" accept="image/png,image/jpeg,.png,.jpg,.jpeg" onChange={(event) => addFlagScreenshot(event, "root-flag")} />
           <p className="readiness-foot">{readiness.completed} of {ALL_ITEMS.length} checklist items complete for this machine.</p>
           <button type="button" className="button report-generate" onClick={generate} disabled={busy}>{busy ? "Working…" : "Generate target PDF"}</button>
+          <p className="report-submission-note">This is a single-target working report, not a complete submission archive. Before submission, assemble every required target into one reviewed PDF and follow the current OffSec filename, 7z, size, and hash-verification requirements.</p>
           <button type="button" className="text-button" onClick={() => importRef.current?.click()} disabled={busy}>Restore workspace from PDF</button>
           <input ref={importRef} className="sr-only" type="file" accept="application/pdf,.pdf" onChange={importPdf} />
           <p className="report-security-note">The PDF and its embedded JSON contain secrets in plain text. Protect it like exam evidence.</p>

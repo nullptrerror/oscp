@@ -16,6 +16,7 @@ export default function CommandResultPanel({ itemId, commandKey, commandLabel, c
   const [error, setError] = useState("");
   const [terminalOpen, setTerminalOpen] = useState(false);
   const activeRunId = useRef(null);
+  const recordedRunId = useRef(null);
   const resultBytes = useMemo(() => new Blob([result]).size, [result]);
   const cwd = `${String(workspace.variables.workspaceRoot || "/home/kali/oscp").replace(/\/$/, "")}/${workspace.variables.targetName || "unassigned"}`;
 
@@ -48,11 +49,18 @@ export default function CommandResultPanel({ itemId, commandKey, commandLabel, c
   const startTerminal = () => {
     const runId = createId("command");
     activeRunId.current = runId;
+    recordedRunId.current = null;
     window.dispatchEvent(new Event("fieldnotes:collapse-terminal-results"));
-    actions.recordCommand(itemId, { id: runId, label: commandLabel, command: commandText, source: "local runner", startedAt: new Date().toISOString() });
     onExpandedChange?.(true);
     setTerminalOpen(true);
   };
+
+  const recordTerminalStart = useCallback(() => {
+    const runId = activeRunId.current;
+    if (!runId || recordedRunId.current === runId) return;
+    recordedRunId.current = runId;
+    actions.recordCommand(itemId, { id: runId, label: commandLabel, command: commandText, source: "local runner", startedAt: new Date().toISOString() });
+  }, [actions, commandLabel, commandText, itemId]);
 
   const finishTerminal = useCallback((execution) => {
     save({
@@ -100,6 +108,7 @@ export default function CommandResultPanel({ itemId, commandKey, commandLabel, c
             cwd={cwd}
             label={commandLabel}
             onClose={() => setTerminalOpen(false)}
+            onStart={recordTerminalStart}
             onFinish={finishTerminal}
           />
         </Suspense>
