@@ -1,20 +1,21 @@
-import { lazy, Suspense, useCallback, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useMemo, useRef, useState } from "react";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { useLocalRunner } from "../context/LocalRunnerContext";
 import { fileToEvidence } from "../lib/evidence";
+import { createId } from "../lib/workspace";
 import EvidenceList from "./EvidenceList";
 
 const CommandTerminal = lazy(() => import("./CommandTerminal"));
 
 const MAX_RESULT_SIZE = 1024 * 1024;
 
-export default function CommandResultPanel({ itemId, commandKey, commandLabel, commandText, missing, entries }) {
+export default function CommandResultPanel({ itemId, commandKey, commandLabel, commandText, missing, entries, expanded, onExpandedChange }) {
   const { workspace, actions } = useWorkspace();
   const runner = useLocalRunner();
   const [result, setResult] = useState("");
   const [error, setError] = useState("");
   const [terminalOpen, setTerminalOpen] = useState(false);
-  const [resultsOpen, setResultsOpen] = useState(entries.length > 0);
+  const activeRunId = useRef(null);
   const resultBytes = useMemo(() => new Blob([result]).size, [result]);
   const cwd = `${String(workspace.variables.workspaceRoot || "/home/kali/oscp").replace(/\/$/, "")}/${workspace.variables.targetName || "unassigned"}`;
 
@@ -45,8 +46,11 @@ export default function CommandResultPanel({ itemId, commandKey, commandLabel, c
   };
 
   const startTerminal = () => {
-    actions.recordCommand(itemId, { label: commandLabel, command: commandText, source: "local runner" });
-    setResultsOpen(true);
+    const runId = createId("command");
+    activeRunId.current = runId;
+    window.dispatchEvent(new Event("fieldnotes:collapse-terminal-results"));
+    actions.recordCommand(itemId, { id: runId, label: commandLabel, command: commandText, source: "local runner", startedAt: new Date().toISOString() });
+    onExpandedChange?.(true);
     setTerminalOpen(true);
   };
 
@@ -58,25 +62,30 @@ export default function CommandResultPanel({ itemId, commandKey, commandLabel, c
       exitCode: execution.exitCode,
       logPath: execution.logPath,
       journeyPath: execution.journeyPath,
+      commandRunId: activeRunId.current,
     });
     if (execution.exitCode === 0) actions.setCompleted(itemId, true);
+    activeRunId.current = null;
+    setTerminalOpen(false);
   }, [actions, commandKey, commandLabel, commandText, itemId]);
 
   return (
     <div className="command-results" onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); addFiles([...event.dataTransfer.files]); }}>
-      <button type="button" className="command-results-toggle" onClick={() => setResultsOpen((value) => !value)} aria-expanded={resultsOpen}>
-        <span>Results · {entries.length}</span>
-        <small>{resultsOpen ? "Hide" : "Paste, attach, or run here"}</small>
-      </button>
-      {resultsOpen && <div className="command-results-body">
+      <div className="command-results-bar">
+        <button type="button" className="command-results-toggle" onClick={() => onExpandedChange?.(!expanded)} aria-expanded={expanded}>
+          <span>Results · {entries.length}</span>
+          <small>{expanded ? "Hide" : "Paste or attach output"}</small>
+        </button>
+        {runner.available && (
+          <button type="button" className="text-button run-command" onClick={startTerminal} disabled={missing.length > 0 || terminalOpen}>
+            Run in terminal
+          </button>
+        )}
+      </div>
+      {expanded && <div className="command-results-body">
       <div className="command-result-head">
         <span>{entries.length} saved result{entries.length === 1 ? "" : "s"}</span>
         <div>
-          {runner.available && (
-            <button type="button" className="text-button run-command" onClick={startTerminal} disabled={missing.length > 0 || terminalOpen}>
-              Run in terminal
-            </button>
-          )}
           <label className="text-button result-file-button">
             Attach file
             <input type="file" multiple onChange={(event) => { addFiles([...event.target.files]); event.target.value = ""; }} />

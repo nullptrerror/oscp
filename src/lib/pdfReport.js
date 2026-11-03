@@ -358,6 +358,16 @@ const portList = (...values) => [...new Set(values.flatMap((value) => String(val
 
 const homeRelative = (path) => String(path || "").replace(/^\/home\/kali(?=\/|$)/, "~").replace(/^\/root(?=\/|$)/, "~");
 
+export const orderCommandRuns = (commands = []) => commands
+  .map((command, index) => ({ command, index }))
+  .sort((left, right) => {
+    const leftTime = Date.parse(left.command.startedAt || left.command.copiedAt || "");
+    const rightTime = Date.parse(right.command.startedAt || right.command.copiedAt || "");
+    if (Number.isNaN(leftTime) || Number.isNaN(rightTime) || leftTime === rightTime) return left.index - right.index;
+    return leftTime - rightTime;
+  })
+  .map(({ command }) => command);
+
 // ---------------------------------------------------------------------------
 // PDF annotations and navigation
 
@@ -906,8 +916,30 @@ async function buildReportPdf(workspace, targetId, { fonts: fontBytes, rasterize
 
   // ---- 4. Technical walkthrough -----------------------------------------
   section("Technical Walkthrough");
-  paragraph(span("Each step below lists the exact commands that were copied from the checklist, the operator's notes, and the captured output. Terminal colors are preserved from the original output.", { size: 9.4, color: PALETTE.muted }), { after: 12 });
+  paragraph(span("The run timeline preserves the exact order in which commands were launched, including repeated runs of an earlier checklist command. Notes and other captured evidence follow in checklist order. Terminal colors are preserved from the original output.", { size: 9.4, color: PALETTE.muted }), { after: 12 });
   if (data.items.length === 0) callout("No steps documented", "No checklist results have been saved for this target yet.", { fg: PALETTE.warn, bg: PALETTE.warnSoft });
+  const orderedCommands = orderCommandRuns(data.commandHistory);
+  const terminalEvidence = data.items.flatMap((item) => item.evidence).filter((evidence) => evidence.commandRunId);
+  const renderedTerminalEvidenceIds = new Set();
+  if (orderedCommands.length > 0) {
+    subheading("Command run timeline");
+    for (const command of orderedCommands) {
+      const item = data.items.find((candidate) => candidate.id === command.itemId);
+      paragraph(span(item?.title || command.label || "Checklist command", { size: 8, bold: true, color: PALETTE.muted }), { after: 5 });
+      terminal({
+        title: command.label || "Command",
+        meta: [command.address, formatTimestamp(command.startedAt || command.copiedAt)].filter(Boolean).join(" · "),
+        lines: kaliPrompt(command.command),
+      });
+      for (const evidence of terminalEvidence.filter((candidate) => candidate.commandRunId === command.id)) {
+        renderedTerminalEvidenceIds.add(evidence.id);
+        if (evidence.content) outputBlock(evidence, attachmentNames.get(evidence));
+        if (evidence.discoveries?.length) {
+          paragraph([span("Parsed  ", { size: 7.6, bold: true, color: PALETTE.muted }), mono(evidence.discoveries.map(formatDiscovery).join("  ·  "), { size: 7.4, color: PALETTE.muted })], { lineHeight: 11, after: 10 });
+        }
+      }
+    }
+  }
   const phaseNumbers = new Map(CHECKLIST.map((phase) => [phase.id, phase.number]));
   let currentPhase = null;
   for (const item of data.items) {
@@ -926,14 +958,8 @@ async function buildReportPdf(workspace, targetId, { fonts: fontBytes, rasterize
     y -= 22;
     if (item.detail) paragraph(span(item.detail, { size: 9.2, color: PALETTE.muted }), { after: 10 });
     if (item.note) callout("Operator note", item.note);
-    for (const command of commands) {
-      terminal({
-        title: command.label || "Command",
-        meta: [command.address, formatTimestamp(command.copiedAt)].filter(Boolean).join(" · "),
-        lines: kaliPrompt(command.command),
-      });
-    }
     for (const evidence of item.evidence) {
+      if (renderedTerminalEvidenceIds.has(evidence.id)) continue;
       if (evidence.content) {
         outputBlock(evidence, attachmentNames.get(evidence));
         if (evidence.discoveries?.length) {

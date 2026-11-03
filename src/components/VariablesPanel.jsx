@@ -50,6 +50,13 @@ export default function VariablesPanel() {
     hash: unique(activeAccounts.map((entry) => entry.secret).filter(isNtHash)),
     gppCpassword: unique(activeDiscoveries.filter((entry) => entry.type === "gpp-cpassword").map((entry) => entry.value)),
   };
+  const selectedAccountId = activeAccounts.find((entry) => {
+    const credential = credentialVariables(entry);
+    return credential.domain === workspace.variables.domain
+      && credential.user === workspace.variables.user
+      && credential.password === workspace.variables.password
+      && credential.hash === workspace.variables.hash;
+  })?.id || "";
 
   return (
     <aside className="variables-panel">
@@ -92,7 +99,7 @@ export default function VariablesPanel() {
       {activeAccounts.length > 0 && (
         <label className="context-picker">
           <span>Saved account</span>
-          <select value="" onChange={(event) => {
+          <select value={selectedAccountId} onChange={(event) => {
             const account = activeAccounts.find((entry) => entry.id === event.target.value);
             if (account) actions.updateVariables(credentialVariables(account));
           }}>

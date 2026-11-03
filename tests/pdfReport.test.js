@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { PDFDocument, PDFName } from "pdf-lib";
-import { generateReportPdf, extractWorkspaceFromPdf } from "../src/lib/pdfReport.js";
+import { generateReportPdf, extractWorkspaceFromPdf, orderCommandRuns } from "../src/lib/pdfReport.js";
 import { createDefaultWorkspace } from "../src/lib/workspace.js";
 
 const PIXEL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
@@ -39,6 +39,16 @@ test("generated target PDF contains pages and restores the embedded workspace", 
   assert.equal(restored.targets[0].name, "active");
   assert.equal(restored.notes["target-active::recon-tcp-detail"], "Found SMB and WinRM.");
   assert.equal(restored.commandHistory[0].command, "nmap -sCV 10.129.80.195");
+});
+
+test("PDF command runs retain chronological order when an earlier command is run again", () => {
+  const commands = [
+    { id: "first-run", command: "nmap", startedAt: "2026-01-01T10:00:00.000Z" },
+    { id: "second-run", command: "nxc", startedAt: "2026-01-01T10:01:00.000Z" },
+    { id: "rerun-first", command: "nmap", startedAt: "2026-01-01T10:02:00.000Z" },
+  ];
+
+  assert.deepEqual(orderCommandRuns(commands).map((command) => command.id), ["first-run", "second-run", "rerun-first"]);
 });
 
 test("Unicode fonts render ANSI-colored output, emoji, and the workspace profile on every page", async () => {

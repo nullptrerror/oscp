@@ -12,6 +12,7 @@ export default function ChecklistPage() {
   const runner = useLocalRunner();
   const [query, setQuery] = useState("");
   const [hideComplete, setHideComplete] = useState(false);
+  const [expandedResultsKey, setExpandedResultsKey] = useState(null);
   const searchRef = useRef(null);
 
   useEffect(() => {
@@ -24,6 +25,7 @@ export default function ChecklistPage() {
     window.addEventListener("keydown", focusSearch);
     return () => window.removeEventListener("keydown", focusSearch);
   }, []);
+  useEffect(() => setExpandedResultsKey(null), [workspace.activeTargetId]);
   const normalizedQuery = query.trim().toLowerCase();
 
   const totalItems = CHECKLIST.reduce((total, phase) => total + phase.items.length, 0);
@@ -119,7 +121,13 @@ export default function ChecklistPage() {
                 </div>
                 <div className="phase-items">
                   {phase.items.map((item) => (
-                    <ChecklistItem key={item.id} item={item} searchActive={Boolean(normalizedQuery)} />
+                    <ChecklistItem
+                      key={item.id}
+                      item={item}
+                      searchActive={Boolean(normalizedQuery)}
+                      expandedResultsKey={expandedResultsKey}
+                      onExpandedResultsChange={setExpandedResultsKey}
+                    />
                   ))}
                 </div>
               </section>

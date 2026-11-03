@@ -5,7 +5,7 @@ import { getChecklistCommands } from "../lib/checklistCommands";
 import CommandBlock from "./CommandBlock";
 import EvidenceList from "./EvidenceList";
 
-export default function ChecklistItem({ item, searchActive = false }) {
+export default function ChecklistItem({ item, searchActive = false, expandedResultsKey, onExpandedResultsChange }) {
   const { workspace, actions } = useWorkspace();
   const evidence = getScopedItemValue(workspace.evidence, workspace, item.id, []);
   const completed = Boolean(getScopedItemValue(workspace.completed, workspace, item.id, false));
@@ -59,6 +59,8 @@ export default function ChecklistItem({ item, searchActive = false }) {
                   itemId={item.id}
                   evidence={evidence.filter((entry) => entry.commandKey === commandKey)}
                   variables={workspace.variables}
+                  expandedResultsKey={expandedResultsKey}
+                  onExpandedResultsChange={onExpandedResultsChange}
                   onCopy={(copiedCommand, renderedCommand) => {
                     actions.recordCommand(item.id, { label: copiedCommand.label, command: renderedCommand });
                     setCopiedReminder(true);

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { renderCommand } from "../lib/workspace";
 import CommandResultPanel from "./CommandResultPanel";
 
-export default function CommandBlock({ command, variables, onCopy, itemId, commandKey, evidence }) {
+export default function CommandBlock({ command, variables, onCopy, itemId, commandKey, evidence, expandedResultsKey, onExpandedResultsChange }) {
   const [copied, setCopied] = useState(false);
   const rendered = renderCommand(command.value, variables);
 
@@ -32,6 +32,8 @@ export default function CommandBlock({ command, variables, onCopy, itemId, comma
         commandText={rendered.command}
         missing={rendered.missing}
         entries={evidence}
+        expanded={expandedResultsKey === `${itemId}::${commandKey}`}
+        onExpandedChange={(open) => onExpandedResultsChange?.(open ? `${itemId}::${commandKey}` : null)}
       />
     </div>
   );

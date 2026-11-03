@@ -221,10 +221,12 @@ button { color: inherit; }
 .runner-tool-list .ready { color: var(--lime); }
 .runner-tool-list .missing { color: var(--red); }
 .command-results { border-top: 1px solid #202a23; background: #0c110e; }
-.command-results-toggle { width: 100%; min-height: 35px; display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 0 14px; border: 0; color: var(--muted); background: #0e1410; cursor: pointer; }
+.command-results-bar { display: flex; align-items: center; min-height: 35px; background: #0e1410; }
+.command-results-toggle { min-width: 0; min-height: 35px; flex: 1; display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 0 14px; border: 0; color: var(--muted); background: transparent; cursor: pointer; }
 .command-results-toggle span { color: #c8d3cb; font-family: var(--mono); font-size: 0.68rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.07em; }
 .command-results-toggle small { font-size: 0.66rem; }
-.command-results-toggle:hover { background: #121a14; }
+.command-results-toggle:hover, .command-results-bar:has(.run-command:hover) { background: #121a14; }
+.command-results-bar > .run-command { flex: 0 0 auto; margin-right: 8px; white-space: nowrap; }
 .command-results-body { padding: 12px 14px 14px; border-top: 1px solid #202a23; }
 .command-result-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 9px; color: var(--muted); font-size: 0.69rem; }
 .command-result-head > div { display: flex; align-items: center; gap: 4px; }

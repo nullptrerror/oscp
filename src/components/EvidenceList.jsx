@@ -1,12 +1,19 @@
+import { useEffect, useRef } from "react";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { formatDiscovery, guidanceForDiscoveries, visibleDiscoveries } from "../lib/evidence";
 import TerminalOutput from "./TerminalOutput";
 
 export default function EvidenceList({ entries, itemId }) {
   const { workspace, actions } = useWorkspace();
+  const listRef = useRef(null);
+  useEffect(() => {
+    const collapse = () => listRef.current?.querySelectorAll("details[open]").forEach((entry) => entry.removeAttribute("open"));
+    window.addEventListener("fieldnotes:collapse-terminal-results", collapse);
+    return () => window.removeEventListener("fieldnotes:collapse-terminal-results", collapse);
+  }, []);
   if (!entries?.length) return null;
   return (
-    <div className="evidence-list">
+    <div className="evidence-list" ref={listRef}>
       {entries.map((entry) => {
         const discoveries = visibleDiscoveries(entry.discoveries, {
           settings: workspace.parserSettings,
