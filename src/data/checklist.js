@@ -228,6 +228,16 @@ export const CHECKLIST = [
           { label: "Manual SQLi comparison", value: "for value in \"1\" \"1' AND '1'='1\" \"1' AND '1'='2\"; do echo \"=== id=$value\"; curl -ksS -o /tmp/fieldnotes-response -w 'status=%{http_code} bytes=%{size_download} time=%{time_total}\\n' --get --data-urlencode \"id=$value\" 'http://{{rhost}}:{{rport}}/index.php'; sha256sum /tmp/fieldnotes-response; done" },
         ],
       },
+      {
+        id: "web-files-api",
+        title: "Check file handling, backups, and API surface",
+        detail: "Use observed routes and parameters. These commands identify capabilities; they do not prove an arbitrary file read, upload bypass, or authorization flaw by themselves.",
+        commands: [
+          { label: "Allowed methods", value: "curl -k -i -X OPTIONS 'http://{{rhost}}:{{rport}}/'" },
+          { label: "Common backup suffixes", value: "for path in index.php web.config appsettings.json package.json; do for suffix in .bak .old .zip '~'; do url=\"http://{{rhost}}:{{rport}}/$path$suffix\"; curl -ksS -o /dev/null -w '%{http_code} %{size_download} %{url_effective}\\n' \"$url\"; done; done" },
+          { label: "API description files", value: "for path in swagger.json openapi.json api/docs swagger/index.html; do curl -ksS -o /dev/null -w '%{http_code} %{size_download} %{url_effective}\\n' \"http://{{rhost}}:{{rport}}/$path\"; done" },
+        ],
+      },
     ],
   },
   {
@@ -327,6 +337,15 @@ export const CHECKLIST = [
           { label: "History and keys", value: "find /home /root -maxdepth 3 \\( -name '.*history' -o -name 'id_rsa' -o -name '*.kdbx' \\) -ls 2>/dev/null" },
         ],
       },
+      {
+        id: "linux-storage-groups",
+        title: "Check mounts, backups, and privileged groups",
+        commands: [
+          { label: "Storage and mounts", value: "lsblk -f; findmnt; df -h; cat /etc/fstab" },
+          { label: "Groups and sockets", value: "id; getent group docker lxd disk adm 2>/dev/null; find /var/run -type s -ls 2>/dev/null" },
+          { label: "Backups and application roots", value: "find /var/backups /opt /srv /usr/local -maxdepth 3 -type f -printf '%M %u:%g %p\\n' 2>/dev/null | head -250" },
+        ],
+      },
     ],
   },
   {
@@ -367,6 +386,15 @@ export const CHECKLIST = [
           { label: "Credential Manager", value: "cmdkey /list" },
           { label: "Unattended files", value: "dir /s /b C:\\*unattend*.xml C:\\*sysprep*.xml C:\\*.config 2>nul" },
           { label: "PowerShell history", value: "type %APPDATA%\\Microsoft\\Windows\\PowerShell\\PSReadLine\\ConsoleHost_history.txt" },
+        ],
+      },
+      {
+        id: "windows-privileges-policy",
+        title: "Validate token privileges and installer policy",
+        commands: [
+          { label: "Token privileges", value: "whoami /priv & whoami /groups" },
+          { label: "AlwaysInstallElevated", value: "reg query HKCU\\Software\\Policies\\Microsoft\\Windows\\Installer /v AlwaysInstallElevated & reg query HKLM\\Software\\Policies\\Microsoft\\Windows\\Installer /v AlwaysInstallElevated" },
+          { label: "Program directory permissions", value: "powershell -c \"Get-ChildItem 'C:\\Program Files','C:\\Program Files (x86)' -Directory -ErrorAction SilentlyContinue | ForEach-Object { try { $acl=Get-Acl $_.FullName; [pscustomobject]@{Path=$_.FullName;Access=($acl.Access | ? {$_.IdentityReference -match 'Users|Everyone|Authenticated Users'} | % FileSystemRights) -join ','} } catch {} } | ? Access | Format-Table -Auto\"" },
         ],
       },
       {
@@ -424,6 +452,16 @@ export const CHECKLIST = [
           { label: "WinRM", value: "nxc winrm {{rhost}} -u '{{user}}' -p '{{password}}'" },
           { label: "Evil-WinRM", value: "evil-winrm -i {{rhost}} -u '{{user}}' -p '{{password}}'" },
           { label: "WMI with hash", value: "impacket-wmiexec -hashes ':{{hash}}' '{{domain}}/{{user}}@{{rhost}}'" },
+        ],
+      },
+      {
+        id: "ad-delegation-adcs",
+        title: "Check delegation, protected accounts, and AD CS",
+        detail: "Treat scanner output as a lead. Confirm the exact object, right, template setting, and effective principal before documenting an abuse path.",
+        commands: [
+          { label: "Delegation and protected users", value: "ldapsearch -x -H ldap://{{rhost}} -D '{{domain}}\\{{user}}' -w '{{password}}' -b '{{baseDn}}' '(|(userAccountControl:1.2.840.113556.1.4.803:=524288)(userAccountControl:1.2.840.113556.1.4.803:=16777216)(adminCount=1))' sAMAccountName userAccountControl adminCount msDS-AllowedToDelegateTo" },
+          { label: "AD CS vulnerable templates", value: "certipy find -u '{{user}}@{{domain}}' -p '{{password}}' -dc-ip {{rhost}} -enabled -vulnerable -stdout" },
+          { label: "Admin-only credential dump check", value: "impacket-secretsdump '{{domain}}/{{user}}:{{password}}@{{rhost}}' -just-dc-user '{{user}}'" },
         ],
       },
     ],

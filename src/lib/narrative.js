@@ -7,17 +7,31 @@ const list = (values) => {
   return `${unique.slice(0, -1).join(", ")} and ${unique.at(-1)}`;
 };
 
-export const isAutomaticNarrative = (value = "") => !String(value).trim() || String(value).startsWith("Draft:");
+export const isAutomaticNarrative = (value = "") => !String(value).trim() || /^(?:Draft|Attempt|Result):/.test(String(value));
+
+const decisionForCommand = (command = "", label = "") => {
+  const source = `${label} ${command}`;
+  if (/nmap|masscan|rustscan/i.test(source)) return "Use confirmed open services to replace broad scanning with focused service enumeration; if nothing is reachable, verify routing and test without relying on ICMP.";
+  if (/ffuf|gobuster|ferox|dirsearch|whatweb|curl|http/i.test(source)) return "Prioritize unique pages, technologies, virtual hosts, and authorization boundaries; discard responses that are only size-identical noise.";
+  if (/smb|rpcclient|enum4linux|netexec|\bnxc\b/i.test(source)) return "If access is allowed, inspect readable shares, domain details, users, and password policy; if authentication is rejected, preserve the error and try only a justified identity or protocol.";
+  if (/ldap|bloodhound|GetNPUsers|GetUserSPNs|kerberos|\bdig\b|ntpdate/i.test(source)) return "Use confirmed directory relationships or Kerberos material to identify the smallest credential or privilege path; correct DNS and clock issues before repeating authentication tests.";
+  if (/hashcat|\bjohn\b/i.test(source)) return "Test any recovered credential once across the services already observed, record each outcome, and stop broad guessing if the candidate fails.";
+  if (/evil-winrm|wmiexec|psexec|xfreerdp|\bssh\b/i.test(source)) return "After a successful session, capture identity and network context immediately, then follow the matching privilege-escalation checklist; an authentication error should redirect effort to permissions or another exposed service.";
+  if (/sudo -l|SUID|getcap|cron|systemd|service|schtasks|cmdkey|unattend|history|winpeas|linpeas/i.test(source)) return "Validate only the most promising privilege boundary with a minimal manual check, then document the exact writable path, delegated right, credential, or execution condition.";
+  if (/local\.txt|proof\.txt|user\.txt|root\.txt|proof|flag/i.test(source)) return "Keep the original proof path, identity, and target IP visible in one terminal, capture the screenshot immediately, and submit the value before continuing.";
+  if (/listener|nc -l|socat.*listen/i.test(source)) return "Trigger the intended connection once, stabilize any returned shell, and record the target identity before running further commands.";
+  return "Use the saved output to decide whether this hypothesis was confirmed or ruled out, then choose one narrower follow-up instead of repeating broad enumeration.";
+};
 
 export function commandNarrativeDraft(command, label) {
   const insight = describeCommand(command, label);
   return {
-    finding: `Draft: This step was used to ${insight.purpose.charAt(0).toLowerCase()}${insight.purpose.slice(1)} Replace this draft with the useful fact confirmed by the saved output.`,
-    nextStep: "Draft: Use the confirmed result to rule out an unproductive path or justify the next focused test. Replace this draft with the actual decision.",
+    finding: `Attempt: ${insight.purpose} The saved output determines whether that hypothesis was confirmed or ruled out.`,
+    nextStep: `Attempt: ${decisionForCommand(command, label)}`,
   };
 }
 
-export function narrativeFromDiscoveries(discoveries = [], { exitCode } = {}) {
+export function narrativeFromDiscoveries(discoveries = [], { exitCode, command = "", label = "" } = {}) {
   const ports = discoveries.filter((entry) => entry.type === "port");
   const credentials = discoveries.filter((entry) => entry.type === "credential");
   const flags = discoveries.filter((entry) => entry.type === "flag");
@@ -33,12 +47,15 @@ export function narrativeFromDiscoveries(discoveries = [], { exitCode } = {}) {
   if (tickets.length) facts.push(`The output contained credential material that could be tested offline for account access.`);
   if (cves.length) facts.push(`The output referenced ${list(cves.map((entry) => entry.value))}, which requires version-specific validation before it can be treated as exploitable.`);
   for (const flag of flags) facts.push(`The ${flag.kind === "root" ? "root/administrator" : "user-level"} proof value ${flag.value} was retrieved, confirming that access objective.`);
-  if (!facts.length && exitCode !== undefined) facts.push(exitCode === 0
-    ? "The command completed successfully, but the parser did not identify a reportable finding; review the output and record the useful result manually."
-    : `The command exited with status ${exitCode} and did not establish the intended result.`);
+  if (!facts.length && exitCode !== undefined) {
+    const insight = describeCommand(command, label);
+    facts.push(exitCode === 0
+      ? `Result: The command completed. Its purpose was: ${insight.purpose} No parser-recognized finding was produced, so the saved output must be reviewed before claiming a result.`
+      : `Result: The command exited with status ${exitCode}. Its purpose was: ${insight.purpose} It did not establish the intended result.`);
+  }
 
   const guidance = guidanceForDiscoveries(discoveries);
-  let nextStep = guidance.length ? guidance.slice(0, 2).map((entry) => entry.text).join(" ") : "Review the result, record what it ruled in or out, and choose the next narrow test rather than repeating broad enumeration.";
+  let nextStep = guidance.length ? guidance.slice(0, 2).map((entry) => entry.text).join(" ") : decisionForCommand(command, label);
   const flag = flags[0];
   if (flag) nextStep = flag.kind === "root"
     ? "Preserve the complete proof screenshot now, verify the value was submitted, and document the privilege-escalation path that produced administrative access."

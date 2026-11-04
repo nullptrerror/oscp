@@ -8,6 +8,7 @@ import {
   getActiveScope,
   getItemStateKey,
   getScopedItemValue,
+  importMachineData,
   loadWorkspace,
   normalizeWorkspace,
   pickMachineVariables,
@@ -165,7 +166,16 @@ export function WorkspaceProvider({ children }) {
           const guidance = guidanceForDiscoveries(parsed);
           const existingEvidence = getScopedItemValue(current.evidence, current, itemId, []);
           const combinedDiscoveries = [...new Map([...existingEvidence.flatMap((entry) => entry.discoveries || []), ...parsed].map((entry) => [discoveryKey(entry), entry])).values()];
-          const automaticNarrative = narrativeFromDiscoveries(combinedDiscoveries, { exitCode: evidence.exitCode });
+          const automaticNarrative = narrativeFromDiscoveries(combinedDiscoveries, {
+            exitCode: evidence.exitCode,
+            command: evidence.commandText,
+            label: evidence.commandLabel || evidence.label,
+          });
+          const runNarrative = narrativeFromDiscoveries(parsed, {
+            exitCode: evidence.exitCode,
+            command: evidence.commandText,
+            label: evidence.commandLabel || evidence.label,
+          });
           const currentFinding = getScopedItemValue(current.notes, current, itemId, "");
           const currentNextStep = getScopedItemValue(current.nextSteps, current, itemId, "");
           const narrativeSource = getScopedItemValue(current.narrativeSources, current, itemId, {});
@@ -251,6 +261,12 @@ export function WorkspaceProvider({ children }) {
             accounts: [...current.accounts, ...parsedAccounts],
             users: [...current.users, ...parsedUsers],
             discoveries: [...current.discoveries, ...newDiscoveries],
+            commandHistory: evidence.commandRunId ? current.commandHistory.map((entry) => entry.id === evidence.commandRunId ? {
+              ...entry,
+              established: runNarrative.finding,
+              nextAction: runNarrative.nextStep,
+              exitCode: evidence.exitCode,
+            } : entry) : current.commandHistory,
             targets: current.targets.map((entry) => {
               if (entry.id !== current.activeTargetId) return entry;
               const baseEndpoints = entry.endpoints?.length ? entry.endpoints : [{
@@ -574,6 +590,8 @@ export function WorkspaceProvider({ children }) {
               endpointId: endpoint?.id || null,
               address: current.variables.rhost,
               itemId,
+              established: draft.finding,
+              nextAction: draft.nextStep,
               ...command,
             }],
           };
@@ -663,6 +681,9 @@ export function WorkspaceProvider({ children }) {
       },
       importWorkspace(value) {
         setWorkspace(normalizeWorkspace(value));
+      },
+      importMachine(value, targetId, labType) {
+        update((current) => importMachineData(current, value, targetId, labType));
       },
       resetWorkspace() {
         setWorkspace(createDefaultWorkspace());

@@ -6,6 +6,7 @@ import {
   domainToBaseDn,
   getItemStateKey,
   getScopedItemValue,
+  importMachineData,
   normalizeWorkspace,
   renderCommand,
   WORKSPACE_VERSION,
@@ -123,6 +124,25 @@ test("deleting a machine removes every machine-scoped record and preserves other
   for (const key of ["accounts", "users", "loot", "discoveries", "ignoredDiscoveries", "commandHistory"]) assert.deepEqual(result[key].map((entry) => entry.targetId), ["keep-me"]);
   for (const key of ["completed", "notes", "nextSteps", "narrativeSources", "evidence"]) assert.deepEqual(Object.keys(result[key]), ["keep-me::item"]);
   assert.deepEqual(Object.keys(result.reports), ["keep-me"]);
+});
+
+test("a PDF machine import merges scoped data without replacing existing machines", () => {
+  const current = createDefaultWorkspace();
+  current.activeTargetId = "existing";
+  current.targets = [{ id: "existing", name: "existing", host: "192.0.2.1" }];
+  const imported = createDefaultWorkspace();
+  imported.activeTargetId = "source";
+  imported.targets = [{ id: "source", name: "active", host: "10.10.10.100", labType: "htb", userFlagName: "user.txt", rootFlagName: "root.txt" }];
+  imported.notes["source::svc-smb"] = "Anonymous SMB access was confirmed.";
+  imported.commandHistory = [{ id: "run", targetId: "source", targetName: "active", itemId: "svc-smb", command: "nxc smb" }];
+
+  const merged = importMachineData(current, imported, "source", "htb");
+  const added = merged.targets.find((target) => target.id !== "existing");
+  assert.equal(merged.activeTargetId, added.id);
+  assert.equal(merged.targets.length, 2);
+  assert.equal(added.labType, "htb");
+  assert.equal(merged.notes[`${added.id}::svc-smb`], "Anonymous SMB access was confirmed.");
+  assert.equal(merged.commandHistory.at(-1).targetId, added.id);
 });
 
 test("the default Kali workspace root is /home/kali/oscp", () => {

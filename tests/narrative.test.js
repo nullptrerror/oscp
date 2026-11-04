@@ -6,7 +6,7 @@ test("commands receive editable generic narrative drafts", () => {
   const draft = commandNarrativeDraft("nmap -sCV 10.0.0.1", "Focused scan");
   assert.equal(isAutomaticNarrative(draft.finding), true);
   assert.match(draft.finding, /saved output/i);
-  assert.match(draft.nextStep, /next focused test/i);
+  assert.match(draft.nextStep, /focused service enumeration/i);
 });
 
 test("parsed output produces concrete findings and next-step context", () => {

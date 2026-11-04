@@ -1,6 +1,6 @@
 import { DEFAULT_VARIABLES } from "../data/checklist.js";
 import { DEFAULT_PARSER_SETTINGS } from "./evidence.js";
-import { normalizeFlagSettings } from "./flagProfiles.js";
+import { flagProfile, normalizeFlagSettings } from "./flagProfiles.js";
 
 export const STORAGE_KEY = "fieldnotes.oscp.workspace.v1";
 export const WORKSPACE_VERSION = 1;
@@ -77,6 +77,99 @@ export function deleteMachineData(workspace, targetId) {
   };
 }
 
+const uniqueMachineName = (targets, requested) => {
+  const base = String(requested || "imported-machine").trim() || "imported-machine";
+  const names = new Set(targets.map((target) => String(target.name).toLowerCase()));
+  if (!names.has(base.toLowerCase())) return base;
+  let suffix = 2;
+  while (names.has(`${base}-imported-${suffix}`.toLowerCase())) suffix += 1;
+  return `${base}-imported-${suffix}`;
+};
+
+const copyTargetScope = (destination, source, oldTargetId, newTargetId, transform = (value) => value) => {
+  const next = { ...(destination || {}) };
+  for (const [key, value] of Object.entries(source || {})) {
+    if (!key.startsWith(`${oldTargetId}::`)) continue;
+    next[`${newTargetId}::${key.slice(oldTargetId.length + 2)}`] = transform(value);
+  }
+  return next;
+};
+
+export function importMachineData(workspace, importedWorkspace, sourceTargetId, selectedLabType) {
+  const imported = normalizeWorkspace(importedWorkspace);
+  const source = imported.targets.find((target) => target.id === sourceTargetId);
+  if (!source) throw new Error("The selected machine is not present in that PDF.");
+  if (!selectedLabType && !source.labType) throw new Error("Choose a lab / proof style before importing this machine.");
+
+  const id = createId("target");
+  const name = uniqueMachineName(workspace.targets, source.name);
+  const profile = flagProfile(selectedLabType || source.labType);
+  const flagSettings = normalizeFlagSettings({
+    ...source,
+    ...(selectedLabType ? { labType: selectedLabType, userFlagName: profile.userFlagName, rootFlagName: profile.rootFlagName } : {}),
+  });
+  const endpointIds = new Map((source.endpoints || []).map((endpoint) => [endpoint.id, createId("endpoint")]));
+  const endpoints = (source.endpoints || []).map((endpoint) => ({ ...endpoint, id: endpointIds.get(endpoint.id) }));
+  const activeEndpointId = endpointIds.get(source.activeEndpointId) || endpoints[0]?.id || null;
+  const selectedEndpoint = endpoints.find((endpoint) => endpoint.id === activeEndpointId) || endpoints[0];
+  const machine = {
+    ...source,
+    ...flagSettings,
+    id,
+    name,
+    importedAt: new Date().toISOString(),
+    endpoints,
+    activeEndpointId,
+    host: selectedEndpoint?.address || source.host || "",
+    port: selectedEndpoint?.tcpPorts || "",
+    udpPorts: selectedEndpoint?.udpPorts || "",
+    commandContext: {
+      ...(source.commandContext || {}),
+      targetName: name,
+      rhost: selectedEndpoint?.address || source.host || "",
+      rport: selectedEndpoint?.tcpPorts || "",
+      uport: selectedEndpoint?.udpPorts || "",
+      userFlagName: flagSettings.userFlagName,
+      rootFlagName: flagSettings.rootFlagName,
+    },
+  };
+  const belongs = (entry) => entry.targetId === source.id || (!entry.targetId && [entry.target, entry.targetName].includes(source.name));
+  const retarget = (entry) => ({
+    ...entry,
+    targetId: id,
+    ...(entry.target !== undefined ? { target: name } : {}),
+    ...(entry.targetName !== undefined ? { targetName: name } : {}),
+    ...(entry.endpointId ? { endpointId: endpointIds.get(entry.endpointId) || entry.endpointId } : {}),
+  });
+  const copyEntries = (key) => [...(workspace[key] || []), ...(imported[key] || []).filter(belongs).map(retarget)];
+  const reports = { ...workspace.reports };
+  if (imported.reports?.[source.id]) reports[id] = { ...imported.reports[source.id] };
+
+  return {
+    ...workspace,
+    activeTargetId: id,
+    variables: {
+      ...clearMachineVariables(workspace.variables),
+      ...machine.commandContext,
+      domain: machine.domain || machine.commandContext.domain || "",
+      baseDn: domainToBaseDn(machine.domain || machine.commandContext.domain),
+    },
+    targets: [...workspace.targets, machine],
+    accounts: copyEntries("accounts"),
+    users: copyEntries("users"),
+    loot: copyEntries("loot"),
+    discoveries: copyEntries("discoveries"),
+    ignoredDiscoveries: copyEntries("ignoredDiscoveries"),
+    commandHistory: copyEntries("commandHistory"),
+    completed: copyTargetScope(workspace.completed, imported.completed, source.id, id),
+    notes: copyTargetScope(workspace.notes, imported.notes, source.id, id),
+    nextSteps: copyTargetScope(workspace.nextSteps, imported.nextSteps, source.id, id),
+    narrativeSources: copyTargetScope(workspace.narrativeSources, imported.narrativeSources, source.id, id),
+    evidence: copyTargetScope(workspace.evidence, imported.evidence, source.id, id, (entries) => entries.map(retarget)),
+    reports,
+  };
+}
+
 export const createDefaultWorkspace = () => ({
   version: WORKSPACE_VERSION,
   updatedAt: new Date().toISOString(),
@@ -128,6 +221,7 @@ const normalizeTarget = (target, index) => {
   return {
     ...target,
     ...normalizeFlagSettings(target),
+    boxType: target.boxType || (target.os === "Linux" ? "linux" : target.os === "Windows" && target.domain ? "ad" : target.os === "Windows" ? "windows" : "unknown"),
     commandContext: isRecord(target.commandContext) ? target.commandContext : {},
     endpoints,
     activeEndpointId,

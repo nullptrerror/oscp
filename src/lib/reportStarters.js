@@ -34,10 +34,24 @@ export function buildReportStarters(workspace, targetId = workspace.activeTarget
     ? "Credentials were also recovered during testing. If those credentials are reused or have excessive access, a single weakness could affect additional systems and accounts."
     : "The primary business concern is the possibility that an exposed weakness could be used to access information or capabilities beyond what an unauthenticated user should have.";
 
+  const usedWeb = [...commandItems].some((id) => id.startsWith("web-"));
+  const usedDirectory = [...commandItems].some((id) => id.startsWith("ad-") || id === "svc-ldap");
+  const usedRemoteCredential = [...commandItems].some((id) => ["access-remote", "creds-reuse"].includes(id));
+  const usedPrivilegeEscalation = [...commandItems].some((id) => /privesc|linux-|windows-/.test(id));
+  const weakness = usedWeb
+    ? "The recorded path concentrated on weaknesses exposed through the target's web application and the trust placed in data or credentials recovered from it."
+    : usedDirectory
+      ? "The recorded path concentrated on directory-service exposure, account relationships, and credential material that could expand an attacker's privileges."
+      : usedRemoteCredential || accounts.length
+        ? "The recorded path concentrated on whether recovered credentials allowed access to exposed administrative services and additional privileges."
+        : "The recorded path concentrated on the target's exposed services and whether their configuration or software created a path to unauthorized access.";
+  const priority = rootProof || userProof
+    ? "The priority is to remove the initial access condition, rotate any exposed credentials, and correct the privilege boundary documented in the technical narrative."
+    : "The priority is to validate and remediate the exposed services described in the technical narrative before they can be combined into a reliable compromise path.";
+
   const executiveSummary = [
     access,
-    credentialImpact,
-    "[Before submission: add one plain-language sentence describing the weakness that enabled access and the single most important action the organization should take. Avoid tool names, port numbers, commands, and acronyms.]",
+    `${weakness} ${credentialImpact} ${priority}`,
   ].join("\n\n");
 
   const scopeLines = [
@@ -51,12 +65,11 @@ export function buildReportStarters(workspace, targetId = workspace.activeTarget
   ].filter(Boolean);
 
   const recommendations = [];
-  recommendations.push("1. Remediate the confirmed initial-access weakness and retest the exact attack path. [Name the vulnerable service, configuration, or application flaw.]");
+  recommendations.push(`1. ${usedWeb ? "Patch the affected application and correct the input-validation or authorization condition that enabled the recorded access path." : usedRemoteCredential || accounts.length ? "Remove the credential exposure that enabled access, rotate the affected secrets, and prevent reuse across services." : "Patch or disable the exposed service that enabled the recorded access path and restrict it to trusted sources."}`);
   if (tcpPorts.length || udpPorts.length) recommendations.push(`${recommendations.length + 1}. Restrict the exposed network services to trusted administrative sources and remove services that are not required.`);
   if (accounts.length || discoveries.some((entry) => ["credential", "ntlm-hash", "kerberos-ticket"].includes(entry.type))) recommendations.push(`${recommendations.length + 1}. Rotate recovered credentials, prevent password reuse, use unique managed service-account secrets, and review affected accounts for excessive privilege.`);
-  if ([...commandItems].some((id) => id.startsWith("ad-") || id === "svc-ldap")) recommendations.push(`${recommendations.length + 1}. Harden Active Directory by enforcing least privilege, reviewing delegation and group membership, and remediating accounts exposed to Kerberos roasting.`);
-  if ([...commandItems].some((id) => id.startsWith("web-"))) recommendations.push(`${recommendations.length + 1}. Apply secure input handling and authorization checks, patch the identified web components, and remove sensitive files or development artifacts from the web root.`);
-  if ([...commandItems].some((id) => /privesc|linux-|windows-/.test(id))) recommendations.push(`${recommendations.length + 1}. Correct the privilege-escalation condition by tightening service, task, file, and delegated-command permissions; verify that low-privileged users cannot modify privileged execution paths.`);
+  if (usedDirectory) recommendations.push(`${recommendations.length + 1}. Enforce least privilege in Active Directory, review delegation and group membership, and remediate accounts exposed to Kerberos roasting.`);
+  if (usedPrivilegeEscalation) recommendations.push(`${recommendations.length + 1}. Correct the privilege-escalation condition by tightening service, task, file, and delegated-command permissions; verify that low-privileged users cannot modify privileged execution paths.`);
   recommendations.push(`${recommendations.length + 1}. After remediation, perform a focused retest and verify that the documented commands no longer reproduce the findings.`);
 
   return { executiveSummary, scope: scopeLines.join("\n"), recommendations: recommendations.join("\n") };

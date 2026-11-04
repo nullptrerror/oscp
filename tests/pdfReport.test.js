@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { PDFDocument, PDFName } from "pdf-lib";
-import { generateReportPdf, extractWorkspaceFromPdf, orderCommandRuns } from "../src/lib/pdfReport.js";
+import { generateReportPdf, extractWorkspaceFromPdf, inspectWorkspacePdf, orderCommandRuns } from "../src/lib/pdfReport.js";
 import { createDefaultWorkspace } from "../src/lib/workspace.js";
 
 const PIXEL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
@@ -49,6 +49,14 @@ test("PDF command runs retain chronological order when an earlier command is run
   ];
 
   assert.deepEqual(orderCommandRuns(commands).map((command) => command.id), ["first-run", "second-run", "rerun-first"]);
+});
+
+test("PDF inspection reports older machines that did not store a lab style", async () => {
+  const workspace = sampleWorkspace();
+  delete workspace.targets[0].labType;
+  const inspected = await inspectWorkspacePdf(await generateReportPdf(workspace, "target-active"));
+  assert.deepEqual(inspected.missingLabStyleTargetIds, ["target-active"]);
+  assert.equal(inspected.workspace.targets[0].labType, "oscp");
 });
 
 test("Unicode fonts render ANSI-colored output, emoji, and the workspace profile on every page", async () => {

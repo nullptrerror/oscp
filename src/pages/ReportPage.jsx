@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import { ALL_ITEMS } from "../data/checklist";
 import { useWorkspace } from "../context/WorkspaceContext";
@@ -6,6 +6,7 @@ import { fileToEvidence } from "../lib/evidence";
 import { getActiveScope, getScopedItemValue } from "../lib/workspace";
 import { getOperatorProfile, githubProfile, initials } from "../lib/profile";
 import { buildReportStarters } from "../lib/reportStarters";
+import PdfMachineImporter from "../components/PdfMachineImporter";
 
 const AVATAR_SIZE = 320;
 
@@ -41,7 +42,6 @@ function Avatar({ src, name, className = "" }) {
 
 export default function ReportPage() {
   const { workspace, actions } = useWorkspace();
-  const importRef = useRef(null);
   const userFlagRef = useRef(null);
   const rootFlagRef = useRef(null);
   const profileRef = useRef(null);
@@ -54,6 +54,21 @@ export default function ReportPage() {
   const github = githubProfile(profile.github);
   const reportTitle = report.title || `${targetName} Penetration Test Report`;
   const reportStarters = useMemo(() => buildReportStarters(workspace, workspace.activeTargetId), [workspace]);
+
+  useEffect(() => {
+    if (!workspace.activeTargetId) return;
+    const previousSources = report.starterSources || {};
+    const patch = {};
+    const nextSources = { ...previousSources };
+    for (const key of ["executiveSummary", "scope", "recommendations"]) {
+      const current = report[key] || "";
+      if ((!current.trim() || current === previousSources[key]) && current !== reportStarters[key]) {
+        patch[key] = reportStarters[key];
+        nextSources[key] = reportStarters[key];
+      }
+    }
+    if (Object.keys(patch).length) actions.updateReport({ ...patch, starterSources: nextSources });
+  }, [actions, report.executiveSummary, report.recommendations, report.scope, report.starterSources, reportStarters, workspace.activeTargetId]);
 
   // The first profile edit also moves values from older per-machine reports into the shared profile.
   const updateProfile = (patch) => {
@@ -123,28 +138,6 @@ export default function ReportPage() {
     }
   };
 
-  const importPdf = async (event) => {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file) return;
-    if (file.size > 30 * 1024 * 1024) {
-      setMessage({ type: "error", text: "That PDF is larger than 30 MB." });
-      return;
-    }
-    setBusy(true);
-    try {
-      const { extractWorkspaceFromPdf } = await import("../lib/pdfReport");
-      const restored = await extractWorkspaceFromPdf(await file.arrayBuffer());
-      if (!window.confirm(`Replace this browser's workspace with the data embedded in ${file.name}?`)) return;
-      actions.importWorkspace(restored);
-      setMessage({ type: "success", text: `Restored ${restored.targets.length} target(s) from ${file.name}.` });
-    } catch (error) {
-      setMessage({ type: "error", text: reportError(error) });
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const addFlagScreenshot = async (event, category) => {
     const file = event.target.files?.[0];
     event.target.value = "";
@@ -179,7 +172,7 @@ export default function ReportPage() {
         <div>
           <p className="eyebrow">Machine deliverable</p>
           <h1>Turn the runbook into the report.</h1>
-          <p>The PDF includes the narrative, commands, notes, colored terminal output, screenshots, and a private embedded workspace that can restore the app later.</p>
+          <p>The PDF includes the narrative, commands, notes, colored terminal output, screenshots, and a private embedded workspace that can reload this machine later.</p>
         </div>
         <div className="report-target-picker">
           <label htmlFor="report-target">Report machine</label>
@@ -294,8 +287,7 @@ export default function ReportPage() {
           <p className="readiness-foot">{readiness.completed} of {ALL_ITEMS.length} checklist items complete for this machine.</p>
           <button type="button" className="button report-generate" onClick={generate} disabled={busy}>{busy ? "Working…" : "Generate target PDF"}</button>
           <p className="report-submission-note">This is a single-target working report, not a complete submission archive. Before submission, assemble every required target into one reviewed PDF and follow the current OffSec filename, 7z, size, and hash-verification requirements.</p>
-          <button type="button" className="text-button" onClick={() => importRef.current?.click()} disabled={busy}>Restore workspace from PDF</button>
-          <input ref={importRef} className="sr-only" type="file" accept="application/pdf,.pdf" onChange={importPdf} />
+          <PdfMachineImporter compact />
           <p className="report-security-note">The PDF and its embedded JSON contain secrets in plain text. Protect it like exam evidence.</p>
           <Link className="backup-link" to="/backup">JSON backup and reset tools</Link>
         </aside>

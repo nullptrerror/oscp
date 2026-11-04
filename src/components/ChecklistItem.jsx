@@ -1,11 +1,11 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { getScopedItemValue } from "../lib/workspace";
 import { getChecklistCommands } from "../lib/checklistCommands";
 import CommandBlock from "./CommandBlock";
 import EvidenceList from "./EvidenceList";
 
-export default function ChecklistItem({ item, searchActive = false, expandedResultsKey, onExpandedResultsChange }) {
+export default function ChecklistItem({ item, searchActive = false, recommended = false, expandedResultsKey, onExpandedResultsChange }) {
   const { workspace, actions } = useWorkspace();
   const evidence = getScopedItemValue(workspace.evidence, workspace, item.id, []);
   const completed = Boolean(getScopedItemValue(workspace.completed, workspace, item.id, false));
@@ -16,6 +16,7 @@ export default function ChecklistItem({ item, searchActive = false, expandedResu
   const unassignedEvidence = evidence.filter((entry) => !entry.commandKey);
   const finding = getScopedItemValue(workspace.notes, workspace, item.id, "");
   const nextStep = getScopedItemValue(workspace.nextSteps, workspace, item.id, "");
+  useEffect(() => { if (recommended) setOpen(true); }, [recommended]);
 
   const toggleComplete = () => {
     if (!completed && evidence.length === 0) {
@@ -28,7 +29,7 @@ export default function ChecklistItem({ item, searchActive = false, expandedResu
   };
 
   return (
-    <article id={`item-${item.id}`} className={`check-item ${completed ? "is-complete" : ""}`}>
+    <article id={`item-${item.id}`} className={`check-item ${completed ? "is-complete" : ""} ${recommended ? "is-recommended" : ""}`}>
       <div className="check-item-row">
         <label className="check-control">
           <input type="checkbox" checked={completed} onChange={toggleComplete} />

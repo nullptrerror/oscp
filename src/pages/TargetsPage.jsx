@@ -1,8 +1,11 @@
 import { useState } from "react";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { FLAG_PROFILES, flagProfile } from "../lib/flagProfiles";
+import PdfMachineImporter from "../components/PdfMachineImporter";
+import PracticeBoxSelect from "../components/PracticeBoxSelect";
+import { platformLabel } from "../data/practiceBoxes";
 
-const EMPTY_MACHINE = { name: "", host: "", os: "Unknown", domain: "", notes: "", labType: "oscp", userFlagName: "local.txt", rootFlagName: "proof.txt" };
+const EMPTY_MACHINE = { name: "", host: "", os: "Unknown", domain: "", notes: "", labType: "oscp", userFlagName: "local.txt", rootFlagName: "proof.txt", boxType: "unknown", practiceBoxId: "" };
 
 export default function TargetsPage() {
   const { workspace, actions } = useWorkspace();
@@ -34,6 +37,11 @@ export default function TargetsPage() {
       <div className="records-layout">
         <form className="entry-form" onSubmit={submit}>
           <div className="panel-heading"><div><p className="eyebrow">New box</p><h2>Add machine</h2></div></div>
+          <PracticeBoxSelect value={draft.practiceBoxId} onSelect={(box) => {
+            if (!box) { setDraft({ ...draft, practiceBoxId: "" }); return; }
+            const profile = flagProfile(box.labType);
+            setDraft({ ...draft, practiceBoxId: box.id, name: box.name, os: box.os, boxType: box.platform, labType: box.labType, userFlagName: profile.userFlagName, rootFlagName: profile.rootFlagName });
+          }} />
           <label><span>Machine / folder name *</span><input type="text" value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder="active" required /></label>
           <label><span>Initial IP or host *</span><input type="text" value={draft.host} onChange={(event) => setDraft({ ...draft, host: event.target.value })} placeholder="10.129.81.60" required /></label>
           <div className="form-row">
@@ -47,6 +55,8 @@ export default function TargetsPage() {
           </div>
           <label><span>Notes</span><textarea rows="4" value={draft.notes} onChange={(event) => setDraft({ ...draft, notes: event.target.value })} placeholder="Role, scope, or likely attack path…" /></label>
           <button type="submit" className="button" disabled={!draft.name.trim() || !draft.host.trim()}>Add machine</button>
+          <div className="entry-form-divider"><span>or restore prior work</span></div>
+          <PdfMachineImporter />
         </form>
 
         <section className="record-list" aria-label="Saved machines">
@@ -55,13 +65,14 @@ export default function TargetsPage() {
             return (
               <article className={`target-card ${active ? "is-active" : ""}`} key={machine.id}>
                 <div className="target-card-head">
-                  <div><div className="record-badges"><span>{machine.os}</span>{active && <span className="active-badge">Active machine</span>}</div><h2>{machine.name}</h2><code>/home/kali/oscp/{machine.name}</code></div>
+                  <div><div className="record-badges"><span>{platformLabel(machine.boxType)}</span>{active && <span className="active-badge">Active machine</span>}</div><h2>{machine.name}</h2><code>/home/kali/oscp/{machine.name}</code></div>
                   <div className="record-actions">{active ? <button type="button" className="button secondary" onClick={actions.clearTargetSelection}>Unselect machine</button> : <button type="button" className="button secondary" onClick={() => actions.useTarget(machine)}>Use machine</button>}<button type="button" className="text-button danger" onClick={() => window.confirm(`Permanently delete ${machine.name} and all of its accounts, evidence, notes, discoveries, command history, and report data?`) && actions.deleteTarget(machine.id)}>Delete</button></div>
                 </div>
 
                 <div className="machine-fields">
                   <label><span>Domain</span><input type="text" value={machine.domain || ""} onChange={(event) => actions.updateTarget(machine.id, { domain: event.target.value })} /></label>
                   <label><span>OS</span><select value={machine.os} onChange={(event) => actions.updateTarget(machine.id, { os: event.target.value })}><option>Unknown</option><option>Linux</option><option>Windows</option><option>Network device</option></select></label>
+                  <label><span>Methodology</span><select value={machine.boxType || "unknown"} onChange={(event) => actions.updateTarget(machine.id, { boxType: event.target.value })}><option value="unknown">Unknown / show all</option><option value="linux">Linux</option><option value="windows">Standalone Windows</option><option value="ad">Windows Active Directory</option></select></label>
                   <label><span>Lab / proof style</span><select value={machine.labType || "oscp"} onChange={(event) => { const labType = event.target.value; const profile = flagProfile(labType); actions.updateTarget(machine.id, { labType, userFlagName: profile.userFlagName, rootFlagName: profile.rootFlagName }); }}>{Object.entries(FLAG_PROFILES).map(([value, profile]) => <option key={value} value={value}>{profile.label}</option>)}</select></label>
                   <label><span>User / root flag files</span><div className="flag-name-pair"><input type="text" value={machine.userFlagName || ""} onChange={(event) => actions.updateTarget(machine.id, { userFlagName: event.target.value })} /><input type="text" value={machine.rootFlagName || ""} onChange={(event) => actions.updateTarget(machine.id, { rootFlagName: event.target.value })} /></div></label>
                 </div>

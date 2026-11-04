@@ -4,6 +4,7 @@ import { useWorkspace } from "../context/WorkspaceContext";
 import { credentialVariables, isNtHash } from "../lib/credentials";
 import { visibleDiscoveries } from "../lib/evidence";
 import { getScopedItemValue } from "../lib/workspace";
+import { PLATFORM_PHASES } from "../data/practiceBoxes";
 
 const PHASE_ICONS = ["⌂", "⌕", "▦", "◎", "↟", "♜", "⊞", "◇", "⇄", "✓", "▣"];
 
@@ -39,6 +40,9 @@ export default function VariablesPanel() {
   const [showSecrets, setShowSecrets] = useState(false);
   const activeTarget = workspace.targets.find((target) => target.id === workspace.activeTargetId);
   const activeEndpoint = activeTarget?.endpoints?.find((endpoint) => endpoint.id === activeTarget.activeEndpointId) || activeTarget?.endpoints?.[0];
+  const visibleMethodology = PLATFORM_PHASES[activeTarget?.boxType]
+    ? CHECKLIST.filter((phase) => PLATFORM_PHASES[activeTarget.boxType].has(phase.id))
+    : CHECKLIST;
   const activeAccounts = workspace.accounts.filter((entry) => entry.targetId ? entry.targetId === workspace.activeTargetId : entry.target === workspace.variables.targetName);
   const activeUsers = (workspace.users || []).filter((entry) => entry.targetId ? entry.targetId === workspace.activeTargetId : entry.target === workspace.variables.targetName);
   const activeDiscoveries = visibleDiscoveries(workspace.discoveries, {
@@ -124,7 +128,8 @@ export default function VariablesPanel() {
       {activeTarget && (
         <nav className="methodology-nav" aria-label="Checklist phases">
           <div className="methodology-nav-head"><span>Methodology</span><small>runs</small></div>
-          {CHECKLIST.map((phase, index) => {
+          {visibleMethodology.map((phase) => {
+            const index = CHECKLIST.findIndex((candidate) => candidate.id === phase.id);
             const itemIds = new Set(phase.items.map((item) => item.id));
             const runs = workspace.commandHistory.filter((entry) => entry.targetId === workspace.activeTargetId && entry.source === "local runner" && itemIds.has(entry.itemId)).length;
             const done = phase.items.filter((item) => getScopedItemValue(workspace.completed, workspace, item.id, false)).length;

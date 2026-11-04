@@ -8,9 +8,12 @@ import { useWorkspace } from "../context/WorkspaceContext";
 import { getScopedItemValue } from "../lib/workspace";
 import { useLocalRunner } from "../context/LocalRunnerContext";
 import { FLAG_PROFILES, flagProfile } from "../lib/flagProfiles";
+import PdfMachineImporter from "../components/PdfMachineImporter";
+import PracticeBoxSelect from "../components/PracticeBoxSelect";
+import { PLATFORM_PHASES, platformLabel } from "../data/practiceBoxes";
 
 function MachineRequired({ workspace, actions }) {
-  const [draft, setDraft] = useState({ name: "", host: "", os: "Unknown", labType: "oscp" });
+  const [draft, setDraft] = useState({ name: "", host: "", os: "Unknown", labType: "oscp", boxType: "unknown", practiceBoxId: "" });
   const submit = (event) => {
     event.preventDefault();
     if (!draft.name.trim() || !draft.host.trim()) return;
@@ -22,11 +25,16 @@ function MachineRequired({ workspace, actions }) {
       <div><p className="eyebrow">Machine required</p><h2 id="machine-gate-title">Choose where this work belongs.</h2><p>Commands, evidence, credentials, flags, notes, and report text are always stored under one machine.</p></div>
       {workspace.targets.length > 0 && <div className="machine-gate-existing">{workspace.targets.map((target) => <button type="button" className="button secondary" key={target.id} onClick={() => actions.useTarget(target)}>Use {target.name} · {target.host}</button>)}</div>}
       <form onSubmit={submit}>
+        <PracticeBoxSelect value={draft.practiceBoxId} onSelect={(box) => {
+          if (!box) { setDraft({ ...draft, practiceBoxId: "" }); return; }
+          setDraft({ ...draft, practiceBoxId: box.id, name: box.name, os: box.os, boxType: box.platform, labType: box.labType });
+        }} />
         <label><span>New box name</span><input type="text" value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder="web01" required /></label>
         <label><span>IP or host</span><input type="text" value={draft.host} onChange={(event) => setDraft({ ...draft, host: event.target.value })} placeholder="192.168.45.100" required /></label>
         <label><span>Proof style</span><select value={draft.labType} onChange={(event) => setDraft({ ...draft, labType: event.target.value })}>{Object.entries(FLAG_PROFILES).map(([value, profile]) => <option value={value} key={value}>{profile.label}</option>)}</select></label>
         <button type="submit" className="button" disabled={!draft.name.trim() || !draft.host.trim()}>Create and use box</button>
       </form>
+      <PdfMachineImporter compact />
       <Link className="text-button machine-gate-link" to="/targets">Open full machine setup</Link>
     </section>
   );
@@ -37,6 +45,7 @@ export default function ChecklistPage() {
   const runner = useLocalRunner();
   const [query, setQuery] = useState("");
   const [hideComplete, setHideComplete] = useState(false);
+  const [focusMode, setFocusMode] = useState(true);
   const [expandedResultsKey, setExpandedResultsKey] = useState(null);
   const searchRef = useRef(null);
 
@@ -52,16 +61,19 @@ export default function ChecklistPage() {
   }, []);
   useEffect(() => setExpandedResultsKey(null), [workspace.activeTargetId]);
   const normalizedQuery = query.trim().toLowerCase();
+  const activeTarget = workspace.targets.find((target) => target.id === workspace.activeTargetId);
+  const platformPhases = PLATFORM_PHASES[activeTarget?.boxType];
+  const methodology = focusMode && platformPhases ? CHECKLIST.filter((phase) => platformPhases.has(phase.id)) : CHECKLIST;
 
-  const totalItems = CHECKLIST.reduce((total, phase) => total + phase.items.length, 0);
-  const completedItems = CHECKLIST.reduce(
+  const totalItems = methodology.reduce((total, phase) => total + phase.items.length, 0);
+  const completedItems = methodology.reduce(
     (total, phase) => total + phase.items.filter((item) => getScopedItemValue(workspace.completed, workspace, item.id, false)).length,
     0,
   );
   const percent = totalItems ? Math.round((completedItems / totalItems) * 100) : 0;
 
   const visiblePhases = useMemo(
-    () => CHECKLIST.map((phase) => ({
+    () => methodology.map((phase) => ({
       ...phase,
       items: phase.items.filter((item) => {
         if (hideComplete && getScopedItemValue(workspace.completed, workspace, item.id, false)) return false;
@@ -75,8 +87,10 @@ export default function ChecklistPage() {
         return haystack.includes(normalizedQuery);
       }),
     })).filter((phase) => phase.items.length > 0),
-    [hideComplete, normalizedQuery, workspace.completed],
+    [hideComplete, normalizedQuery, workspace.completed, methodology],
   );
+  const recommendedItem = methodology.flatMap((phase) => phase.items.map((item) => ({ ...item, phase })))
+    .find((item) => !getScopedItemValue(workspace.completed, workspace, item.id, false));
 
   if (!workspace.activeTargetId) {
     return (
@@ -135,7 +149,16 @@ export default function ChecklistPage() {
           <input type="checkbox" checked={hideComplete} onChange={(event) => setHideComplete(event.target.checked)} />
           <span>Hide complete</span>
         </label>
+        {platformPhases && <label className="toggle-field"><input type="checkbox" checked={focusMode} onChange={(event) => setFocusMode(event.target.checked)} /><span>{platformLabel(activeTarget.boxType)} focus</span></label>}
       </div>
+
+      {recommendedItem && !normalizedQuery && (
+        <a className="next-action-card" href={`#item-${recommendedItem.id}`}>
+          <span>Next smallest action</span>
+          <strong>{recommendedItem.title}</strong>
+          <small>{recommendedItem.phase.title} · finish one result, write one conclusion, then move on.</small>
+        </a>
+      )}
 
       <EvidenceInbox />
 
@@ -158,6 +181,7 @@ export default function ChecklistPage() {
                     <ChecklistItem
                       key={item.id}
                       item={item}
+                      recommended={recommendedItem?.id === item.id && !normalizedQuery}
                       searchActive={Boolean(normalizedQuery)}
                       expandedResultsKey={expandedResultsKey}
                       onExpandedResultsChange={setExpandedResultsKey}
