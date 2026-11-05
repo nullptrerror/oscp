@@ -25,26 +25,25 @@ test("every command placeholder has an editable default variable", () => {
 });
 
 test("each checklist item includes at least one command", () => {
-  assert.deepEqual(ALL_ITEMS.filter((item) => item.commands.length === 0), []);
+  const generatedItems = new Set(["ad-domain-writedacl", "ad-bloodhound-paths"]);
+  assert.deepEqual(ALL_ITEMS.filter((item) => item.commands.length === 0 && !generatedItems.has(item.id)), []);
 });
 
-test("delegated group control includes discovery, change, verification, and rollback commands", () => {
+test("delegated group control includes direct membership, change, verification, and rollback commands", () => {
   const item = ALL_ITEMS.find((candidate) => candidate.id === "ad-group-membership");
   const commands = item.commands.map((command) => command.value).join("\n");
 
-  assert.match(commands, /objectClass=group.*sAMAccountName=\{\{targetGroup\}\}/);
-  assert.match(commands, /objectClass=user.*sAMAccountName=\{\{memberUser\}\}/);
-  assert.match(commands, /add: member/);
-  assert.match(commands, /delete: member/);
-  assert.match(commands, /ldapmodify/);
-  assert.match(commands, /\[adsisearcher\]/);
+  assert.match(commands, /net rpc group members/);
+  assert.match(commands, /net rpc group addmem/);
+  assert.match(commands, /net rpc group delmem/);
+  assert.match(commands, /\{\{targetGroup\}\}.*\{\{memberUser\}\}/);
+  assert.doesNotMatch(commands, /ldapmodify|adsisearcher/);
 });
 
 test("domain WriteDACL checklist delegates grants to the variable-driven command builder", () => {
   const item = ALL_ITEMS.find((candidate) => candidate.id === "ad-domain-writedacl");
-  const commands = item.commands.map((command) => command.value).join("\n");
-  assert.match(item.detail, /WinRM.*PowerView.*Windows rather than Kali/);
-  assert.match(commands, /powerViewPath/);
+  assert.match(item.detail, /Kali-side.*impacket-dacledit/);
+  assert.deepEqual(item.commands, []);
 });
 
 test("every supplied practice box maps to a complete reusable methodology", () => {

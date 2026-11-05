@@ -118,7 +118,7 @@ export function buildKerberosTicketCommands(workspace) {
       commands.push({
         key: `kerberos-ticket-hashcat-${suffix}`,
         label: `Hashcat ${details.type} — ${identity}`,
-        value: `loot="${loot}"; hashes="$loot/hashes.txt"; test -s "$hashes" || { echo "Run the save command first: $hashes"; exit 1; }; test -f /usr/share/wordlists/rockyou.txt || sudo gzip -dk /usr/share/wordlists/rockyou.txt.gz; hashcat -m ${details.hashcatMode} "$hashes" /usr/share/wordlists/rockyou.txt --session "{{targetName}}-${suffix}"; hashcat -m ${details.hashcatMode} "$hashes" --show | tee "$loot/hashcat-cracked.txt"`,
+        value: `loot="${loot}"; hashes="$loot/hashes.txt"; test -s "$hashes" || { echo "Run the save command first: $hashes"; exit 1; }; test -f /usr/share/wordlists/rockyou.txt || sudo gzip -dk /usr/share/wordlists/rockyou.txt.gz; hashcat -m ${details.hashcatMode} "$hashes" /usr/share/wordlists/rockyou.txt --session "${targetName}-${suffix}"; hashcat -m ${details.hashcatMode} "$hashes" --show | tee "$loot/hashcat-cracked.txt"`,
       });
     }
 

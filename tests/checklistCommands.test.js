@@ -4,11 +4,6 @@ import { ALL_ITEMS } from "../src/data/checklist.js";
 import { getChecklistCommands } from "../src/lib/checklistCommands.js";
 import { createDefaultWorkspace } from "../src/lib/workspace.js";
 
-const decodedPowerShell = (command) => {
-  const encoded = command?.value.match(/-EncodedCommand ([A-Za-z0-9+/=]+)"/)?.[1];
-  return encoded ? Buffer.from(encoded, "base64").toString("utf16le") : "";
-};
-
 test("generated account commands stay isolated to the active target", () => {
   const workspace = createDefaultWorkspace();
   workspace.activeTargetId = "target-a";
@@ -31,6 +26,7 @@ test("WriteDACL checklist commands regenerate from the active ACL selections", (
     domain: "corp.local",
     user: "operator",
     password: "Password1!",
+    rhost: "10.0.0.10",
     aclTarget: "Helpdesk",
     aclPrincipal: "alice",
     aclRights: "ResetPassword",
@@ -38,13 +34,30 @@ test("WriteDACL checklist commands regenerate from the active ACL selections", (
   const item = ALL_ITEMS.find((candidate) => candidate.id === "ad-domain-writedacl");
   const commands = getChecklistCommands(item, workspace);
   const generated = commands.find((command) => command.key === "acl-grant");
-  const confirmation = commands.find((command) => command.key === "acl-powerview-check");
-  const script = decodedPowerShell(generated);
 
   assert.match(generated.label, /Grant ResetPassword.*alice on Helpdesk/);
-  assert.match(script, /Get-DomainObject -Identity .*Helpdesk.*-Properties distinguishedName/);
-  assert.match(script, /-TargetIdentity \$ResolvedTarget.*-Rights .*ResetPassword/);
-  assert.match(generated.value, /nxc winrm \{\{rhost\}\}.*-X/);
-  assert.match(confirmation.label, /PowerView over WinRM/);
+  assert.match(generated.value, /impacket-dacledit -action write -rights 'ResetPassword'/);
+  assert.match(generated.value, /-target 'Helpdesk'/);
+  assert.match(generated.value, /-principal 'alice'/);
+  assert.doesNotMatch(generated.value, /PowerView|nxc winrm|EncodedCommand/);
   assert.equal(commands.some((command) => command.key?.startsWith("acl-dcsync")), false);
+});
+
+test("BloodHound path commands regenerate from the active path selections", () => {
+  const workspace = createDefaultWorkspace();
+  workspace.variables = {
+    ...workspace.variables,
+    domain: "corp.local",
+    user: "operator",
+    bloodhoundSource: "alice",
+    bloodhoundTarget: "DC01.corp.local",
+  };
+  const item = ALL_ITEMS.find((candidate) => candidate.id === "ad-bloodhound-paths");
+  const commands = getChecklistCommands(item, workspace);
+
+  assert.equal(commands.length, 3);
+  assert.match(commands[0].value, /ALICE@CORP\.LOCAL/);
+  assert.match(commands[0].value, /DC01\.CORP\.LOCAL/);
+  assert.doesNotMatch(commands[0].value, /DC01\.CORP\.LOCAL@CORP\.LOCAL/);
+  assert.match(commands[0].value, /shortestPath/);
 });
