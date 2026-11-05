@@ -43,6 +43,9 @@ test("DCSync selection generates scoped retrieval between grant and cleanup", ()
   assert.match(combined, /-EncodedCommand \$payload/);
   assert.match(combined, /PowerView download or load failed/);
   assert.match(combined, /Resolved principal SID/);
+  assert.match(combined, /ConvertTo-SecureString/);
+  assert.match(combined, /-Credential \$Cred/);
+  assert.match(combined, /PowerView returned without persisting an ACL entry/);
   assert.match(combined, /lsadump::dcsync \/domain:htb\.local \/user:Administrator/);
   assert.match(combined, /-just-dc-user 'Administrator'/);
   assert.ok(grantAt >= 0 && retrieveAt > grantAt && cleanupAt > retrieveAt);
@@ -76,6 +79,16 @@ test("PowerView staging validates content and reports a port or log failure", ()
   assert.doesNotMatch(confirmation.value, /curl .*\| grep -q/);
   assert.match(confirmation.value, /PowerView HTTP staging failed/);
   assert.match(confirmation.value, /PowerView loaded successfully/);
+  assert.match(confirmation.value, /Get-DomainGroup/);
+});
+
+test("password workflow lists the authenticating user's effective groups with explicit credentials", () => {
+  const commands = renderedCommands();
+  const groups = commands.find((command) => command.key === "acl-effective-groups");
+
+  assert.match(groups.label, /svc_exchange's effective groups/);
+  assert.match(groups.value, /Get-DomainGroup -MemberIdentity .*svc_exchange/);
+  assert.match(groups.value, /-Credential \$Cred/);
 });
 
 test("DCSync for a different ACL principal omits credential-bound Impacket commands", () => {
@@ -105,6 +118,7 @@ test("hash-only authentication uses NetExec and Evil-WinRM pass-the-hash switche
   assert.match(winrm.value, /-H '8846f7eaee8fb117ad06bdd830b7586c'/);
   assert.doesNotMatch(winrm.value, /-p/);
   assert.match(evilWinrm.value, /-H '8846f7eaee8fb117ad06bdd830b7586c'/);
+  assert.doesNotMatch(commands.map((command) => command.value).join("\n"), /ConvertTo-SecureString|-Credential \$Cred/);
 });
 
 test("WinRM authentication shell-quotes passwords containing apostrophes", () => {
