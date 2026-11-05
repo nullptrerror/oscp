@@ -418,7 +418,7 @@ export const CHECKLIST = [
         title: "Confirm domain DNS and clock",
         commands: [
           { label: "DNS", value: "dig @{{rhost}} _ldap._tcp.dc._msdcs.{{domain}} SRV +short" },
-          { label: "Sync time", value: "sudo ntpdate {{rhost}}" },
+          { label: "Sync time from domain controller", value: "sudo timedatectl set-ntp false; sudo net time set -S {{rhost}}" },
           { label: "Credential test", value: "nxc smb {{rhost}} -u '{{user}}' -p '{{password}}' --shares" },
         ],
       },
@@ -440,7 +440,7 @@ export const CHECKLIST = [
       {
         id: "ad-spn-tgs",
         title: "Kerberoast SPN accounts into target loot",
-        detail: "The active credential and every saved account generate separate GetUserSPNs commands. Enumeration output, TGS hashes, and cracked results stay under the current target and credential identity. Switch targets with Use in commands to produce that target's paths and DC address.",
+        detail: "The active credential and every saved account generate separate GetUserSPNs commands. Enumeration output and hashes.txt stay under the current target and credential identity. Printed ticket hashes are parsed into per-user Hashcat and John commands under Credentials. Switch targets with Use in commands to produce that target's paths and DC address.",
         commands: [
           { label: "Inventory saved SPN/TGS loot", value: "root=\"{{workspaceRoot}}/{{targetName}}/loot/kerberos/spn_tgs\"; mkdir -p \"$root\"; find \"$root\" -type f -printf '%TY-%Tm-%Td %TH:%TM %s %p\\n' | sort" },
         ],

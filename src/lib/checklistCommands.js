@@ -1,6 +1,6 @@
 import { buildSmbDownloadCommands } from "./smbCommands.js";
 import { buildRemoteAccessCommands } from "./remoteAccessCommands.js";
-import { buildSpnTgsCommands } from "./kerberosCommands.js";
+import { buildKerberosTicketCommands, buildSpnTgsCommands } from "./kerberosCommands.js";
 import { buildUsersFileCommand } from "./userCommands.js";
 import { buildSprayCommands } from "./sprayCommands.js";
 
@@ -11,6 +11,7 @@ export function getChecklistCommands(item, workspace) {
   if (item.id === "svc-smb") return [...item.commands, ...buildSmbDownloadCommands(accounts, workspace.variables)];
   if (item.id === "access-remote") return [...item.commands, ...buildRemoteAccessCommands(accounts, workspace.variables)];
   if (item.id === "ad-spn-tgs") return [...item.commands, ...buildSpnTgsCommands(accounts, workspace.variables)];
+  if (item.id === "creds-crack") return [...item.commands, ...buildKerberosTicketCommands(workspace)];
   if (item.id === "ad-roast") {
     const usersFile = buildUsersFileCommand(workspace);
     return [

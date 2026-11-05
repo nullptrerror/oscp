@@ -12,9 +12,22 @@ test("nmap output yields ports and useful guidance", () => {
 test("cracked Kerberos output yields a credential without treating failure as valid", () => {
   const discoveries = parseEvidence("$krb5tgs$23$*Administrator$ACTIVE.HTB$svc/host*$abc:Ticketmaster1968", "tgs.cracked.txt");
   const credential = discoveries.find((item) => item.type === "credential");
+  const ticket = discoveries.find((item) => item.type === "kerberos-ticket");
   assert.equal(credential.username, "Administrator");
   assert.equal(credential.secret, "Ticketmaster1968");
+  assert.equal(ticket.value, "$krb5tgs$23$*Administrator$ACTIVE.HTB$svc/host*$abc");
+  assert.equal(ticket.domain, "ACTIVE.HTB");
+  assert.equal(ticket.etype, "23");
   assert.equal(parseEvidence("ACTIVE\\bob:bad STATUS_LOGON_FAILURE").some((item) => item.type === "credential"), false);
+});
+
+test("AES AS-REP hashes retain their user, realm, and etype", () => {
+  const value = "$krb5asrep$18$svc_backup$ACTIVE.HTB$0123456789abcdef$abcdef";
+  const ticket = parseEvidence(value, "asrep.hashes").find((item) => item.type === "kerberos-ticket");
+  assert.equal(ticket.value, value);
+  assert.equal(ticket.username, "svc_backup");
+  assert.equal(ticket.domain, "ACTIVE.HTB");
+  assert.equal(ticket.etype, "18");
 });
 
 test("files route to the closest checklist item", () => {

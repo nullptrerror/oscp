@@ -64,6 +64,11 @@ const unique = (items) => {
   });
 };
 
+const kerberosHashFromToken = (token) => {
+  const cracked = String(token).match(/^(\$krb5(?:tgs|asrep)\$.*\$[a-f0-9]+):\S+$/i);
+  return cracked?.[1] || token;
+};
+
 export function parseEvidence(content = "", filename = "", { userFlagName = "local.txt", rootFlagName = "proof.txt" } = {}) {
   const text = String(content);
   const discoveries = [];
@@ -98,8 +103,15 @@ export function parseEvidence(content = "", filename = "", { userFlagName = "loc
   }
   for (const match of text.matchAll(/^Disk\|([^|\r\n]+)\|/gim)) add("share", match[1]);
 
-  for (const match of text.matchAll(/\$krb5tgs\$\d+\$\*?([^$*:\s]+)[*$]/gi)) add("kerberos-ticket", match[0], { username: match[1], ticket: "TGS" });
-  for (const match of text.matchAll(/\$krb5asrep\$\d+\$([^@:]+)@([^:]+):[^\s]+/gi)) add("kerberos-ticket", match[0], { username: match[1], domain: match[2], ticket: "AS-REP" });
+  for (const match of text.matchAll(/\$krb5tgs\$(\d+)\$\*?([^$*:\s]+)\$([^$*\s]+)\$[^\s]+/gi)) {
+    add("kerberos-ticket", kerberosHashFromToken(match[0]), { username: match[2], domain: match[3], ticket: "TGS", etype: match[1] });
+  }
+  for (const match of text.matchAll(/\$krb5asrep\$(\d+)\$([^@:\s]+)@([^:\s]+):[^\s]+/gi)) {
+    add("kerberos-ticket", kerberosHashFromToken(match[0]), { username: match[2], domain: match[3], ticket: "AS-REP", etype: match[1] });
+  }
+  for (const match of text.matchAll(/\$krb5asrep\$(17|18)\$([^$:\s]+)\$([^$\s]+)\$[^\s]+/gi)) {
+    add("kerberos-ticket", kerberosHashFromToken(match[0]), { username: match[2], domain: match[3], ticket: "AS-REP", etype: match[1] });
+  }
   const flagSource = String(filename);
   const configuredFlag = [
     { name: userFlagName, kind: "user" },
@@ -124,8 +136,12 @@ export function parseEvidence(content = "", filename = "", { userFlagName = "loc
     }
     const toolHost = line.match(/^(?:SMB|LDAP|WINRM|SSH|MSSQL|RDP)\s+((?:\d{1,3}\.){3}\d{1,3})\s+/i);
     if (toolHost) add("endpoint", toolHost[1], { confidence: "high", source: "service-host" });
-    const cracked = line.match(/^\$krb5(?:tgs|asrep)\$\d+\$\*?([^$*:\s]+)[*$].*:(\S+)$/i);
-    if (cracked) add("credential", `${cracked[1]}:${cracked[2]}`, { username: cracked[1], secret: cracked[2], source: filename || "Kerberos crack" });
+    const cracked = line.match(/^(\$krb5(?:tgs|asrep)\$.*\$[a-f0-9]+):(\S+)$/i);
+    if (cracked) {
+      const principal = cracked[1].match(/^\$krb5tgs\$\d+\$\*?([^$*:\s]+)[*$]/i)
+        || cracked[1].match(/^\$krb5asrep\$\d+\$([^@$:\s]+)(?:@|\$)/i);
+      if (principal) add("credential", `${principal[1]}:${cracked[2]}`, { username: principal[1], secret: cracked[2], source: filename || "Kerberos crack" });
+    }
     const labeledNtHash = line.match(/\b(?:ntlm|nt[ _-]?hash|nthash)\s*[:=]\s*([a-f0-9]{32})\b/i);
     if (labeledNtHash) add("ntlm-hash", labeledNtHash[1].toLowerCase());
     const secretsDump = line.match(/^([^:\s]+):\d+:([a-f0-9]{32}):([a-f0-9]{32}):::/i);
