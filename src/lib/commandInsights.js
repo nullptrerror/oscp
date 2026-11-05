@@ -6,6 +6,7 @@ const TOOL_INSIGHTS = [
   [/\bnmap\b/i, ["Scans the target for reachable ports, services, versions, and selected script results.", "Open or filtered ports, service fingerprints, host details, and script findings."]],
   [/\b(?:nxc|netexec)\b/i, ["Tests or enumerates a network service with the supplied target and credential arguments.", "Authentication status, host/domain details, accessible resources, users, groups, policy, or execution results."]],
   [/\bsmbclient\b/i, ["Connects to SMB to enumerate or retrieve files from the selected share.", "Available shares, directory listings, transfer status, and SMB errors."]],
+  [/\bldapmodify\b/i, ["Applies the rendered LDAP attribute change after the target and member distinguished names have been resolved.", "A successful LDAP modification result or an exact authentication, authorization, schema, or duplicate-value error."]],
   [/\bldapsearch\b/i, ["Queries LDAP with the selected base, filter, and authentication context.", "Directory objects and requested attributes such as users, groups, and naming contexts."]],
   [/\b(?:dig|nslookup|host)\b/i, ["Queries DNS using the supplied server, name, and record type.", "DNS records, delegated names, service records, or zone-transfer status."]],
   [/\bffuf\b/i, ["Fuzzes the selected URL or Host header with a wordlist to discover hidden content or names.", "Matching paths, files, parameters, or virtual hosts with response status and size information."]],

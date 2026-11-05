@@ -28,6 +28,18 @@ test("each checklist item includes at least one command", () => {
   assert.deepEqual(ALL_ITEMS.filter((item) => item.commands.length === 0), []);
 });
 
+test("delegated group control includes discovery, change, verification, and rollback commands", () => {
+  const item = ALL_ITEMS.find((candidate) => candidate.id === "ad-group-membership");
+  const commands = item.commands.map((command) => command.value).join("\n");
+
+  assert.match(commands, /objectClass=group.*sAMAccountName=\{\{targetGroup\}\}/);
+  assert.match(commands, /objectClass=user.*sAMAccountName=\{\{memberUser\}\}/);
+  assert.match(commands, /add: member/);
+  assert.match(commands, /delete: member/);
+  assert.match(commands, /ldapmodify/);
+  assert.match(commands, /\[adsisearcher\]/);
+});
+
 test("every supplied practice box maps to a complete reusable methodology", () => {
   assert.ok(PRACTICE_BOXES.length > 100);
   assert.equal(new Set(PRACTICE_BOXES.map((box) => box.id)).size, PRACTICE_BOXES.length);

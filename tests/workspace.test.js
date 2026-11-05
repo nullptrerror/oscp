@@ -8,6 +8,7 @@ import {
   getScopedItemValue,
   importMachineData,
   normalizeWorkspace,
+  pickMachineVariables,
   renderCommand,
   WORKSPACE_VERSION,
 } from "../src/lib/workspace.js";
@@ -147,6 +148,17 @@ test("a PDF machine import merges scoped data without replacing existing machine
 
 test("the default Kali workspace root is /home/kali/oscp", () => {
   assert.equal(createDefaultWorkspace().variables.workspaceRoot, "/home/kali/oscp");
+});
+
+test("LDAP group-control selections remain machine scoped", () => {
+  const variables = pickMachineVariables({
+    targetGroup: "Account Operators",
+    memberUser: "svc_alfresco",
+    unrelated: "discarded",
+  });
+  assert.equal(variables.targetGroup, "Account Operators");
+  assert.equal(variables.memberUser, "svc_alfresco");
+  assert.equal(variables.unrelated, undefined);
 });
 
 test("domains derive LDAP base DNs when one is not supplied", () => {

