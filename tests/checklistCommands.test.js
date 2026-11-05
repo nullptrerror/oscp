@@ -33,8 +33,11 @@ test("WriteDACL checklist commands regenerate from the active ACL selections", (
   const item = ALL_ITEMS.find((candidate) => candidate.id === "ad-domain-writedacl");
   const commands = getChecklistCommands(item, workspace);
   const generated = commands.find((command) => command.key === "acl-grant");
+  const confirmation = commands.find((command) => command.key === "acl-powerview-check");
 
   assert.match(generated.label, /Grant ResetPassword.*alice on Helpdesk/);
-  assert.match(generated.value, /-TargetIdentity '\{\{aclTarget\}\}'.*-Rights 'ResetPassword'/);
+  assert.match(generated.value, /-TargetIdentity .*\{\{aclTarget\}\}.*-Rights .*ResetPassword/);
+  assert.match(generated.value, /nxc winrm \{\{rhost\}\}.*-X/);
+  assert.match(confirmation.label, /PowerView over WinRM/);
   assert.equal(commands.some((command) => command.key?.startsWith("acl-dcsync")), false);
 });

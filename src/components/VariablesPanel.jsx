@@ -28,6 +28,8 @@ const LABELS = {
   aclPrincipal: "ACL principal",
   aclRights: "ACL rights",
   dcsyncUser: "DCSync account (optional)",
+  powerViewPath: "PowerView path",
+  powerViewPort: "PowerView HTTP port",
   password: "Password",
   gppCpassword: "GPP cpassword",
   hash: "NTLM / hash",

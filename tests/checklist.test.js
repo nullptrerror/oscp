@@ -43,8 +43,8 @@ test("delegated group control includes discovery, change, verification, and roll
 test("domain WriteDACL checklist delegates grants to the variable-driven command builder", () => {
   const item = ALL_ITEMS.find((candidate) => candidate.id === "ad-domain-writedacl");
   const commands = item.commands.map((command) => command.value).join("\n");
-  assert.match(item.detail, /ACL TARGET.*ACL PRINCIPAL.*ACL RIGHTS/);
-  assert.match(commands, /Get-DomainObject.*Add-DomainObjectAcl.*Remove-DomainObjectAcl/);
+  assert.match(item.detail, /WinRM.*PowerView.*Windows rather than Kali/);
+  assert.match(commands, /powerViewPath/);
 });
 
 test("every supplied practice box maps to a complete reusable methodology", () => {

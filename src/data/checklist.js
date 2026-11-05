@@ -18,6 +18,8 @@ export const DEFAULT_VARIABLES = {
   aclPrincipal: "",
   aclRights: "DCSync",
   dcsyncUser: "Administrator",
+  powerViewPath: "/usr/share/windows-resources/powersploit/Recon/PowerView.ps1",
+  powerViewPort: "8000",
   password: "",
   gppCpassword: "",
   hash: "",
@@ -36,7 +38,7 @@ export const VARIABLE_GROUPS = [
   { label: "Operator", keys: ["lhost", "lport", "interface"] },
   { label: "Target", keys: ["targetName", "rhost", "rport", "uport", "subnet", "userFlagName", "rootFlagName"] },
   { label: "Identity", keys: ["domain", "baseDn", "dc", "user", "memberUser", "targetGroup", "aclTarget", "aclPrincipal", "aclRights", "dcsyncUser", "password", "gppCpassword", "hash"] },
-  { label: "Resources", keys: ["smbShare", "smbDirectory", "sprayPassword", "sprayJitter", "sprayRockyouLimit", "wordlist"] },
+  { label: "Resources", keys: ["powerViewPath", "powerViewPort", "smbShare", "smbDirectory", "sprayPassword", "sprayJitter", "sprayRockyouLimit", "wordlist"] },
 ];
 
 export const CHECKLIST = [
@@ -467,9 +469,9 @@ export const CHECKLIST = [
       {
         id: "ad-domain-writedacl",
         title: "Exercise WriteDACL over a directory object",
-        detail: "Use this only after confirming WriteDacl or equivalent control over ACL TARGET. Username and Password authenticate the change; ACL PRINCIPAL receives ACL RIGHTS. Supported PowerView rights are All, ResetPassword, WriteMembers, and DCSync. Commands regenerate from those selections, capture a generic before/after ACL diff, and remove the exact rendered grant. DCSync retrieval commands appear only when DCSync is selected. PowerView must already be loaded in the Windows PowerShell session.",
+        detail: "Use this only after confirming WriteDacl or equivalent control over ACL TARGET. The generated commands authenticate to the target over WinRM as USERNAME, automatically serve and load the local PowerView script, and execute PowerShell on Windows rather than Kali. ACL PRINCIPAL receives ACL RIGHTS. Supported rights are All, ResetPassword, WriteMembers, and DCSync. The workflow captures a remote before/after ACL diff and removes the exact rendered grant. DCSync retrieval commands appear only when DCSync is selected.",
         commands: [
-          { label: "PowerView: confirm required functions", value: "Get-Command Get-DomainObject,Get-DomainObjectAcl,Add-DomainObjectAcl,Remove-DomainObjectAcl | Select-Object Name,CommandType" },
+          { label: "Kali: verify the configured PowerView source", value: "test -f '{{powerViewPath}}' && ls -l '{{powerViewPath}}' || { echo 'PowerView.ps1 was not found; update POWER VIEW PATH'; find /usr/share/windows-resources -type f -iname PowerView.ps1 -print 2>/dev/null; false; }" },
         ],
       },
       {
