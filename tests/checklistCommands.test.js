@@ -4,6 +4,11 @@ import { ALL_ITEMS } from "../src/data/checklist.js";
 import { getChecklistCommands } from "../src/lib/checklistCommands.js";
 import { createDefaultWorkspace } from "../src/lib/workspace.js";
 
+const decodedPowerShell = (command) => {
+  const encoded = command?.value.match(/-EncodedCommand ([A-Za-z0-9+/=]+)"/)?.[1];
+  return encoded ? Buffer.from(encoded, "base64").toString("utf16le") : "";
+};
+
 test("generated account commands stay isolated to the active target", () => {
   const workspace = createDefaultWorkspace();
   workspace.activeTargetId = "target-a";
@@ -34,10 +39,11 @@ test("WriteDACL checklist commands regenerate from the active ACL selections", (
   const commands = getChecklistCommands(item, workspace);
   const generated = commands.find((command) => command.key === "acl-grant");
   const confirmation = commands.find((command) => command.key === "acl-powerview-check");
+  const script = decodedPowerShell(generated);
 
   assert.match(generated.label, /Grant ResetPassword.*alice on Helpdesk/);
-  assert.match(generated.value, /Get-DomainObject -Identity .*\{\{aclTarget\}\}.*-Properties distinguishedName/);
-  assert.match(generated.value, /-TargetIdentity \$ResolvedTarget.*-Rights .*ResetPassword/);
+  assert.match(script, /Get-DomainObject -Identity .*Helpdesk.*-Properties distinguishedName/);
+  assert.match(script, /-TargetIdentity \$ResolvedTarget.*-Rights .*ResetPassword/);
   assert.match(generated.value, /nxc winrm \{\{rhost\}\}.*-X/);
   assert.match(confirmation.label, /PowerView over WinRM/);
   assert.equal(commands.some((command) => command.key?.startsWith("acl-dcsync")), false);

