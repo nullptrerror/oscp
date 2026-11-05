@@ -1,6 +1,6 @@
 const TOOL_INSIGHTS = [
-  [/\bAdd-DomainObjectAcl\b/i, ["Adds the explicitly rendered DCSync ACEs to the domain object for the selected principal after WriteDACL control has been confirmed.", "Verbose PowerView resolution and ACL modification status, including permission or principal-resolution errors."]],
-  [/\bRemove-DomainObjectAcl\b/i, ["Removes the same rendered DCSync ACEs from the selected principal during cleanup.", "Verbose PowerView cleanup status or an exact ACL modification error."]],
+  [/\bAdd-DomainObjectAcl\b/i, ["Adds the rendered PowerView ACL right to the selected directory target for the selected principal after WriteDACL control has been confirmed.", "Verbose PowerView resolution and ACL modification status, including permission, right, target, or principal-resolution errors."]],
+  [/\bRemove-DomainObjectAcl\b/i, ["Removes the same rendered ACL right from the selected target and principal during cleanup.", "Verbose PowerView cleanup status or an exact ACL modification error."]],
   [/\b(?:lsadump::dcsync|impacket-secretsdump\b.*-just-dc-user)\b/i, ["Requests replication data only for the selected directory account using previously validated DCSync rights.", "The selected account's replicated credential material or an authentication, authorization, or replication error."]],
   [/\bldapmodify\b/i, ["Applies the rendered LDAP attribute change after the target and member distinguished names have been resolved.", "A successful LDAP modification result or an exact authentication, authorization, schema, or duplicate-value error."]],
   [/\bmkdir\b.*\b(?:scans|loot|notes)\b/i, ["Creates the machine-specific evidence folders used by later commands.", "Created directory paths or a filesystem permission/error message."]],

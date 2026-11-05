@@ -18,3 +18,23 @@ test("generated account commands stay isolated to the active target", () => {
   assert.match(rendered, /AlphaPassword!/);
   assert.doesNotMatch(rendered, /BetaPassword!/);
 });
+
+test("WriteDACL checklist commands regenerate from the active ACL selections", () => {
+  const workspace = createDefaultWorkspace();
+  workspace.variables = {
+    ...workspace.variables,
+    domain: "corp.local",
+    user: "operator",
+    password: "Password1!",
+    aclTarget: "Helpdesk",
+    aclPrincipal: "alice",
+    aclRights: "ResetPassword",
+  };
+  const item = ALL_ITEMS.find((candidate) => candidate.id === "ad-domain-writedacl");
+  const commands = getChecklistCommands(item, workspace);
+  const generated = commands.find((command) => command.key === "acl-grant");
+
+  assert.match(generated.label, /Grant ResetPassword.*alice on Helpdesk/);
+  assert.match(generated.value, /-TargetIdentity '\{\{aclTarget\}\}'.*-Rights 'ResetPassword'/);
+  assert.equal(commands.some((command) => command.key?.startsWith("acl-dcsync")), false);
+});

@@ -30,6 +30,6 @@ test("ldapmodify commands are described as directory changes", () => {
 test("WriteDACL and single-account DCSync commands describe their impact", () => {
   const grant = describeCommand("Add-DomainObjectAcl -PrincipalIdentity alice -Rights DCSync", "Grant DCSync");
   const retrieve = describeCommand("mkdir -p loot/dcsync; impacket-secretsdump -just-dc-user Administrator domain/alice@dc", "DCSync");
-  assert.match(grant.purpose, /DCSync ACEs.*domain object/i);
+  assert.match(grant.purpose, /ACL right.*selected directory target/i);
   assert.match(retrieve.purpose, /only.*selected directory account/i);
 });

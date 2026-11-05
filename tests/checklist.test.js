@@ -40,19 +40,11 @@ test("delegated group control includes discovery, change, verification, and roll
   assert.match(commands, /\[adsisearcher\]/);
 });
 
-test("domain WriteDACL workflow grants explicit DCSync rights and pairs cleanup", () => {
+test("domain WriteDACL checklist delegates grants to the variable-driven command builder", () => {
   const item = ALL_ITEMS.find((candidate) => candidate.id === "ad-domain-writedacl");
   const commands = item.commands.map((command) => command.value).join("\n");
-  const grantAt = item.commands.findIndex((command) => command.label.includes("grant self"));
-  const retrieveAt = item.commands.findIndex((command) => command.label.includes("with password"));
-  const cleanupAt = item.commands.findIndex((command) => command.label.includes("remove DCSync"));
-
-  assert.match(commands, /Add-DomainObjectAcl.*-PrincipalIdentity '\{\{user\}\}'.*-Rights DCSync/);
-  assert.match(commands, /Remove-DomainObjectAcl.*-PrincipalIdentity '\{\{user\}\}'.*-Rights DCSync/);
-  assert.match(commands, /lsadump::dcsync \/domain:\{\{domain\}\} \/user:\{\{dcsyncUser\}\}/);
-  assert.match(commands, /-just-dc-user '\{\{dcsyncUser\}\}'/);
-  assert.doesNotMatch(commands, /-Rights All(?:\s|$)/);
-  assert.ok(grantAt >= 0 && retrieveAt > grantAt && cleanupAt > retrieveAt);
+  assert.match(item.detail, /ACL TARGET.*ACL PRINCIPAL.*ACL RIGHTS/);
+  assert.match(commands, /Get-DomainObject.*Add-DomainObjectAcl.*Remove-DomainObjectAcl/);
 });
 
 test("every supplied practice box maps to a complete reusable methodology", () => {
