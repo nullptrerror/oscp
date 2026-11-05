@@ -22,7 +22,14 @@ test("command descriptions explain purpose and expected return data", () => {
 });
 
 test("ldapmodify commands are described as directory changes", () => {
-  const insight = describeCommand("printf 'changetype: modify' | ldapmodify -x -H ldap://10.0.0.1", "Add member");
+  const insight = describeCommand("mkdir -p loot/ldap; printf 'changetype: modify' | ldapmodify -x -H ldap://10.0.0.1", "Add member");
   assert.match(insight.purpose, /applies.*LDAP attribute change/i);
   assert.match(insight.returns, /authorization|modification/i);
+});
+
+test("WriteDACL and single-account DCSync commands describe their impact", () => {
+  const grant = describeCommand("Add-DomainObjectAcl -PrincipalIdentity alice -Rights DCSync", "Grant DCSync");
+  const retrieve = describeCommand("mkdir -p loot/dcsync; impacket-secretsdump -just-dc-user Administrator domain/alice@dc", "DCSync");
+  assert.match(grant.purpose, /DCSync ACEs.*domain object/i);
+  assert.match(retrieve.purpose, /only.*selected directory account/i);
 });

@@ -154,10 +154,12 @@ test("LDAP group-control selections remain machine scoped", () => {
   const variables = pickMachineVariables({
     targetGroup: "Account Operators",
     memberUser: "svc_alfresco",
+    dcsyncUser: "Administrator",
     unrelated: "discarded",
   });
   assert.equal(variables.targetGroup, "Account Operators");
   assert.equal(variables.memberUser, "svc_alfresco");
+  assert.equal(variables.dcsyncUser, "Administrator");
   assert.equal(variables.unrelated, undefined);
 });
 

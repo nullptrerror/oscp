@@ -1,4 +1,8 @@
 const TOOL_INSIGHTS = [
+  [/\bAdd-DomainObjectAcl\b/i, ["Adds the explicitly rendered DCSync ACEs to the domain object for the selected principal after WriteDACL control has been confirmed.", "Verbose PowerView resolution and ACL modification status, including permission or principal-resolution errors."]],
+  [/\bRemove-DomainObjectAcl\b/i, ["Removes the same rendered DCSync ACEs from the selected principal during cleanup.", "Verbose PowerView cleanup status or an exact ACL modification error."]],
+  [/\b(?:lsadump::dcsync|impacket-secretsdump\b.*-just-dc-user)\b/i, ["Requests replication data only for the selected directory account using previously validated DCSync rights.", "The selected account's replicated credential material or an authentication, authorization, or replication error."]],
+  [/\bldapmodify\b/i, ["Applies the rendered LDAP attribute change after the target and member distinguished names have been resolved.", "A successful LDAP modification result or an exact authentication, authorization, schema, or duplicate-value error."]],
   [/\bmkdir\b.*\b(?:scans|loot|notes)\b/i, ["Creates the machine-specific evidence folders used by later commands.", "Created directory paths or a filesystem permission/error message."]],
   [/\bscript\s+-a\b/i, ["Starts an append-only terminal transcript for the current machine.", "An interactive shell whose input and output are also written to the selected log file."]],
   [/\bip\s+(?:-br\s+)?(?:address|route)|\bifconfig\b/i, ["Records local interface addresses and routing context before target interaction.", "Interface names, IP addresses, link state, and routes that explain how the target is reached."]],
@@ -6,7 +10,6 @@ const TOOL_INSIGHTS = [
   [/\bnmap\b/i, ["Scans the target for reachable ports, services, versions, and selected script results.", "Open or filtered ports, service fingerprints, host details, and script findings."]],
   [/\b(?:nxc|netexec)\b/i, ["Tests or enumerates a network service with the supplied target and credential arguments.", "Authentication status, host/domain details, accessible resources, users, groups, policy, or execution results."]],
   [/\bsmbclient\b/i, ["Connects to SMB to enumerate or retrieve files from the selected share.", "Available shares, directory listings, transfer status, and SMB errors."]],
-  [/\bldapmodify\b/i, ["Applies the rendered LDAP attribute change after the target and member distinguished names have been resolved.", "A successful LDAP modification result or an exact authentication, authorization, schema, or duplicate-value error."]],
   [/\bldapsearch\b/i, ["Queries LDAP with the selected base, filter, and authentication context.", "Directory objects and requested attributes such as users, groups, and naming contexts."]],
   [/\b(?:dig|nslookup|host)\b/i, ["Queries DNS using the supplied server, name, and record type.", "DNS records, delegated names, service records, or zone-transfer status."]],
   [/\bffuf\b/i, ["Fuzzes the selected URL or Host header with a wordlist to discover hidden content or names.", "Matching paths, files, parameters, or virtual hosts with response status and size information."]],

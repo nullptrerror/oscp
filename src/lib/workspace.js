@@ -6,7 +6,7 @@ export const STORAGE_KEY = "fieldnotes.oscp.workspace.v1";
 export const WORKSPACE_VERSION = 1;
 export const MACHINE_VARIABLE_KEYS = [
   "targetName", "rhost", "rport", "uport", "subnet", "domain", "baseDn", "dc",
-  "user", "memberUser", "targetGroup", "password", "gppCpassword", "hash", "smbShare", "smbDirectory",
+  "user", "memberUser", "targetGroup", "dcsyncUser", "password", "gppCpassword", "hash", "smbShare", "smbDirectory",
   "sprayPassword", "userFlagName", "rootFlagName",
 ];
 
@@ -38,6 +38,7 @@ export const clearMachineVariables = (variables) => ({
   user: "",
   memberUser: "",
   targetGroup: "",
+  dcsyncUser: "",
   password: "",
   gppCpassword: "",
   hash: "",
