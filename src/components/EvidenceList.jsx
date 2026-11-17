@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useWorkspace } from "../context/WorkspaceContext";
-import { discoveryContext, PARSER_TAGS, guidanceForDiscoveries, visibleDiscoveries } from "../lib/evidence";
+import { confirmedDiscoveries, discoveryContext, PARSER_TAGS, guidanceForDiscoveries, visibleDiscoveries } from "../lib/evidence";
 import TerminalOutput from "./TerminalOutput";
 
 const discoveryLabels = Object.fromEntries(PARSER_TAGS.map((entry) => [entry.type, entry.label]));
@@ -32,7 +32,7 @@ export default function EvidenceList({ entries, itemId }) {
           ignored: workspace.ignoredDiscoveries,
           targetId: entry.targetId ?? workspace.activeTargetId,
         });
-        const guidance = guidanceForDiscoveries(discoveries);
+        const guidance = guidanceForDiscoveries(confirmedDiscoveries(discoveries));
         const target = workspace.targets.find((candidate) => candidate.id === (entry.targetId ?? workspace.activeTargetId));
         const flags = discoveries.filter((discovery) => discovery.type === "flag");
         const discoveryGroups = [...new Map(discoveries.map((discovery) => [
@@ -61,7 +61,7 @@ export default function EvidenceList({ entries, itemId }) {
             })}
             {discoveries.length > 0 && (
               <section className="parsed-findings" aria-label="Parsed findings">
-                <header><strong>Parsed findings</strong><span>{discoveries.length} signal{discoveries.length === 1 ? "" : "s"}</span></header>
+                <header><strong>Unverified parser candidates</strong><span>{discoveries.length} signal{discoveries.length === 1 ? "" : "s"}</span></header>
                 <div className="parsed-findings-grid">
                   {discoveryGroups.map(([type, grouped]) => (
                     <article className={`parsed-group parsed-${type}`} key={type}>
@@ -69,8 +69,12 @@ export default function EvidenceList({ entries, itemId }) {
                       <ul>
                         {grouped.map((discovery) => (
                           <li key={`${discovery.type}-${discovery.protocol || ""}-${discovery.address || ""}-${discovery.value}`}>
-                            <div><code>{discovery.value}</code><small>{discoveryContext(discovery)}</small></div>
-                            <button type="button" onClick={() => actions.ignoreDiscovery({ ...discovery, targetId: entry.targetId })} aria-label={`Ignore ${discoveryLabels[type] || type} ${discovery.value}`}>Ignore</button>
+                            <div>
+                              <code>{discovery.value}</code>
+                              <small>{discovery.status === "confirmed" ? "Confirmed by operator" : `Needs confirmation · ${discoveryContext(discovery)}`}</small>
+                            </div>
+                            {discovery.status !== "confirmed" && <button type="button" onClick={() => actions.confirmDiscovery({ ...discovery, targetId: entry.targetId ?? workspace.activeTargetId })} aria-label={`Confirm ${discoveryLabels[type] || type} ${discovery.value}`}>Confirm</button>}
+                            <button type="button" onClick={() => actions.ignoreDiscovery({ ...discovery, targetId: entry.targetId ?? workspace.activeTargetId })} aria-label={`Ignore ${discoveryLabels[type] || type} ${discovery.value}`}>Ignore</button>
                           </li>
                         ))}
                       </ul>

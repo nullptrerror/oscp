@@ -9,8 +9,8 @@ const principalName = (value, domain) => {
 };
 
 const saveQuery = (filename, query) => {
-  const path = `{{workspaceRoot}}/{{targetName}}/notes/bloodhound/${filename}`;
-  return `mkdir -p '{{workspaceRoot}}/{{targetName}}/notes/bloodhound'; printf '%s\\n' ${shellQuote(query)} | tee ${shellQuote(path)}`;
+  const path = `{{workspaceRoot}}/{{targetSlug}}/notes/bloodhound/${filename}`;
+  return `mkdir -p '{{workspaceRoot}}/{{targetSlug}}/notes/bloodhound'; printf '%s\\n' ${shellQuote(query)} | tee ${shellQuote(path)}`;
 };
 
 export function buildBloodHoundCommands(variables = {}) {

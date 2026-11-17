@@ -9,7 +9,7 @@ const CommandTerminal = lazy(() => import("./CommandTerminal"));
 
 const MAX_RESULT_SIZE = 1024 * 1024;
 
-export default function CommandResultPanel({ itemId, commandKey, commandLabel, commandText, missing, entries, expanded, onExpandedChange }) {
+export default function CommandResultPanel({ itemId, commandKey, commandLabel, commandText, missing, runnable = true, disabledReason = "", localRunnerAllowed = true, runsOn = "lhost", entries, expanded, onExpandedChange }) {
   const { workspace, actions } = useWorkspace();
   const runner = useLocalRunner();
   const [result, setResult] = useState("");
@@ -20,7 +20,7 @@ export default function CommandResultPanel({ itemId, commandKey, commandLabel, c
   const resultBytes = useMemo(() => new Blob([result]).size, [result]);
   const activeTarget = workspace.targets.find((target) => target.id === workspace.activeTargetId);
   const flagNames = useMemo(() => ({ user: activeTarget?.userFlagName, root: activeTarget?.rootFlagName }), [activeTarget?.rootFlagName, activeTarget?.userFlagName]);
-  const cwd = `${String(workspace.variables.workspaceRoot || "/home/kali/oscp").replace(/\/$/, "")}/${workspace.variables.targetName || "unassigned"}`;
+  const cwd = `${String(workspace.variables.workspaceRoot || "/home/kali/oscp").replace(/\/$/, "")}/${workspace.variables.targetSlug || "unassigned"}`;
 
   const metadata = {
     commandKey,
@@ -61,6 +61,14 @@ export default function CommandResultPanel({ itemId, commandKey, commandLabel, c
       setError("Select or create a machine before running this command.");
       return;
     }
+    if (!runnable) {
+      setError(disabledReason || "This command is not executable until its safety contract and variables are satisfied.");
+      return;
+    }
+    if (!localRunnerAllowed) {
+      setError(`This card runs on ${runsOn}. Copy it into the correct confirmed shell; the Kali PTY will not launch target-side commands.`);
+      return;
+    }
     const runId = createId("command");
     activeRunId.current = runId;
     recordedRunId.current = null;
@@ -73,8 +81,8 @@ export default function CommandResultPanel({ itemId, commandKey, commandLabel, c
     const runId = activeRunId.current;
     if (!runId || recordedRunId.current === runId) return;
     recordedRunId.current = runId;
-    actions.recordCommand(itemId, { id: runId, label: commandLabel, command: commandText, source: "local runner", startedAt: new Date().toISOString() });
-  }, [actions, commandLabel, commandText, itemId]);
+    actions.recordCommand(itemId, { id: runId, commandKey, label: commandLabel, command: commandText, source: "local runner", startedAt: new Date().toISOString() });
+  }, [actions, commandKey, commandLabel, commandText, itemId]);
 
   const finishTerminal = useCallback((execution) => {
     save({
@@ -86,7 +94,6 @@ export default function CommandResultPanel({ itemId, commandKey, commandLabel, c
       journeyPath: execution.journeyPath,
       commandRunId: activeRunId.current,
     });
-    if (execution.exitCode === 0) actions.setCompleted(itemId, true);
     activeRunId.current = null;
     if (!execution.flag) setTerminalOpen(false);
     else setError(`${execution.flag.kind === "root" ? "Root / administrator" : "User-level"} proof candidate detected. Keep this terminal visible, verify the full proof context, and capture the screenshot before hiding it.`);
@@ -99,11 +106,12 @@ export default function CommandResultPanel({ itemId, commandKey, commandLabel, c
           <span>Results · {entries.length}</span>
           <small>{expanded ? "Hide" : "Paste or attach output"}</small>
         </button>
-        {runner.available && (
-          <button type="button" className="text-button run-command" onClick={startTerminal} disabled={missing.length > 0 || terminalOpen}>
+        {runner.available && localRunnerAllowed && (
+          <button type="button" className="text-button run-command" onClick={startTerminal} disabled={!runnable || missing.length > 0 || terminalOpen} title={!runnable ? disabledReason || "Command execution is disabled." : undefined}>
             Run in terminal
           </button>
         )}
+        {runner.available && !localRunnerAllowed && <span className="runner-host-note">Run on {runsOn}</span>}
       </div>
       {expanded && <div className="command-results-body">
       <div className="command-result-head">

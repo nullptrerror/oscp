@@ -30,7 +30,7 @@ export default function TargetsPage() {
   return (
     <main className="page-shell records-page">
       <section className="section-hero">
-        <div><p className="eyebrow">Machine book</p><h1>One box. Every endpoint.</h1><p>The machine name owns the folder. Discovered IPs and hostnames become selectable endpoints inside that machine.</p></div>
+        <div><p className="eyebrow">Machine book</p><h1>One box. Every endpoint.</h1><p>Each machine has a unique filesystem-safe folder slug. Discovered IPs and hostnames become selectable endpoints inside that machine.</p></div>
         <span className="big-count">{workspace.targets.length.toString().padStart(2, "0")}</span>
       </section>
 
@@ -65,7 +65,7 @@ export default function TargetsPage() {
             return (
               <article className={`target-card ${active ? "is-active" : ""}`} key={machine.id}>
                 <div className="target-card-head">
-                  <div><div className="record-badges"><span>{platformLabel(machine.boxType)}</span>{active && <span className="active-badge">Active machine</span>}</div><h2>{machine.name}</h2><code>/home/kali/oscp/{machine.name}</code></div>
+                  <div><div className="record-badges"><span>{platformLabel(machine.boxType)}</span>{active && <span className="active-badge">Active machine</span>}</div><h2>{machine.name}</h2><code>/home/kali/oscp/{machine.slug}</code></div>
                   <div className="record-actions">{active ? <button type="button" className="button secondary" onClick={actions.clearTargetSelection}>Unselect machine</button> : <button type="button" className="button secondary" onClick={() => actions.useTarget(machine)}>Use machine</button>}<button type="button" className="text-button danger" onClick={() => window.confirm(`Permanently delete ${machine.name} and all of its accounts, evidence, notes, discoveries, command history, and report data?`) && actions.deleteTarget(machine.id)}>Delete</button></div>
                 </div>
 

@@ -7,13 +7,13 @@ test("SPN TGS commands organize active credentials under target loot", () => {
   const commands = buildSpnTgsCommands([], {
     domain: "active.htb",
     user: "SVC_TGS",
-    password: "GPPstillStandingStrong2k18",
+    password: "Synthetic-Kerberos-42!",
   });
 
   assert.equal(commands.length, 3);
   assert.match(commands[0].value, /impacket-GetUserSPNs/);
-  assert.match(commands[0].value, /active\.htb\/SVC_TGS:GPPstillStandingStrong2k18/);
-  assert.match(commands[0].value, /\{\{workspaceRoot\}\}\/\{\{targetName\}\}\/loot\/kerberos\/spn_tgs\/active\.htb_SVC_TGS/);
+  assert.match(commands[0].value, /active\.htb\/SVC_TGS:Synthetic-Kerberos-42!/);
+  assert.match(commands[0].value, /\{\{workspaceRoot\}\}\/\{\{targetSlug\}\}\/loot\/kerberos\/spn_tgs\/active\.htb_SVC_TGS/);
   assert.match(commands[0].value, /hashes\.txt/);
   assert.match(commands[0].value, /spn-enumeration\.txt/);
   assert.match(commands[0].value, /cat \"\$hashes\"/);
@@ -63,6 +63,7 @@ test("parsed Kerberos tickets generate per-user hashes.txt, Hashcat, and John co
   workspace.discoveries = [{
     targetId: "active",
     type: "kerberos-ticket",
+    status: "confirmed",
     username: "svc-sql",
     domain: "HTB.LOCAL",
     ticket: "TGS",
@@ -85,6 +86,7 @@ test("multiple tickets for one user share a mode-specific hashes.txt", () => {
   workspace.discoveries = ["sql", "http"].map((service) => ({
     targetId: "active",
     type: "kerberos-ticket",
+    status: "confirmed",
     username: "svc-shared",
     domain: "HTB.LOCAL",
     ticket: "TGS",
@@ -105,6 +107,7 @@ test("parsed AS-REP tickets select the AS-REP cracking formats", () => {
   workspace.discoveries = [{
     targetId: "active",
     type: "kerberos-ticket",
+    status: "confirmed",
     username: "roastable",
     domain: "HTB.LOCAL",
     ticket: "AS-REP",

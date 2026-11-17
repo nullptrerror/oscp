@@ -21,7 +21,7 @@ import {
 } from "pdf-lib";
 import { ALL_ITEMS, CHECKLIST } from "../data/checklist.js";
 import { getActiveScope, getTargetItemValue, normalizeWorkspace } from "./workspace.js";
-import { discoveryContext, discoveryKey, formatDiscovery, PARSER_TAGS, visibleDiscoveries } from "./evidence.js";
+import { confirmedDiscoveries, discoveryContext, discoveryKey, formatDiscovery, PARSER_TAGS, visibleDiscoveries } from "./evidence.js";
 import { describeCommand } from "./commandInsights.js";
 import { getOperatorProfile, githubProfile, initials } from "./profile.js";
 import { TERMINAL_THEME, terminalLines } from "./terminalText.js";
@@ -330,14 +330,30 @@ function targetData(workspace, targetId) {
     ignored: workspace.ignoredDiscoveries,
     targetId: target?.id,
   };
-  const commandHistory = (workspace.commandHistory || []).filter((entry) => belongs(entry) && entry.source === "local runner");
+  const commandHistory = (workspace.commandHistory || [])
+    .filter((entry) => belongs(entry) && entry.source === "local runner")
+    .map((entry) => ({
+      ...entry,
+      commandResultState: entry.commandKey
+        ? workspace.commandResultStates?.[`${scope}::${entry.itemId}::${entry.commandKey}`] || "needs-review"
+        : "",
+    }));
   const items = ALL_ITEMS.map((item) => ({
     ...item,
     completed: Boolean(getTargetItemValue(workspace.completed, scope, item.id, false)),
+    resultState: getTargetItemValue(
+      workspace.resultStates || {},
+      scope,
+      item.id,
+      getTargetItemValue(workspace.completed, scope, item.id, false) ? "finding-confirmed" : "needs-review",
+    ),
     note: getTargetItemValue(workspace.notes, scope, item.id, ""),
     nextStep: getTargetItemValue(workspace.nextSteps, scope, item.id, ""),
     evidence: getTargetItemValue(workspace.evidence, scope, item.id, []).map((entry) => ({
       ...entry,
+      commandResultState: entry.commandKey
+        ? workspace.commandResultStates?.[`${scope}::${item.id}::${entry.commandKey}`] || "needs-review"
+        : "",
       discoveries: visibleDiscoveries(entry.discoveries, discoveryOptions),
     })),
   })).filter((item) => item.completed || item.evidence.length > 0 || commandHistory.some((command) => command.itemId === item.id));
@@ -351,7 +367,7 @@ function targetData(workspace, targetId) {
     accounts: workspace.accounts.filter(belongs),
     users: (workspace.users || []).filter(belongs),
     loot: workspace.loot.filter(belongs),
-    discoveries: visibleDiscoveries(workspace.discoveries, discoveryOptions).filter(belongs),
+    discoveries: confirmedDiscoveries(visibleDiscoveries(workspace.discoveries, discoveryOptions)).filter(belongs),
     commandHistory,
     userProof: evidence.filter((entry) => entry.category === "user-flag"),
     rootProof: evidence.filter((entry) => entry.category === "root-flag"),
@@ -733,7 +749,7 @@ async function buildReportPdf(workspace, targetId, { fonts: fontBytes, rasterize
 
   const kaliPrompt = (command) => {
     const blue = PALETTE.kaliBlue;
-    const path = homeRelative(`${workspace.variables.workspaceRoot}/${targetName}`);
+    const path = homeRelative(`${workspace.variables.workspaceRoot}/${data.target?.slug || workspace.variables.targetSlug || targetName}`);
     const commandLines = String(command || "").replace(/\r\n/g, "\n").split("\n");
     return [
       [{ text: "┌──(", style: { fg: blue } }, { text: "kali㉿kali", style: { fg: blue, bold: true } }, { text: ")-[", style: { fg: blue } }, { text: path, style: { fg: "#ffffff", bold: true } }, { text: "]", style: { fg: blue } }],
@@ -748,7 +764,7 @@ async function buildReportPdf(workspace, targetId, { fonts: fontBytes, rasterize
     const omitted = Math.max(0, lines.length - TERMINAL_LINE_LIMIT);
     terminal({
       title: evidence.label || evidence.filename || "Command output",
-      meta: [formatBytes(evidence.size), formatTimestamp(evidence.createdAt)].filter(Boolean).join(" · "),
+      meta: [evidence.commandResultState?.replace(/-/g, " "), formatBytes(evidence.size), formatTimestamp(evidence.createdAt)].filter(Boolean).join(" · "),
       lines: lines.slice(0, TERMINAL_LINE_LIMIT),
       omitted,
       omittedNote: omitted ? `… ${omitted} more line${omitted === 1 ? "" : "s"} omitted. Full output is attached to this PDF${attachmentName ? ` as ${attachmentName}` : ""}.` : "",
@@ -757,10 +773,10 @@ async function buildReportPdf(workspace, targetId, { fonts: fontBytes, rasterize
 
   const parsedFindingsBlock = (discoveries = []) => {
     if (discoveries.length === 0) return;
-    eyebrow(`Parsed findings · ${discoveries.length}`);
+    eyebrow(`Parser candidates · ${discoveries.length}`);
     table(
-      [{ label: "Type", width: 0.2, bold: true }, { label: "Finding", width: 0.5, mono: true }, { label: "Context", width: 0.3 }],
-      discoveries.map((entry) => [DISCOVERY_LABELS[entry.type] || entry.type.replace(/-/g, " "), entry.value, discoveryContext(entry)]),
+      [{ label: "Type", width: 0.18, bold: true }, { label: "Value", width: 0.42, mono: true }, { label: "Status", width: 0.16, bold: true }, { label: "Context", width: 0.24 }],
+      discoveries.map((entry) => [DISCOVERY_LABELS[entry.type] || entry.type.replace(/-/g, " "), entry.value, entry.status === "confirmed" ? "Confirmed" : "Unverified", discoveryContext(entry)]),
     );
   };
 
@@ -841,9 +857,9 @@ async function buildReportPdf(workspace, targetId, { fonts: fontBytes, rasterize
     ["IP address", data.target?.host || workspace.variables.rhost, { mono: true }],
     ["Hostnames", [...new Set(endpoints.flatMap((endpoint) => endpoint.hostnames || []))].join(", "), { mono: true }],
     ["Domain", data.target?.domain || workspace.variables.domain, { mono: true }],
-    ["TCP ports", portList(...(endpoints.length ? endpoints.map((endpoint) => endpoint.tcpPorts) : [data.target?.port || workspace.variables.rport])), { mono: true }],
-    ["UDP ports", portList(...(endpoints.length ? endpoints.map((endpoint) => endpoint.udpPorts) : [data.target?.udpPorts || workspace.variables.uport])), { mono: true }],
-    ["Workspace", `${workspace.variables.workspaceRoot}/${targetName}`, { mono: true }],
+    ["TCP ports", portList(...(endpoints.length ? endpoints.map((endpoint) => endpoint.tcpPorts) : [data.target?.port || workspace.variables.tcpPorts || workspace.variables.rport])), { mono: true }],
+    ["UDP ports", portList(...(endpoints.length ? endpoints.map((endpoint) => endpoint.udpPorts) : [data.target?.udpPorts || workspace.variables.udpPorts || workspace.variables.uport])), { mono: true }],
+    ["Workspace", `${workspace.variables.workspaceRoot}/${data.target?.slug || workspace.variables.targetSlug || targetName}`, { mono: true }],
     ["Generated", formatTimestamp(generatedAt)],
   ]);
 
@@ -862,15 +878,11 @@ async function buildReportPdf(workspace, targetId, { fonts: fontBytes, rasterize
     ts.draw(page, ts.shape([span(label.toUpperCase(), { size: 6.6, bold: true, color: PALETTE.muted })]), x + 12, y - 34, 12);
   });
   y -= 76;
-  const proofChips = [
-    ["Local / user proof", data.userProof.length > 0],
-    ["Root / Administrator proof", data.rootProof.length > 0],
-  ];
-  let chipX = LEFT;
-  for (const [label, ready] of proofChips) {
-    chipX += chip(`${ready ? "✓" : "✗"} ${label}`, ready ? { fg: PALETTE.accent, bg: PALETTE.accentSoft } : { fg: PALETTE.warn, bg: PALETTE.warnSoft }, chipX, y) + 8;
-  }
-  const coverNote = span("This report was generated by Fieldnotes from target-scoped checklist notes and attached evidence. The complete workspace and every evidence file are embedded as PDF attachments, so the machine case can be loaded again later. It contains credentials and exam evidence in plain text — handle it accordingly.", { size: 8.2, color: PALETTE.muted });
+  const proofStatus = [
+    `local / user ${data.userProof.length > 0 ? "attached" : "missing"}`,
+    `root / Administrator ${data.rootProof.length > 0 ? "attached" : "missing"}`,
+  ].join("; ");
+  const coverNote = span(`Proof status: ${proofStatus}. The workspace and its tracked evidence are embedded as PDF attachments for later import. Credentials and exam evidence are stored in plain text — handle this report accordingly.`, { size: 8.2, color: PALETTE.muted });
   const coverNoteLines = ts.wrapProse(ts.shape([coverNote]), CONTENT_W).length;
   y = Math.min(y, CONTENT_BOTTOM + coverNoteLines * 12 + 4);
   paragraph(coverNote, { lineHeight: 12, after: 0 });
@@ -941,6 +953,7 @@ async function buildReportPdf(workspace, targetId, { fonts: fontBytes, rasterize
       eyebrow(`Phase ${phaseNumbers.get(item.phaseId) || ""} — ${item.phaseTitle}`, { keep: 140 });
     }
     subheading(item.title);
+    paragraph([span("Operator result  ", { size: 8, bold: true, color: PALETTE.muted }), span(item.resultState.replace(/-/g, " "), { size: 8.6, bold: true, color: item.completed ? PALETTE.accent : PALETTE.warn })], { after: 7 });
     const commands = data.commandHistory.filter((command) => command.itemId === item.id);
     const objective = item.detail || (commands[0] ? describeCommand(commands[0].command, commands[0].label).purpose : "Review the available evidence for this stage of the assessment.");
     paragraph([span("Objective  ", { size: 8, bold: true, color: PALETTE.muted }), span(objective, { size: 9, color: PALETTE.body })], { lineHeight: 13, after: 8 });
@@ -998,6 +1011,7 @@ async function buildReportPdf(workspace, targetId, { fonts: fontBytes, rasterize
       span(`${item?.title || "Checklist command"}  ·  `, { size: 8, bold: true, color: PALETTE.muted }),
       span(insight.purpose, { size: 8.4, color: PALETTE.body }),
     ], { lineHeight: 12, after: 7 });
+    if (command.commandResultState) paragraph([span("Command result  ", { size: 7.8, bold: true, color: PALETTE.muted }), span(command.commandResultState.replace(/-/g, " "), { size: 8.2, bold: true, color: command.commandResultState === "needs-review" ? PALETTE.warn : PALETTE.accent })], { lineHeight: 12, after: 5 });
     paragraph([span("Expected return  ", { size: 7.8, bold: true, color: PALETTE.muted }), span(insight.returns, { size: 8.2, color: PALETTE.body })], { lineHeight: 12, after: 6 });
     if (command.established) paragraph([span("Established  ", { size: 7.8, bold: true, color: PALETTE.accent }), span(command.established.replace(/^(?:Draft|Attempt|Result):\s*/, ""), { size: 8.2, color: PALETTE.body })], { lineHeight: 12, after: 5 });
     if (command.nextAction) paragraph([span("Decision  ", { size: 7.8, bold: true, color: PALETTE.accent }), span(command.nextAction.replace(/^(?:Draft|Attempt|Result):\s*/, ""), { size: 8.2, color: PALETTE.body })], { lineHeight: 12, after: 7 });

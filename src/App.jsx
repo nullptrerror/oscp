@@ -8,12 +8,14 @@ import ReportPage from "./pages/ReportPage";
 import ExamClock from "./components/ExamClock";
 import RunnerStatus from "./components/RunnerStatus";
 import { LocalRunnerProvider } from "./context/LocalRunnerContext";
+import ExamSafetyPage from "./pages/ExamSafetyPage";
 
 const pages = [
   { to: "/", label: "Checklist" },
   { to: "/targets", label: "Machines" },
   { to: "/vault", label: "Findings" },
   { to: "/report", label: "Report" },
+  { to: "/safety", label: "Exam safety" },
 ];
 
 function AppRoutes() {
@@ -64,6 +66,10 @@ function AppRoutes() {
         <Route
           path="/backup"
           element={<BackupPage />}
+        />
+        <Route
+          path="/safety"
+          element={<ExamSafetyPage />}
         />
       </Routes>
     </div>

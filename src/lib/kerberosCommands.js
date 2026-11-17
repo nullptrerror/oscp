@@ -1,4 +1,4 @@
-import { visibleDiscoveries } from "./evidence.js";
+import { confirmedDiscoveries, visibleDiscoveries } from "./evidence.js";
 
 const shellQuote = (value) => `'${String(value).replaceAll("'", "'\"'\"'")}'`;
 
@@ -47,7 +47,7 @@ export function buildSpnTgsCommands(accounts = [], variables = {}) {
 
     const identity = `${domain}\\${username}`;
     const folder = identityFolder(domain, username);
-    const loot = `{{workspaceRoot}}/{{targetName}}/loot/kerberos/spn_tgs/${folder}`;
+    const loot = `{{workspaceRoot}}/{{targetSlug}}/loot/kerberos/spn_tgs/${folder}`;
     const isHash = /^[a-f0-9]{32}$/i.test(secret);
     const target = shellQuote(`${domain}/${username}${isHash ? "" : `:${secret}`}`);
     const hashAuth = isHash ? ` -hashes ${shellQuote(`:${secret}`)}` : "";
@@ -61,7 +61,7 @@ export function buildSpnTgsCommands(accounts = [], variables = {}) {
     commands.push({
       key: `spn-tgs-hashcat-${account.id ?? folder}`,
       label: `Crack saved TGS hashes with Hashcat — ${identity}`,
-      value: `loot="${loot}"; hashes="$loot/hashes.txt"; test -s "$hashes" || { echo "No TGS hashes found at $hashes"; exit 1; }; if grep -qF '$krb5tgs$23$' "$hashes"; then mode=13100; elif grep -qF '$krb5tgs$17$' "$hashes"; then mode=19600; elif grep -qF '$krb5tgs$18$' "$hashes"; then mode=19700; else echo 'Unsupported TGS format'; exit 1; fi; test -f /usr/share/wordlists/rockyou.txt || sudo gzip -dk /usr/share/wordlists/rockyou.txt.gz; hashcat -m "$mode" "$hashes" /usr/share/wordlists/rockyou.txt --session "{{targetName}}-${folder}-tgs"; hashcat -m "$mode" "$hashes" --show | tee "$loot/hashcat-cracked.txt"`,
+      value: `loot="${loot}"; hashes="$loot/hashes.txt"; test -s "$hashes" || { echo "No TGS hashes found at $hashes"; exit 1; }; if grep -qF '$krb5tgs$23$' "$hashes"; then mode=13100; elif grep -qF '$krb5tgs$17$' "$hashes"; then mode=19600; elif grep -qF '$krb5tgs$18$' "$hashes"; then mode=19700; else echo 'Unsupported TGS format'; exit 1; fi; test -f /usr/share/wordlists/rockyou.txt || sudo gzip -dk /usr/share/wordlists/rockyou.txt.gz; hashcat -m "$mode" "$hashes" /usr/share/wordlists/rockyou.txt --session "{{targetSlug}}-${folder}-tgs"; hashcat -m "$mode" "$hashes" --show | tee "$loot/hashcat-cracked.txt"`,
     });
 
     commands.push({
@@ -78,11 +78,11 @@ export function buildKerberosTicketCommands(workspace) {
   const activeTargetId = workspace.activeTargetId;
   const targetName = workspace.variables.targetName;
   const belongs = (entry) => entry.targetId ? entry.targetId === activeTargetId : entry.target === targetName;
-  const tickets = visibleDiscoveries(workspace.discoveries, {
+  const tickets = confirmedDiscoveries(visibleDiscoveries(workspace.discoveries, {
     settings: workspace.parserSettings,
     ignored: workspace.ignoredDiscoveries,
     targetId: activeTargetId,
-  }).filter(belongs).filter((entry) => entry.type === "kerberos-ticket");
+  })).filter(belongs).filter((entry) => entry.type === "kerberos-ticket");
   const commands = [];
   const seen = new Set();
   const groups = new Map();
@@ -103,7 +103,7 @@ export function buildKerberosTicketCommands(workspace) {
 
   for (const { details, domain, username, values } of groups.values()) {
     const folder = identityFolder(domain, `${username}_${details.type.toLowerCase().replace("-", "_")}_etype${details.etype}`);
-    const loot = `{{workspaceRoot}}/{{targetName}}/loot/kerberos/tickets/${folder}`;
+    const loot = `{{workspaceRoot}}/{{targetSlug}}/loot/kerberos/tickets/${folder}`;
     const hashes = `${loot}/hashes.txt`;
     const identity = `${domain}\\${username}`;
     const suffix = `${folder}-${details.etype}`;

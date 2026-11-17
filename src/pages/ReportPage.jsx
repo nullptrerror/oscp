@@ -2,11 +2,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import { ALL_ITEMS } from "../data/checklist";
 import { useWorkspace } from "../context/WorkspaceContext";
-import { fileToEvidence } from "../lib/evidence";
-import { getActiveScope, getScopedItemValue } from "../lib/workspace";
+import { fileToEvidence, visibleDiscoveries } from "../lib/evidence";
+import { getActiveScope, getCommandResultStateValue, getScopedItemValue, RESULT_STATES } from "../lib/workspace";
 import { getOperatorProfile, githubProfile, initials } from "../lib/profile";
 import { buildReportStarters } from "../lib/reportStarters";
 import PdfMachineImporter from "../components/PdfMachineImporter";
+import { isAutomaticNarrative } from "../lib/narrative";
 
 const AVATAR_SIZE = 320;
 
@@ -85,16 +86,40 @@ export default function ReportPage() {
       ...targetRuns.map((entry) => entry.itemId),
       ...ALL_ITEMS.filter((item) => getScopedItemValue(workspace.evidence, workspace, item.id, []).some((entry) => !["user-flag", "root-flag"].includes(entry.category))).map((item) => item.id),
     ])];
-    const narrated = activityItems.filter((itemId) => (
-      getScopedItemValue(workspace.notes, workspace, itemId, "").trim()
-      && getScopedItemValue(workspace.nextSteps, workspace, itemId, "").trim()
-    )).length;
+    const narrated = activityItems.filter((itemId) => {
+      const finding = getScopedItemValue(workspace.notes, workspace, itemId, "");
+      const nextStep = getScopedItemValue(workspace.nextSteps, workspace, itemId, "");
+      return !isAutomaticNarrative(finding) && !isAutomaticNarrative(nextStep);
+    }).length;
+    const classified = activityItems.filter((itemId) => {
+      const state = getScopedItemValue(workspace.resultStates || {}, workspace, itemId, "");
+      return state && state !== RESULT_STATES.REVIEW;
+    }).length;
+    const commandKeys = [...new Set(ALL_ITEMS.flatMap((item) => (
+      getScopedItemValue(workspace.evidence, workspace, item.id, [])
+        .filter((entry) => entry.commandKey)
+        .map((entry) => [item.id, entry.commandKey])
+    )).map(([itemId, commandKey]) => `${itemId}\u0000${commandKey}`))];
+    const commandsClassified = commandKeys.filter((value) => {
+      const [itemId, commandKey] = value.split("\u0000");
+      const state = getCommandResultStateValue(workspace.commandResultStates, workspace, itemId, commandKey, "");
+      return state && state !== RESULT_STATES.REVIEW;
+    }).length;
+    const pendingCandidates = visibleDiscoveries(workspace.discoveries, {
+      settings: workspace.parserSettings,
+      ignored: workspace.ignoredDiscoveries,
+      targetId: workspace.activeTargetId,
+    }).filter((entry) => entry.targetId === workspace.activeTargetId && entry.status !== "confirmed").length;
     return {
       completed,
       documented,
       terminalRuns: targetRuns.length,
       narrated,
       narrativeTotal: activityItems.length,
+      classified,
+      commandsClassified,
+      commandTotal: commandKeys.length,
+      pendingCandidates,
       userFlag: proof.some((entry) => entry.category === "user-flag"),
       rootFlag: proof.some((entry) => entry.category === "root-flag"),
     };
@@ -106,10 +131,13 @@ export default function ReportPage() {
     { label: "Steps with evidence", done: readiness.documented > 0, detail: `${readiness.documented}`, hint: "Save command output on the checklist." },
     { label: "Terminal runs", done: readiness.terminalRuns > 0, detail: `${readiness.terminalRuns}`, hint: "Run commands from the checklist so their exact arguments and results are recorded." },
     { label: "Reasoning documented", done: readiness.narrativeTotal > 0 && readiness.narrated === readiness.narrativeTotal, detail: `${readiness.narrated}/${readiness.narrativeTotal}`, hint: "For every tested step, write what the result established and why the next action followed." },
+    { label: "Item results classified", done: readiness.narrativeTotal > 0 && readiness.classified === readiness.narrativeTotal, detail: `${readiness.classified}/${readiness.narrativeTotal}`, hint: "Resolve each active item from needs review to a deliberate result state." },
+    { label: "Command results classified", done: readiness.commandTotal > 0 && readiness.commandsClassified === readiness.commandTotal, detail: `${readiness.commandsClassified}/${readiness.commandTotal}`, hint: "Classify every command that has saved evidence." },
+    { label: "Parser candidates reviewed", done: readiness.pendingCandidates === 0, detail: `${readiness.pendingCandidates}`, hint: "Confirm or ignore every unverified parser candidate before generating the report." },
     { label: "User / local proof", done: readiness.userFlag, hint: "Screenshot with local.txt and the IP address.", action: () => userFlagRef.current?.click(), actionLabel: "Add" },
     { label: "Root / Admin proof", done: readiness.rootFlag, hint: "Screenshot with proof.txt and the IP address.", action: () => rootFlagRef.current?.click(), actionLabel: "Add" },
     { label: "Proof screenshot verified", done: Boolean(report.proofVerified), hint: "Confirm original location, interactive shell, identity, IP, and proof contents are visible." },
-    { label: "Control-panel proof", done: Boolean(report.proofSubmitted), hint: "Submit each proof value before the exam VPN/control panel closes." },
+    { label: activeTarget?.labType === "oscp" ? "Control-panel proof" : "Control-panel proof (practice N/A)", done: activeTarget?.labType === "oscp" ? Boolean(report.proofSubmitted) : true, hint: activeTarget?.labType === "oscp" ? "Submit each proof value before the exam VPN/control panel closes." : "Practice targets have no OffSec exam control-panel submission." },
     { label: "Recommendations", done: Boolean(report.recommendations?.trim()), hint: "One fix per weakness you exploited." },
   ];
   const doneCount = checks.filter((check) => check.done).length;

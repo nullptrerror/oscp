@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { CHECKLIST, VARIABLE_GROUPS } from "../data/checklist";
 import { useWorkspace } from "../context/WorkspaceContext";
-import { credentialVariables, isNtHash } from "../lib/credentials";
-import { visibleDiscoveries } from "../lib/evidence";
+import { isNtHash } from "../lib/credentials";
+import { confirmedDiscoveries, visibleDiscoveries } from "../lib/evidence";
 import { getScopedItemValue } from "../lib/workspace";
 import { PLATFORM_PHASES } from "../data/practiceBoxes";
 
@@ -15,13 +15,34 @@ const LABELS = {
   rhost: "RHOST",
   rport: "RPORT(S)",
   uport: "UDP PORT(S)",
+  targetSlug: "Target folder slug",
+  tcpPorts: "TCP ports",
+  udpPorts: "UDP ports",
+  selectedServiceHost: "Selected service host",
+  selectedServicePort: "Selected service port",
+  webScheme: "Web scheme",
+  webPort: "Web port",
+  vhost: "Virtual host",
+  baseUrl: "Base URL",
+  webPath: "Web path",
+  webParameter: "Web parameter",
+  webValue: "Probe value",
+  sessionCookie: "Session cookie",
+  uploadFile: "Upload source",
+  uploadField: "Upload field",
+  uploadedRemotePath: "Returned upload path",
   targetName: "Target name",
   userFlagName: "User flag file",
   rootFlagName: "Root flag file",
   domain: "Domain",
+  realm: "Kerberos realm",
   baseDn: "LDAP base DN",
   dc: "Domain controller",
+  dcIp: "DC IP",
+  dnsServer: "DNS server",
   user: "Username",
+  selectedCredentialId: "Selected credential ID",
+  credentialType: "Credential type",
   memberUser: "Member user",
   targetGroup: "Target group",
   aclTarget: "ACL target",
@@ -32,13 +53,29 @@ const LABELS = {
   bloodhoundTarget: "BloodHound target",
   password: "Password",
   gppCpassword: "GPP cpassword",
+  gppXmlFile: "Saved GPP XML",
   hash: "NTLM / hash",
   smbShare: "SMB share",
   smbDirectory: "SMB directory",
+  nfsExport: "NFS export",
+  exploitQuery: "Exploit search query",
+  exploitId: "Searchsploit ID",
+  exploitFile: "Copied exploit path",
+  compiledExploit: "Compiled exploit output",
+  transferFile: "Transfer filename",
+  hashesFile: "Hash input file",
+  hashMode: "Hashcat mode",
   sprayPassword: "Spray password",
   sprayJitter: "Spray jitter",
   sprayRockyouLimit: "Rockyou limit",
-  subnet: "Pivot subnet",
+  subnet: "First-hop subnet",
+  pivotHost: "Pivot host",
+  pivotUser: "Pivot user",
+  pivotInterface: "Pivot interface",
+  proxyPort: "Proxy port",
+  internalHost: "Internal host",
+  internalSubnet: "Internal subnet",
+  callbackHost: "Target-visible callback host",
   interface: "VPN interface",
   wordlist: "Default wordlist",
 };
@@ -53,11 +90,11 @@ export default function VariablesPanel() {
     : CHECKLIST;
   const activeAccounts = workspace.accounts.filter((entry) => entry.targetId ? entry.targetId === workspace.activeTargetId : entry.target === workspace.variables.targetName);
   const activeUsers = (workspace.users || []).filter((entry) => entry.targetId ? entry.targetId === workspace.activeTargetId : entry.target === workspace.variables.targetName);
-  const activeDiscoveries = visibleDiscoveries(workspace.discoveries, {
+  const activeDiscoveries = confirmedDiscoveries(visibleDiscoveries(workspace.discoveries, {
     settings: workspace.parserSettings,
     ignored: workspace.ignoredDiscoveries,
     targetId: workspace.activeTargetId,
-  }).filter((entry) => entry.targetId ? entry.targetId === workspace.activeTargetId : entry.targetName === workspace.variables.targetName);
+  })).filter((entry) => entry.targetId ? entry.targetId === workspace.activeTargetId : entry.targetName === workspace.variables.targetName);
   const unique = (values) => [...new Set(values.filter(Boolean))];
   const suggestions = {
     rhost: unique(workspace.targets.flatMap((target) => (target.endpoints || []).map((endpoint) => endpoint.address))),
@@ -102,13 +139,7 @@ export default function VariablesPanel() {
     hash: unique(activeAccounts.map((entry) => entry.secret).filter(isNtHash)),
     gppCpassword: unique(activeDiscoveries.filter((entry) => entry.type === "gpp-cpassword").map((entry) => entry.value)),
   };
-  const selectedAccountId = activeAccounts.find((entry) => {
-    const credential = credentialVariables(entry);
-    return credential.domain === workspace.variables.domain
-      && credential.user === workspace.variables.user
-      && credential.password === workspace.variables.password
-      && credential.hash === workspace.variables.hash;
-  })?.id || "";
+  const selectedAccountId = workspace.selectedCredentials?.[workspace.activeTargetId] || "";
 
   return (
     <aside className="variables-panel">
@@ -159,10 +190,9 @@ export default function VariablesPanel() {
           <span>Saved account</span>
           <select value={selectedAccountId} onChange={(event) => {
             const account = activeAccounts.find((entry) => entry.id === event.target.value);
-            if (account) actions.updateVariables(credentialVariables(account));
-            else actions.updateVariables({ user: "", password: "", hash: "", gppCpassword: "" });
+            actions.selectCredential(account?.id || "");
           }}>
-            <option value="">Choose credential…</option>
+            <option value="">Choose credential explicitly…</option>
             {activeAccounts.map((account) => <option key={account.id} value={account.id}>{account.domain ? `${account.domain}\\` : ""}{account.username}</option>)}
           </select>
         </label>
@@ -194,7 +224,7 @@ export default function VariablesPanel() {
             <label key={key}>
               <span>{LABELS[key]}</span>
               <input
-                type={key === "password" && !showSecrets ? "password" : "text"}
+                type={["password", "hash", "sessionCookie", "gppCpassword", "sprayPassword"].includes(key) && !showSecrets ? "password" : "text"}
                 list={suggestions[key]?.length ? `suggestions-${key}` : undefined}
                 value={workspace.variables[key] ?? ""}
                 onChange={(event) => actions.updateVariables({ [key]: event.target.value })}

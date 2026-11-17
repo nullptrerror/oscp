@@ -54,6 +54,9 @@ export function visibleDiscoveries(discoveries = [], { settings, ignored, target
   ));
 }
 
+export const confirmedDiscoveries = (discoveries = []) => discoveries.filter((entry) => entry.status === "confirmed");
+export const candidateDiscoveries = (discoveries = []) => discoveries.filter((entry) => entry.status !== "confirmed");
+
 const unique = (items) => {
   const seen = new Set();
   return items.filter((item) => {

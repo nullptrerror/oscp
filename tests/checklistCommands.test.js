@@ -12,6 +12,8 @@ test("generated account commands stay isolated to the active target", () => {
     { id: "a", targetId: "target-a", domain: "alpha.local", username: "alice", secret: "AlphaPassword!" },
     { id: "b", targetId: "target-b", domain: "beta.local", username: "bob", secret: "BetaPassword!" },
   ];
+  workspace.selectedCredentials = { "target-a": "a" };
+  workspace.variables = { ...workspace.variables, domain: "alpha.local", user: "alice", password: "AlphaPassword!" };
   const smb = ALL_ITEMS.find((item) => item.id === "svc-smb");
   const rendered = getChecklistCommands(smb, workspace).map((command) => command.value).join("\n");
 
@@ -21,6 +23,9 @@ test("generated account commands stay isolated to the active target", () => {
 
 test("WriteDACL checklist commands regenerate from the active ACL selections", () => {
   const workspace = createDefaultWorkspace();
+  workspace.activeTargetId = "target-a";
+  workspace.accounts = [{ id: "credential-a", targetId: "target-a", domain: "corp.local", username: "operator", secret: "Password1!" }];
+  workspace.selectedCredentials = { "target-a": "credential-a" };
   workspace.variables = {
     ...workspace.variables,
     domain: "corp.local",
@@ -41,6 +46,35 @@ test("WriteDACL checklist commands regenerate from the active ACL selections", (
   assert.match(generated.value, /-principal 'alice'/);
   assert.doesNotMatch(generated.value, /PowerView|nxc winrm|EncodedCommand/);
   assert.equal(commands.some((command) => command.key?.startsWith("acl-dcsync")), false);
+});
+
+test("credential-derived commands are absent until one machine credential is selected", () => {
+  const workspace = createDefaultWorkspace();
+  workspace.activeTargetId = "target-a";
+  workspace.variables = { ...workspace.variables, user: "stale-user", password: "stale-password" };
+  workspace.accounts = [{ id: "saved", targetId: "target-a", username: "saved-user", secret: "SavedPassword!" }];
+
+  const remote = ALL_ITEMS.find((candidate) => candidate.id === "access-remote");
+  const commands = getChecklistCommands(remote, workspace);
+
+  assert.equal(commands.some((command) => /SavedPassword|stale-password/u.test(command.value)), false);
+  assert.equal(commands.some((command) => command.key?.startsWith("remote-")), false);
+});
+
+test("credential reuse renders only hash-capable protocols for an explicitly selected NT hash", () => {
+  const workspace = createDefaultWorkspace();
+  workspace.activeTargetId = "target-a";
+  workspace.accounts = [{ id: "hash-a", targetId: "target-a", username: "alice", secret: "8846f7eaee8fb117ad06bdd830b7586c" }];
+  workspace.selectedCredentials = { "target-a": "hash-a" };
+  workspace.variables = { ...workspace.variables, rhost: "192.0.2.10", user: "alice", hash: "8846f7eaee8fb117ad06bdd830b7586c" };
+
+  const item = ALL_ITEMS.find((candidate) => candidate.id === "creds-reuse");
+  const commands = getChecklistCommands(item, workspace);
+  const rendered = commands.map((command) => command.value).join("\n");
+
+  assert.match(rendered, /nxc smb.*-H/);
+  assert.match(rendered, /nxc winrm.*-H/);
+  assert.doesNotMatch(rendered, /\bssh\b|\{\{password\}\}/iu);
 });
 
 test("BloodHound path commands regenerate from the active path selections", () => {

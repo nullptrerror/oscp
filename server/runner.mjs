@@ -22,6 +22,8 @@ const REQUIRED_TOOLS = [
 ];
 const token = crypto.randomBytes(24).toString("hex");
 const allowedRoot = path.resolve(process.env.FIELDNOTES_WORKSPACE_ROOT || (process.platform === "win32" ? process.cwd() : "/home/kali/oscp"));
+fs.mkdirSync(allowedRoot, { recursive: true });
+const allowedRootReal = fs.realpathSync(allowedRoot);
 
 const json = (response, status, body) => {
   response.writeHead(status, {
@@ -46,14 +48,31 @@ const safeSlug = (value, fallback = "command") => String(value || fallback)
   .replace(/^-+|-+$/g, "")
   .slice(0, 72) || fallback;
 
-const resolveWorkingDirectory = (requested) => {
-  const resolved = path.resolve(requested || allowedRoot);
-  if (resolved !== allowedRoot && !resolved.startsWith(`${allowedRoot}${path.sep}`)) {
-    throw new Error(`Working directory must stay under ${allowedRoot}`);
+const isWithin = (root, candidate) => candidate === root || candidate.startsWith(`${root}${path.sep}`);
+
+// Walk one path component at a time. This catches an existing symlink before
+// creating a child through it, then verifies the final canonical directory.
+export const resolveConfinedDirectory = (root, requested) => {
+  const lexicalRoot = path.resolve(root);
+  fs.mkdirSync(lexicalRoot, { recursive: true });
+  const realRoot = fs.realpathSync(lexicalRoot);
+  const resolved = path.resolve(requested || lexicalRoot);
+  if (!isWithin(lexicalRoot, resolved)) throw new Error(`Working directory must stay under ${lexicalRoot}`);
+
+  const relative = path.relative(lexicalRoot, resolved);
+  let cursor = lexicalRoot;
+  for (const segment of relative.split(path.sep).filter(Boolean)) {
+    cursor = path.join(cursor, segment);
+    if (!fs.existsSync(cursor)) fs.mkdirSync(cursor);
+    const canonical = fs.realpathSync(cursor);
+    if (!isWithin(realRoot, canonical)) throw new Error(`Working directory must not traverse a symlink outside ${lexicalRoot}`);
   }
-  fs.mkdirSync(resolved, { recursive: true });
-  return resolved;
+  const canonical = fs.realpathSync(resolved);
+  if (!isWithin(realRoot, canonical)) throw new Error(`Working directory must stay under ${lexicalRoot}`);
+  return canonical;
 };
+
+const resolveWorkingDirectory = (requested) => resolveConfinedDirectory(allowedRootReal, requested);
 
 const send = (socket, message) => {
   if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(message));

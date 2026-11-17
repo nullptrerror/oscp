@@ -1,46 +1,69 @@
 import { useEffect, useMemo, useState } from "react";
 import { useWorkspace } from "../context/WorkspaceContext";
-import { getScopedItemValue } from "../lib/workspace";
+import { getCommandResultStateValue, getScopedItemValue, RESULT_STATES } from "../lib/workspace";
 import { getChecklistCommands } from "../lib/checklistCommands";
 import CommandBlock from "./CommandBlock";
 import EvidenceList from "./EvidenceList";
+import { PIVOT_PLAYBOOKS, pivotPlaybookById } from "../data/pivotPlaybooks";
 
 export default function ChecklistItem({ item, searchActive = false, recommended = false, expandedResultsKey, onExpandedResultsChange }) {
   const { workspace, actions } = useWorkspace();
   const evidence = getScopedItemValue(workspace.evidence, workspace, item.id, []);
   const completed = Boolean(getScopedItemValue(workspace.completed, workspace, item.id, false));
+  const resultState = getScopedItemValue(
+    workspace.resultStates || {},
+    workspace,
+    item.id,
+    completed ? RESULT_STATES.CONFIRMED : "",
+  );
   const [open, setOpen] = useState(searchActive || evidence.length > 0);
   const [completionError, setCompletionError] = useState("");
   const [copiedReminder, setCopiedReminder] = useState(false);
-  const commands = useMemo(() => getChecklistCommands(item, workspace), [item, workspace]);
+  const storedPivotPlaybook = workspace.selectedPivotPlaybooks?.[workspace.activeTargetId];
+  const pivotPlaybookId = PIVOT_PLAYBOOKS.some((playbook) => playbook.id === storedPivotPlaybook)
+    ? storedPivotPlaybook
+    : "pivot-direct";
+  const commands = useMemo(() => getChecklistCommands(item, workspace, pivotPlaybookId), [item, workspace, pivotPlaybookId]);
+  const pivotPlaybook = item.pivotPlaybookSelector ? pivotPlaybookById(pivotPlaybookId) : null;
   const unassignedEvidence = evidence.filter((entry) => !entry.commandKey);
   const finding = getScopedItemValue(workspace.notes, workspace, item.id, "");
   const nextStep = getScopedItemValue(workspace.nextSteps, workspace, item.id, "");
   useEffect(() => { if (recommended) setOpen(true); }, [recommended]);
 
-  const toggleComplete = () => {
-    if (!completed && evidence.length === 0) {
+  const updateResultState = (state) => {
+    if ([RESULT_STATES.CONFIRMED, RESULT_STATES.NO_FINDING].includes(state) && evidence.length === 0) {
       setOpen(true);
-      setCompletionError("Save a result under one of this check's commands before marking it complete.");
+      setCompletionError("Save command output before confirming a finding or recording no finding.");
       return;
     }
+    if (item.pivotPlaybookSelector && [RESULT_STATES.CONFIRMED, RESULT_STATES.NO_FINDING].includes(state)) {
+      const pending = commands.filter((command, index) => {
+        const key = command.key ?? `${item.id}-${index}`;
+        const stepState = getCommandResultStateValue(workspace.commandResultStates, workspace, item.id, key, "");
+        return !stepState || stepState === RESULT_STATES.REVIEW;
+      });
+      if (pending.length > 0) {
+        setOpen(true);
+        setCompletionError(`Classify every selected playbook step first; ${pending.length} still need review.`);
+        return;
+      }
+    }
     setCompletionError("");
-    actions.toggleCompleted(item.id);
+    actions.setResultState(item.id, state);
   };
 
   return (
     <article id={`item-${item.id}`} className={`check-item ${completed ? "is-complete" : ""} ${recommended ? "is-recommended" : ""}`}>
       <div className="check-item-row">
-        <label className="check-control">
-          <input type="checkbox" checked={completed} onChange={toggleComplete} />
+        <span className="check-control" aria-label={completed ? `${item.title} complete` : `${item.title} not complete`}>
           <span aria-hidden="true">✓</span>
-          <span className="sr-only">Mark {item.title} complete</span>
-        </label>
+        </span>
         <button type="button" className="item-title-button" onClick={() => setOpen((value) => !value)}>
           <span>{item.title}</span>
           <small>
             {commands.length} {commands.length === 1 ? "command" : "commands"}
             {evidence.length > 0 && ` · ${evidence.length} saved result${evidence.length === 1 ? "" : "s"}`}
+            {resultState && ` · ${resultState.replace(/-/g, " ")}`}
             {finding.trim() && nextStep.trim() && " · narrative ready"}
           </small>
         </button>
@@ -52,6 +75,45 @@ export default function ChecklistItem({ item, searchActive = false, recommended 
       {open && (
         <div className="check-item-body">
           {item.detail && <p className="item-detail">{item.detail}</p>}
+          {item.pivotPlaybookSelector && (
+            <div className="pivot-playbook-selector">
+              <label htmlFor={`pivot-playbook-${item.id}`}>
+                <span>Manual topology</span>
+                <select
+                  id={`pivot-playbook-${item.id}`}
+                  value={pivotPlaybookId}
+                  onChange={(event) => {
+                    actions.selectPivotPlaybook(event.target.value);
+                    onExpandedResultsChange?.(null);
+                  }}
+                >
+                  {PIVOT_PLAYBOOKS.map((playbook) => (
+                    <option value={playbook.id} key={playbook.id}>{playbook.title}</option>
+                  ))}
+                </select>
+              </label>
+              <p>{pivotPlaybook?.summary}</p>
+              <small>{pivotPlaybook?.topology} · {pivotPlaybook?.scope} · {commands.length} separately confirmable steps</small>
+            </div>
+          )}
+          <div className="result-state-control">
+            <label htmlFor={`result-state-${item.id}`}>
+              <span>Operator result</span>
+              <select
+                id={`result-state-${item.id}`}
+                value={resultState}
+                onChange={(event) => updateResultState(event.target.value)}
+              >
+                <option value="" disabled>Choose after reviewing evidence…</option>
+                <option value={RESULT_STATES.REVIEW}>Needs review</option>
+                <option value={RESULT_STATES.CONFIRMED}>Finding confirmed</option>
+                <option value={RESULT_STATES.NO_FINDING}>No finding</option>
+                <option value={RESULT_STATES.FAILED}>Command failed</option>
+                <option value={RESULT_STATES.BLOCKED}>Blocked</option>
+              </select>
+            </label>
+            <p>Only an operator-confirmed finding or no-finding result completes this check. A zero exit status never proves the hypothesis.</p>
+          </div>
           <div className="command-list">
             {commands.map((command, index) => {
               const commandKey = command.key ?? `${item.id}-${index}`;
@@ -62,14 +124,19 @@ export default function ChecklistItem({ item, searchActive = false, recommended 
                   commandKey={commandKey}
                   itemId={item.id}
                   evidence={evidence.filter((entry) => entry.commandKey === commandKey)}
-                  variables={workspace.variables}
+                  resultState={getCommandResultStateValue(workspace.commandResultStates, workspace, item.id, commandKey, "")}
+                  onResultStateChange={(state) => actions.setCommandResultState(item.id, commandKey, state)}
+                  variables={{
+                    ...workspace.variables,
+                    selectedCredentialId: workspace.selectedCredentials?.[workspace.activeTargetId] || "",
+                  }}
                   commandHistory={workspace.commandHistory}
                   targetId={workspace.activeTargetId}
                   targetName={workspace.variables.targetName}
                   expandedResultsKey={expandedResultsKey}
                   onExpandedResultsChange={onExpandedResultsChange}
                   onCopy={(copiedCommand, renderedCommand) => {
-                    actions.recordCommand(item.id, { label: copiedCommand.label, command: renderedCommand });
+                    actions.recordCommand(item.id, { commandKey, label: copiedCommand.label, command: renderedCommand });
                     setCopiedReminder(true);
                     setOpen(true);
                   }}

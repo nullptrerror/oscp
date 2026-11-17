@@ -10,11 +10,11 @@ test("nmap output yields ports and useful guidance", () => {
 });
 
 test("cracked Kerberos output yields a credential without treating failure as valid", () => {
-  const discoveries = parseEvidence("$krb5tgs$23$*Administrator$ACTIVE.HTB$svc/host*$abc:Ticketmaster1968", "tgs.cracked.txt");
+  const discoveries = parseEvidence("$krb5tgs$23$*Administrator$ACTIVE.HTB$svc/host*$abc:Synthetic-Crack-42!", "tgs.cracked.txt");
   const credential = discoveries.find((item) => item.type === "credential");
   const ticket = discoveries.find((item) => item.type === "kerberos-ticket");
   assert.equal(credential.username, "Administrator");
-  assert.equal(credential.secret, "Ticketmaster1968");
+  assert.equal(credential.secret, "Synthetic-Crack-42!");
   assert.equal(ticket.value, "$krb5tgs$23$*Administrator$ACTIVE.HTB$svc/host*$abc");
   assert.equal(ticket.domain, "ACTIVE.HTB");
   assert.equal(ticket.etype, "23");

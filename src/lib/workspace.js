@@ -2,12 +2,27 @@ import { DEFAULT_VARIABLES } from "../data/checklist.js";
 import { DEFAULT_PARSER_SETTINGS } from "./evidence.js";
 import { flagProfile, normalizeFlagSettings } from "./flagProfiles.js";
 
+// Keep the storage key stable so existing offline workspaces are migrated in place.
 export const STORAGE_KEY = "fieldnotes.oscp.workspace.v1";
-export const WORKSPACE_VERSION = 1;
+export const WORKSPACE_VERSION = 2;
+export const LEGACY_WORKSPACE_VERSIONS = new Set([1]);
+export const RESULT_STATES = Object.freeze({
+  CONFIRMED: "finding-confirmed",
+  NO_FINDING: "no-finding",
+  FAILED: "command-failed",
+  BLOCKED: "blocked",
+  REVIEW: "needs-review",
+});
+export const COMPLETING_RESULT_STATES = new Set([RESULT_STATES.CONFIRMED, RESULT_STATES.NO_FINDING]);
 export const MACHINE_VARIABLE_KEYS = [
-  "targetName", "rhost", "rport", "uport", "subnet", "domain", "baseDn", "dc",
-  "user", "memberUser", "targetGroup", "aclTarget", "aclPrincipal", "aclRights", "dcsyncUser", "bloodhoundSource", "bloodhoundTarget", "password", "gppCpassword", "hash", "smbShare", "smbDirectory",
-  "sprayPassword", "userFlagName", "rootFlagName",
+  "targetName", "targetSlug", "rhost", "rport", "uport", "tcpPorts", "udpPorts",
+  "selectedServiceHost", "selectedServicePort", "webScheme", "webPort", "vhost", "baseUrl",
+  "webPath", "webParameter", "webValue", "sessionCookie", "uploadFile", "uploadField", "uploadedRemotePath",
+  "subnet", "domain", "realm", "baseDn", "dc", "dcIp", "dnsServer",
+  "user", "selectedCredentialId", "credentialType", "memberUser", "targetGroup", "aclTarget", "aclPrincipal", "aclRights", "dcsyncUser", "bloodhoundSource", "bloodhoundTarget", "password", "gppCpassword", "hash",
+  "smbShare", "smbDirectory", "nfsExport", "gppXmlFile", "exploitQuery", "exploitId", "exploitFile", "compiledExploit", "transferFile", "hashesFile", "hashMode",
+  "pivotHost", "pivotUser", "pivotInterface", "proxyPort", "internalHost", "internalSubnet", "callbackHost",
+  "sprayPassword", "sprayJitter", "sprayRockyouLimit", "userFlagName", "rootFlagName",
 ];
 
 export const pickMachineVariables = (values = {}) => Object.fromEntries(
@@ -21,6 +36,33 @@ export const domainToBaseDn = (domain = "") => String(domain)
   .map((part) => `DC=${part}`)
   .join(",");
 
+export const slugifyTarget = (name = "") => {
+  const source = String(name).trim();
+  const ascii = source
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, "")
+    .slice(0, 80);
+  if (ascii) return ascii;
+  let hash = 2166136261;
+  for (const character of source || "target") {
+    hash ^= character.codePointAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `target-${(hash >>> 0).toString(36)}`;
+};
+
+export const uniqueTargetSlug = (targets = [], requested = "target") => {
+  const base = slugifyTarget(requested);
+  const used = new Set(targets.map((target) => target.slug).filter(Boolean));
+  if (!used.has(base)) return base;
+  let suffix = 2;
+  while (used.has(`${base}-${suffix}`)) suffix += 1;
+  return `${base}-${suffix}`;
+};
+
 export const createId = (prefix = "item") => {
   const suffix = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   return `${prefix}-${suffix}`;
@@ -28,31 +70,7 @@ export const createId = (prefix = "item") => {
 
 export const clearMachineVariables = (variables) => ({
   ...variables,
-  targetName: "",
-  rhost: "",
-  rport: "",
-  uport: "",
-  domain: "",
-  baseDn: "",
-  dc: "",
-  user: "",
-  memberUser: "",
-  targetGroup: "",
-  aclTarget: "",
-  aclPrincipal: "",
-  aclRights: "",
-  dcsyncUser: "",
-  bloodhoundSource: "",
-  bloodhoundTarget: "",
-  password: "",
-  gppCpassword: "",
-  hash: "",
-  smbShare: "",
-  smbDirectory: "",
-  subnet: "",
-  sprayPassword: "",
-  userFlagName: "",
-  rootFlagName: "",
+  ...Object.fromEntries(MACHINE_VARIABLE_KEYS.map((key) => [key, DEFAULT_VARIABLES[key] ?? ""])),
 });
 
 const withoutTargetScope = (record, targetId) => Object.fromEntries(
@@ -76,7 +94,11 @@ export function deleteMachineData(workspace, targetId) {
     discoveries: workspace.discoveries.filter((entry) => !belongs(entry)),
     ignoredDiscoveries: workspace.ignoredDiscoveries.filter((entry) => !belongs(entry)),
     commandHistory: workspace.commandHistory.filter((entry) => !belongs(entry)),
+    selectedCredentials: Object.fromEntries(Object.entries(workspace.selectedCredentials || {}).filter(([key]) => key !== targetId)),
+    selectedPivotPlaybooks: Object.fromEntries(Object.entries(workspace.selectedPivotPlaybooks || {}).filter(([key]) => key !== targetId)),
     completed: withoutTargetScope(workspace.completed, targetId),
+    resultStates: withoutTargetScope(workspace.resultStates, targetId),
+    commandResultStates: withoutTargetScope(workspace.commandResultStates, targetId),
     notes: withoutTargetScope(workspace.notes, targetId),
     nextSteps: withoutTargetScope(workspace.nextSteps, targetId),
     narrativeSources: withoutTargetScope(workspace.narrativeSources, targetId),
@@ -125,6 +147,7 @@ export function importMachineData(workspace, importedWorkspace, sourceTargetId, 
     ...flagSettings,
     id,
     name,
+    slug: uniqueTargetSlug(workspace.targets, source.slug || name),
     importedAt: new Date().toISOString(),
     endpoints,
     activeEndpointId,
@@ -134,9 +157,15 @@ export function importMachineData(workspace, importedWorkspace, sourceTargetId, 
     commandContext: {
       ...(source.commandContext || {}),
       targetName: name,
+      targetSlug: uniqueTargetSlug(workspace.targets, source.slug || name),
       rhost: selectedEndpoint?.address || source.host || "",
       rport: selectedEndpoint?.tcpPorts || "",
       uport: selectedEndpoint?.udpPorts || "",
+      tcpPorts: selectedEndpoint?.tcpPorts || "",
+      udpPorts: selectedEndpoint?.udpPorts || "",
+      selectedServiceHost: selectedEndpoint?.address || source.host || "",
+      selectedCredentialId: "",
+      credentialType: "",
       userFlagName: flagSettings.userFlagName,
       rootFlagName: flagSettings.rootFlagName,
     },
@@ -161,6 +190,8 @@ export function importMachineData(workspace, importedWorkspace, sourceTargetId, 
       ...machine.commandContext,
       domain: machine.domain || machine.commandContext.domain || "",
       baseDn: domainToBaseDn(machine.domain || machine.commandContext.domain),
+      selectedCredentialId: "",
+      credentialType: "",
     },
     targets: [...workspace.targets, machine],
     accounts: copyEntries("accounts"),
@@ -170,10 +201,16 @@ export function importMachineData(workspace, importedWorkspace, sourceTargetId, 
     ignoredDiscoveries: copyEntries("ignoredDiscoveries"),
     commandHistory: copyEntries("commandHistory"),
     completed: copyTargetScope(workspace.completed, imported.completed, source.id, id),
+    resultStates: copyTargetScope(workspace.resultStates, imported.resultStates, source.id, id),
+    commandResultStates: copyTargetScope(workspace.commandResultStates, imported.commandResultStates, source.id, id),
     notes: copyTargetScope(workspace.notes, imported.notes, source.id, id),
     nextSteps: copyTargetScope(workspace.nextSteps, imported.nextSteps, source.id, id),
     narrativeSources: copyTargetScope(workspace.narrativeSources, imported.narrativeSources, source.id, id),
     evidence: copyTargetScope(workspace.evidence, imported.evidence, source.id, id, (entries) => entries.map(retarget)),
+    selectedPivotPlaybooks: {
+      ...(workspace.selectedPivotPlaybooks || {}),
+      [id]: imported.selectedPivotPlaybooks?.[source.id] || "pivot-direct",
+    },
     reports,
   };
 }
@@ -188,11 +225,15 @@ export const createDefaultWorkspace = () => ({
   users: [],
   loot: [],
   completed: {},
+  resultStates: {},
+  commandResultStates: {},
   notes: {},
   nextSteps: {},
   narrativeSources: {},
   evidence: {},
   discoveries: [],
+  selectedCredentials: {},
+  selectedPivotPlaybooks: {},
   parserSettings: { ...DEFAULT_PARSER_SETTINGS },
   ignoredDiscoveries: [],
   commandHistory: [],
@@ -229,8 +270,14 @@ const normalizeTarget = (target, index) => {
   return {
     ...target,
     ...normalizeFlagSettings(target),
+    slug: target.slug || slugifyTarget(target.name || `machine-${index + 1}`),
     boxType: target.boxType || (target.os === "Linux" ? "linux" : target.os === "Windows" && target.domain ? "ad" : target.os === "Windows" ? "windows" : "unknown"),
-    commandContext: isRecord(target.commandContext) ? target.commandContext : {},
+    commandContext: {
+      ...(isRecord(target.commandContext) ? target.commandContext : {}),
+      targetSlug: target.commandContext?.targetSlug || target.slug || slugifyTarget(target.name || `machine-${index + 1}`),
+      tcpPorts: target.commandContext?.tcpPorts || target.commandContext?.rport || activeEndpoint?.tcpPorts || target.port || "",
+      udpPorts: target.commandContext?.udpPorts || target.commandContext?.uport || activeEndpoint?.udpPorts || target.udpPorts || "",
+    },
     endpoints,
     activeEndpointId,
     host: activeEndpoint?.address || target.host || "",
@@ -241,27 +288,54 @@ const normalizeTarget = (target, index) => {
 
 export function normalizeWorkspace(value) {
   if (!isRecord(value)) throw new Error("Backup must contain a JSON object.");
-  if (value.version !== WORKSPACE_VERSION) {
+  const sourceVersion = Number(value.version);
+  if (sourceVersion !== WORKSPACE_VERSION && !LEGACY_WORKSPACE_VERSIONS.has(sourceVersion)) {
     throw new Error(`Unsupported backup version: ${value.version ?? "missing"}.`);
   }
 
   const base = createDefaultWorkspace();
-  const variables = { ...base.variables, ...asRecord(value.variables) };
+  const inputVariables = asRecord(value.variables);
+  const variables = {
+    ...base.variables,
+    ...inputVariables,
+    tcpPorts: inputVariables.tcpPorts || inputVariables.rport || "",
+    udpPorts: inputVariables.udpPorts || inputVariables.uport || "",
+    rport: inputVariables.rport || inputVariables.tcpPorts || "",
+    uport: inputVariables.uport || inputVariables.udpPorts || "",
+    targetSlug: inputVariables.targetSlug || slugifyTarget(inputVariables.targetName || ""),
+    selectedServiceHost: inputVariables.selectedServiceHost || inputVariables.rhost || "",
+  };
   if (!variables.baseDn && variables.domain) variables.baseDn = domainToBaseDn(variables.domain);
-  const targets = asArray(value.targets).map(normalizeTarget);
+  const targets = asArray(value.targets).map(normalizeTarget).reduce((list, target) => {
+    const slug = uniqueTargetSlug(list, target.slug || target.name);
+    list.push({
+      ...target,
+      slug,
+      commandContext: { ...(target.commandContext || {}), targetSlug: slug },
+    });
+    return list;
+  }, []);
   const activeTargetId = targets.some((target) => target.id === value.activeTargetId) ? value.activeTargetId : null;
   const fallbackTargetId = activeTargetId || (targets.length === 1 ? targets[0].id : null);
   const normalizedTargets = targets.map((target) => target.id === fallbackTargetId ? {
     ...target,
     commandContext: {
       ...pickMachineVariables(variables),
-      ...(target.commandContext || {}),
+      ...(sourceVersion === 1
+        ? Object.fromEntries(Object.entries(target.commandContext || {}).filter(([, entry]) => entry !== "" && entry !== null && entry !== undefined))
+        : (target.commandContext || {})),
     },
   } : target);
   const activeTarget = normalizedTargets.find((target) => target.id === activeTargetId);
   const normalizedVariables = activeTarget ? {
     ...variables,
     ...activeTarget.commandContext,
+    targetSlug: activeTarget.commandContext?.targetSlug || activeTarget.slug,
+    tcpPorts: activeTarget.commandContext?.tcpPorts || activeTarget.commandContext?.rport || activeTarget.port || "",
+    udpPorts: activeTarget.commandContext?.udpPorts || activeTarget.commandContext?.uport || activeTarget.udpPorts || "",
+    rport: activeTarget.commandContext?.rport || activeTarget.commandContext?.tcpPorts || activeTarget.port || "",
+    uport: activeTarget.commandContext?.uport || activeTarget.commandContext?.udpPorts || activeTarget.udpPorts || "",
+    selectedServiceHost: activeTarget.commandContext?.selectedServiceHost || activeTarget.host || "",
     userFlagName: activeTarget.userFlagName,
     rootFlagName: activeTarget.rootFlagName,
   } : clearMachineVariables(variables);
@@ -283,16 +357,41 @@ export function normalizeWorkspace(value) {
     const target = namedTarget || targets.find((candidate) => candidate.id === fallbackTargetId);
     return target ? { ...entry, targetId: target.id, target: entry.target || target.name, targetName: entry.targetName || target.name } : entry;
   };
+  const accounts = asArray(value.accounts).map(scopeEntry);
+  const selectedCredentials = Object.fromEntries(Object.entries(asRecord(value.selectedCredentials)).filter(([targetId, accountId]) => (
+    targets.some((target) => target.id === targetId)
+    && accounts.some((account) => account.id === accountId && account.targetId === targetId)
+  )));
+  const completed = normalizeScopedRecord(value.completed);
+  const suppliedResultStates = normalizeScopedRecord(value.resultStates);
+  const validResultStates = new Set(Object.values(RESULT_STATES));
+  const resultStates = Object.fromEntries(Object.entries(suppliedResultStates).filter(([, state]) => validResultStates.has(state)));
+  // Older and partially upgraded workspaces may only have the boolean. Keep
+  // that work while making result state the single source of completion truth.
+  for (const [key, isComplete] of Object.entries(completed)) {
+    if (isComplete && !resultStates[key]) resultStates[key] = RESULT_STATES.CONFIRMED;
+  }
+  for (const [key, completedValue] of Object.entries(completed)) {
+    const state = resultStates[key];
+    const shouldComplete = COMPLETING_RESULT_STATES.has(state);
+    if (Boolean(completedValue) !== shouldComplete) completed[key] = shouldComplete;
+  }
   return {
     ...base,
     ...value,
+    version: WORKSPACE_VERSION,
     activeTargetId,
-    variables: normalizedVariables,
+    variables: {
+      ...normalizedVariables,
+      selectedCredentialId: selectedCredentials[activeTargetId] || "",
+    },
     targets: normalizedTargets,
-    accounts: asArray(value.accounts).map(scopeEntry),
+    accounts,
     users: asArray(value.users).map(scopeEntry),
     loot: asArray(value.loot).map(scopeEntry),
-    completed: normalizeScopedRecord(value.completed),
+    completed,
+    resultStates,
+    commandResultStates: Object.fromEntries(Object.entries(normalizeScopedRecord(value.commandResultStates)).filter(([, state]) => validResultStates.has(state))),
     notes: normalizeScopedRecord(value.notes),
     nextSteps: normalizeScopedRecord(value.nextSteps),
     narrativeSources: normalizeScopedRecord(value.narrativeSources),
@@ -301,10 +400,19 @@ export function normalizeWorkspace(value) {
       if (entry.type === "hostname" && ["nmap.org", "www.nmap.org"].includes(String(entry.value).toLowerCase())) return false;
       if (["ip", "endpoint"].includes(entry.type) && entry.value === variables.lhost) return false;
       return true;
-    }).map(scopeEntry),
+    }).map((entry) => scopeEntry({
+      ...entry,
+      // Older parser findings had already been applied to variables and
+      // records. Treat them as confirmed to avoid silently undoing user data.
+      status: entry.status || (sourceVersion === 1 ? "confirmed" : "candidate"),
+    })),
     parserSettings: { ...DEFAULT_PARSER_SETTINGS, ...asRecord(value.parserSettings) },
     ignoredDiscoveries: asArray(value.ignoredDiscoveries).map(scopeEntry),
     commandHistory: asArray(value.commandHistory).map(scopeEntry),
+    selectedCredentials,
+    selectedPivotPlaybooks: Object.fromEntries(Object.entries(asRecord(value.selectedPivotPlaybooks)).filter(([targetId, playbookId]) => (
+      targets.some((target) => target.id === targetId) && typeof playbookId === "string" && playbookId.startsWith("pivot-")
+    ))),
     reports: asRecord(value.reports),
     profile: asRecord(value.profile),
     exam: asRecord(value.exam),
@@ -317,6 +425,14 @@ export function getActiveScope(workspace) {
 
 export function getItemStateKey(workspace, itemId) {
   return `${getActiveScope(workspace)}::${itemId}`;
+}
+
+export function getCommandResultStateKey(workspace, itemId, commandKey) {
+  return `${getItemStateKey(workspace, itemId)}::${commandKey}`;
+}
+
+export function getCommandResultStateValue(record, workspace, itemId, commandKey, fallback = "") {
+  return record?.[getCommandResultStateKey(workspace, itemId, commandKey)] ?? fallback;
 }
 
 export function getScopedItemValue(record, workspace, itemId, fallback) {

@@ -3,7 +3,6 @@ import { ALL_ITEMS } from "../data/checklist";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { getScopedItemValue } from "../lib/workspace";
 import { formatDiscovery, PARSER_TAGS, visibleDiscoveries } from "../lib/evidence";
-import { credentialVariables } from "../lib/credentials";
 import TerminalOutput from "../components/TerminalOutput";
 
 const EMPTY_ACCOUNT = { target: "", domain: "", username: "", secret: "", source: "", status: "untested" };
@@ -79,7 +78,7 @@ export default function FindingsPage() {
           <div><p className="eyebrow">Output parser</p><h2>Automatic tag controls</h2></div>
           <span>{PARSER_TAGS.filter(({ type }) => workspace.parserSettings[type] !== false).length}/{PARSER_TAGS.length} enabled</span>
         </summary>
-        <p className="parser-help">These switches are global. Disabled tags stay in raw evidence but are hidden and are not added from new output. Ignored values are remembered only for the current machine.</p>
+        <p className="parser-help">The parser extracts neutral candidates only. Candidates never change command variables, accounts, users, or endpoints until you confirm them. Disabled tags stay in raw evidence; ignored values are remembered only for this machine.</p>
         <div className="parser-toggle-grid">
           {PARSER_TAGS.map(({ type, label }) => (
             <label className="toggle-field" key={type}>
@@ -161,7 +160,7 @@ export default function FindingsPage() {
                 <div className="ledger-card-head">
                   <div><span className={`status-dot ${entry.status}`} /> <strong>{entry.domain ? `${entry.domain}\\` : ""}{entry.username}</strong></div>
                   <div>
-                    <button type="button" className="text-button" onClick={() => actions.updateVariables(credentialVariables(entry))}>Use in commands</button>
+                    <button type="button" className="text-button" onClick={() => actions.selectCredential(entry.id)}>Select for commands</button>
                     <button type="button" className="text-button danger" onClick={() => actions.deleteRecord("accounts", entry.id)}>Delete</button>
                   </div>
                 </div>
@@ -203,14 +202,15 @@ export default function FindingsPage() {
 
       <section className="results-ledger discoveries-ledger">
         <div className="finding-section-head">
-          <div><p className="eyebrow">Parsed automatically</p><h2>Critical discoveries</h2></div>
+          <div><p className="eyebrow">Operator confirmation required</p><h2>Parsed candidates</h2></div>
           <span>{targetDiscoveries.length}</span>
         </div>
         {targetDiscoveries.length === 0 ? <EmptyMessage>No parsed ports, domains, accounts, hashes, or tickets yet.</EmptyMessage> : (
           <div className="discovery-chips discovery-ledger-chips">
             {targetDiscoveries.map((entry) => (
               <div className="discovery-chip" key={entry.id}>
-                <span>{formatDiscovery(entry)}</span>
+                <span>{formatDiscovery(entry)} · {entry.status === "confirmed" ? "confirmed" : "unverified"}</span>
+                {entry.status !== "confirmed" && <button type="button" onClick={() => actions.confirmDiscovery(entry)}>Confirm</button>}
                 <button type="button" onClick={() => actions.ignoreDiscovery(entry)}>Ignore</button>
               </div>
             ))}

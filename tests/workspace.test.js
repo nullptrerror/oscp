@@ -4,12 +4,19 @@ import {
   createDefaultWorkspace,
   deleteMachineData,
   domainToBaseDn,
+  getCommandResultStateKey,
+  getCommandResultStateValue,
   getItemStateKey,
   getScopedItemValue,
   importMachineData,
+  MACHINE_VARIABLE_KEYS,
   normalizeWorkspace,
   pickMachineVariables,
   renderCommand,
+  COMPLETING_RESULT_STATES,
+  RESULT_STATES,
+  slugifyTarget,
+  uniqueTargetSlug,
   WORKSPACE_VERSION,
 } from "../src/lib/workspace.js";
 
@@ -40,6 +47,94 @@ test("a backup is normalized without dropping default variables", () => {
 
 test("unsupported backup versions are rejected", () => {
   assert.throws(() => normalizeWorkspace({ version: 99 }), /Unsupported backup version/);
+});
+
+test("version 1 workspaces migrate completion, discovery status, and split port variables", () => {
+  const restored = normalizeWorkspace({
+    version: 1,
+    activeTargetId: "target-active",
+    variables: { targetName: "Lab With Spaces", rhost: "192.0.2.10", rport: "80,445", uport: "53" },
+    targets: [{ id: "target-active", name: "Lab With Spaces", host: "192.0.2.10" }],
+    completed: { "target-active::recon-tcp-all": true },
+    discoveries: [{ targetId: "target-active", type: "port", value: "445", protocol: "tcp" }],
+  });
+
+  assert.equal(restored.version, WORKSPACE_VERSION);
+  assert.equal(restored.resultStates["target-active::recon-tcp-all"], "finding-confirmed");
+  assert.equal(restored.discoveries[0].status, "confirmed");
+  assert.equal(restored.variables.targetSlug, "lab-with-spaces");
+  assert.equal(restored.variables.tcpPorts, "80,445");
+  assert.equal(restored.variables.udpPorts, "53");
+});
+
+test("new workspaces keep explicit result and credential selection state", () => {
+  const workspace = createDefaultWorkspace();
+  assert.deepEqual(workspace.resultStates, {});
+  assert.deepEqual(workspace.commandResultStates, {});
+  assert.deepEqual(workspace.selectedCredentials, {});
+  assert.deepEqual(workspace.selectedPivotPlaybooks, {});
+  assert.equal(workspace.version, WORKSPACE_VERSION);
+});
+
+test("command result keys are target and command scoped", () => {
+  const workspace = createDefaultWorkspace();
+  workspace.activeTargetId = "target-a";
+  const key = getCommandResultStateKey(workspace, "pivot-playbook", "pivot.direct-route");
+  assert.equal(key, "target-a::pivot-playbook::pivot.direct-route");
+  assert.equal(getCommandResultStateValue({ [key]: RESULT_STATES.NO_FINDING }, workspace, "pivot-playbook", "pivot.direct-route"), RESULT_STATES.NO_FINDING);
+});
+
+test("normalization rejects invalid states and derives completion from the result state", () => {
+  const restored = normalizeWorkspace({
+    version: WORKSPACE_VERSION,
+    activeTargetId: "target-a",
+    targets: [{ id: "target-a", name: "target-a" }],
+    completed: { "target-a::one": true, "target-a::two": true },
+    resultStates: { "target-a::one": RESULT_STATES.FAILED, "target-a::two": "invented-state" },
+    commandResultStates: { "target-a::one::command": "invented-state" },
+  });
+  assert.equal(restored.completed["target-a::one"], false);
+  assert.equal(restored.resultStates["target-a::one"], RESULT_STATES.FAILED);
+  assert.equal(restored.completed["target-a::two"], true);
+  assert.equal(restored.resultStates["target-a::two"], RESULT_STATES.CONFIRMED);
+  assert.deepEqual(restored.commandResultStates, {});
+});
+
+test("filesystem slugs are non-empty and unique for Unicode and duplicate names", () => {
+  const unicode = slugifyTarget("日本語");
+  assert.match(unicode, /^target-[a-z0-9]+$/);
+  assert.match(slugifyTarget("../.."), /^target-[a-z0-9]+$/);
+  assert.equal(slugifyTarget("...Hidden Folder..."), "hidden-folder");
+  assert.equal(uniqueTargetSlug([{ slug: "active" }], "Active"), "active-2");
+  const restored = normalizeWorkspace({
+    version: WORKSPACE_VERSION,
+    targets: [{ id: "one", name: "Same" }, { id: "two", name: "Same" }],
+  });
+  assert.deepEqual(restored.targets.map((target) => target.slug), ["same", "same-2"]);
+});
+
+test("sensitive web and upload context is machine scoped", () => {
+  for (const key of ["webPath", "webParameter", "webValue", "sessionCookie", "uploadFile", "uploadField", "uploadedRemotePath"]) {
+    assert.ok(MACHINE_VARIABLE_KEYS.includes(key), `${key} must not leak across target switches`);
+  }
+  const picked = pickMachineVariables({
+    sessionCookie: "session=one-machine-only",
+    uploadFile: "/tmp/reviewed.bin",
+    webPath: "upload.php",
+  });
+  assert.deepEqual(picked, {
+    webPath: "upload.php",
+    sessionCookie: "session=one-machine-only",
+    uploadFile: "/tmp/reviewed.bin",
+  });
+});
+
+test("only operator-confirmed finding and no-finding states complete a check", () => {
+  assert.equal(COMPLETING_RESULT_STATES.has(RESULT_STATES.CONFIRMED), true);
+  assert.equal(COMPLETING_RESULT_STATES.has(RESULT_STATES.NO_FINDING), true);
+  for (const state of [RESULT_STATES.FAILED, RESULT_STATES.BLOCKED, RESULT_STATES.REVIEW]) {
+    assert.equal(COMPLETING_RESULT_STATES.has(state), false);
+  }
 });
 
 test("new workspaces have independent variable objects", () => {
@@ -110,9 +205,11 @@ test("deleting a machine removes every machine-scoped record and preserves other
   for (const key of ["accounts", "users", "loot", "discoveries", "ignoredDiscoveries", "commandHistory"]) {
     workspace[key] = [{ id: `${key}-old`, targetId: "delete-me" }, { id: `${key}-keep`, targetId: "keep-me" }];
   }
-  for (const key of ["completed", "notes", "nextSteps", "narrativeSources", "evidence"]) {
+  for (const key of ["completed", "resultStates", "commandResultStates", "notes", "nextSteps", "narrativeSources", "evidence"]) {
     workspace[key] = { [`delete-me::item`]: key === "evidence" ? [] : true, [`keep-me::item`]: key === "evidence" ? [] : true };
   }
+  workspace.selectedCredentials = { "delete-me": "old-account", "keep-me": "kept-account" };
+  workspace.selectedPivotPlaybooks = { "delete-me": "pivot-ssh", "keep-me": "pivot-direct" };
   workspace.reports = { "delete-me": { title: "old" }, "keep-me": { title: "keep" } };
   workspace.variables.targetName = "old";
   workspace.variables.rhost = "10.0.0.1";
@@ -123,7 +220,9 @@ test("deleting a machine removes every machine-scoped record and preserves other
   assert.equal(result.variables.targetName, "");
   assert.equal(result.variables.rhost, "");
   for (const key of ["accounts", "users", "loot", "discoveries", "ignoredDiscoveries", "commandHistory"]) assert.deepEqual(result[key].map((entry) => entry.targetId), ["keep-me"]);
-  for (const key of ["completed", "notes", "nextSteps", "narrativeSources", "evidence"]) assert.deepEqual(Object.keys(result[key]), ["keep-me::item"]);
+  for (const key of ["completed", "resultStates", "commandResultStates", "notes", "nextSteps", "narrativeSources", "evidence"]) assert.deepEqual(Object.keys(result[key]), ["keep-me::item"]);
+  assert.deepEqual(result.selectedCredentials, { "keep-me": "kept-account" });
+  assert.deepEqual(result.selectedPivotPlaybooks, { "keep-me": "pivot-direct" });
   assert.deepEqual(Object.keys(result.reports), ["keep-me"]);
 });
 

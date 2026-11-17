@@ -1,4 +1,4 @@
-import { visibleDiscoveries } from "./evidence.js";
+import { confirmedDiscoveries, visibleDiscoveries } from "./evidence.js";
 import { getActiveScope, getTargetItemValue } from "./workspace.js";
 
 const portList = (values) => [...new Set(values.flatMap((value) => String(value || "").split(",")).map((value) => value.trim()).filter(Boolean))]
@@ -10,11 +10,11 @@ export function buildReportStarters(workspace, targetId = workspace.activeTarget
   const scope = target.id || getActiveScope(workspace);
   const belongs = (entry) => entry.targetId ? entry.targetId === target.id : entry.targetName === target.name || entry.target === target.name;
   const commands = (workspace.commandHistory || []).filter((entry) => belongs(entry) && entry.source === "local runner");
-  const discoveries = visibleDiscoveries((workspace.discoveries || []).filter(belongs), {
+  const discoveries = confirmedDiscoveries(visibleDiscoveries((workspace.discoveries || []).filter(belongs), {
     settings: workspace.parserSettings,
     ignored: workspace.ignoredDiscoveries,
     targetId: target.id,
-  });
+  }));
   const commandItems = new Set(commands.map((entry) => entry.itemId));
   const endpoints = target.endpoints?.length ? target.endpoints : [{ address: target.host || workspace.variables.rhost, hostnames: [], tcpPorts: target.port, udpPorts: target.udpPorts }];
   const addresses = [...new Set(endpoints.map((endpoint) => endpoint.address).filter(Boolean))];

@@ -8,11 +8,14 @@ export default function PracticeBoxSelect({ value = "", onSelect }) {
         <option value="">Manual / exam machine</option>
         {PRACTICE_GROUPS.map((group) => (
           <optgroup label={group.label} key={group.key}>
-            {group.boxes.map((box) => <option value={box.id} key={box.id}>{box.name}</option>)}
+            {group.boxes.map((box) => {
+              const annotations = box.tags.filter((tag) => ["assumed-breach", "legacy-os", "multi-host-chain", "enterprise"].includes(tag));
+              return <option value={box.id} key={box.id}>{box.name}{annotations.length ? ` — ${annotations.join(", ")}` : ""}</option>;
+            })}
           </optgroup>
         ))}
       </select>
-      <small>Presets organize reusable methodology, not walkthrough spoilers. <a href="https://0xdf.gitlab.io/cheatsheets/offsec" target="_blank" rel="noreferrer">HTB OSCP list source</a></small>
+      <small>Presets separate core, legacy, post-OSCP, and enterprise scope. Linked lab-building resources are tracked in coverage data but are not machine presets.</small>
     </label>
   );
 }

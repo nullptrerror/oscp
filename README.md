@@ -9,6 +9,8 @@ Fieldnotes keeps four things together:
 - machine-scoped endpoints, accounts, loot, notes, command output, and screenshots;
 - an OSCP-style machine report with the complete workspace and evidence embedded for later restoration.
 
+The exam-time application is deterministic and fully offline. It has no AI runtime, chatbot, prompt field, cloud API, exploit selector, scan-to-exploit path, or automatic credential chain. Every attack-relevant action is a separately reviewed command card initiated by the operator.
+
 The static app has no login, cloud sync, database, rich-text editor, or plugin system. State is stored in browser `localStorage` and can be exported at any time. An optional localhost-only companion server can execute checklist commands in a real PTY on Kali while preserving the same static build.
 
 ## Run on Kali
@@ -38,12 +40,12 @@ If Vite reports that it cannot resolve `pdf-lib` after pulling newer commits, st
 
 ## Workflow
 
-1. Add a box under **Machines** with its initial IP. The machine name is the stable folder name, such as `/home/kali/oscp/active/`.
-2. Add or select endpoints inside that machine. Parsed IP addresses and hostname/IP pairs are attached automatically; changing endpoints never creates another machine folder.
-3. Set `LHOST`, ports, domain, credentials, and the default wordlist in the checklist's **Variables** panel.
+1. Add a box under **Machines** with its initial IP. Fieldnotes assigns a unique filesystem-safe folder slug, such as `/home/kali/oscp/active/`, separately from the display name.
+2. Add or select endpoints inside that machine. Parsed IP addresses and hostname/IP pairs remain endpoint-bound candidates until you confirm them; changing endpoints never creates another machine folder.
+3. Set `LHOST`, the filesystem-safe target slug, TCP/UDP collections, selected service/web endpoint, domain context, and the default wordlist in the checklist's **Variables** panel. Select one saved credential explicitly before credential-derived cards are rendered.
 4. Work down the checklist. Each command has its own result area. Copying records the rendered command; running locally opens an interactive PTY for `sudo`, SSH, WinRM, and similar tools.
-5. A local run writes a dedicated log beneath `notes/commands/`, appends the complete journey to `notes/terminal.log`, saves the captured result to that command, parses it, and marks the check complete after exit code 0. Static mode provides the same dedicated paste, attach, and drop inputs.
-6. Review parsed ports, domains, credentials, hashes, tickets, endpoints, and copied commands under **Findings**.
+5. A local run writes a dedicated log beneath `notes/commands/`, appends the complete journey to `notes/terminal.log`, and saves the captured result to that command. Exit code zero never completes a check or proves a hypothesis. Classify each command and its parent check explicitly as **finding confirmed**, **no finding**, **command failed**, **blocked**, or **needs review**.
+6. Review parser-extracted ports, domains, credentials, hashes, tickets, endpoints, and proof values under **Findings**. They remain unverified candidates and cannot affect variables or command generation until you confirm them.
 7. Fill in the operator profile under **Report** once (name, OSID, GitHub, photo — shared by every machine), attach user and root/Administrator proof screenshots, write the short narrative, and generate the machine PDF.
 8. Import that PDF on another machine to restore the full workspace. JSON export remains available as a fallback under **Backup**.
 
@@ -51,11 +53,25 @@ The PDF has a cover page, clickable contents and bookmarks, and a header on ever
 
 The exam clock in the top bar counts down the exam window and then the report deadline. Its start time and length are editable and saved with the workspace. Press `/` on the checklist to jump to search.
 
-A checklist item requires a command result before it can be marked complete. A short pasted result describing a failed or empty test is enough; the goal is to preserve what was actually tested.
+A checklist item requires saved evidence before it can be classified as finding-confirmed or no-finding. Failed, blocked, and needs-review states remain incomplete so uncertainty is visible.
 
 TCP and UDP ports are tracked separately and accumulated across scan files. Nmap `open` and `open|filtered` UDP results populate `UDP PORT(S)`, and the focused UDP command automatically uses that list.
 
-The bounded spray check builds target-scoped username, password, and NT-hash files from Findings. It provides one-password, discovered-secret, and limited-rockyou NetExec variants with jitter and saved logs. Review lockout policy before using anything beyond a single candidate password.
+The bounded credential check uses only the one credential explicitly selected for the active machine, with jitter and saved logs. It does not combine or spray every stored secret. Review and confirm lockout policy before any multi-user authentication attempt.
+
+## Exam-safety boundary
+
+The in-app **Exam safety** page records `rules_last_verified: 2026-11-17` and links directly to the current official Exam Guide, FAQ, AI policy, Body of Knowledge, and reporting requirements. Official current policy controls; Fieldnotes is not OffSec approved and does not guarantee compliance or an exam result.
+
+Conservative safeguards include:
+
+- prohibited or policy-verification cards are instructional and cannot be copied or run in exam-safe mode;
+- Metasploit/Meterpreter is kept outside the core workflow, including its one-selected-target commitment and no-pivot rule;
+- spoofing, poisoning, automatic exploitation, mass vulnerability scanning, automatic proof submission, and runtime AI are not implemented;
+- proof values remain visible candidates until the operator verifies the interactive shell, original path, identity, target IP, screenshot, and manual control-panel submission;
+- Daybreak and any AI-assisted development are pre-exam activities only. Do not use an AI assistant during the exam or reporting period.
+
+The supplied PWK V3 study table is reconciled without walkthroughs: 208 raw rows (204 machine rows plus four resource rows), 204 grouped coverage records, 200 machine presets, and 189 normalized machine names. Core, legacy, post-OSCP, enterprise, and study-only scope are visibly separated. Every record has a traceable methodology/scope mapping; machine-specific public technique research remains explicitly unresolved unless a spoiler-safe source is actually reviewed.
 
 ## Kali assumptions
 
@@ -78,7 +94,7 @@ If the browser reports a storage error, export a backup and remove large saved r
 
 ## Customize the methodology
 
-Checklist content lives in [`src/data/checklist.js`](src/data/checklist.js). Each item has a stable ID, a title, optional detail, and one or more commands. Variables use `{{name}}` placeholders and are resolved in the browser.
+Checklist content lives in [`src/data/checklist.js`](src/data/checklist.js). Each command is normalized into a stable structured record containing its purpose, execution host, applicability facts, prerequisites, typed variables, expected positive/negative signals, manual branches, risk, state change, evidence, verification, cleanup, fallback, and policy classification. Typed placeholders are validated and shell-quoted before copy or execution.
 
 Keep additions focused on repeatable decisions and commands you will actually use. The local `drgoteee.github.io/` checkout is ignored by Git and is reference material only.
 

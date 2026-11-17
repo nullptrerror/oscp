@@ -1,4 +1,4 @@
-import { visibleDiscoveries } from "./evidence.js";
+import { confirmedDiscoveries, visibleDiscoveries } from "./evidence.js";
 
 const shellQuote = (value) => `'${String(value).replaceAll("'", "'\"'\"'")}'`;
 
@@ -10,11 +10,11 @@ export function trackedUsernames(workspace) {
     workspace.variables.user,
     ...workspace.accounts.filter(belongs).map((entry) => entry.username),
     ...(workspace.users || []).filter(belongs).map((entry) => entry.username),
-    ...visibleDiscoveries(workspace.discoveries, {
+    ...confirmedDiscoveries(visibleDiscoveries(workspace.discoveries, {
       settings: workspace.parserSettings,
       ignored: workspace.ignoredDiscoveries,
       targetId: activeTargetId,
-    }).filter(belongs).filter((entry) => entry.type === "user").map((entry) => entry.value),
+    })).filter(belongs).filter((entry) => entry.type === "user").map((entry) => entry.value),
   ].map((name) => String(name || "").trim()).filter((name) => name && !/^(guest|anonymous)$/i.test(name));
   return [...new Map(names.map((name) => [name.toLowerCase(), name])).values()].sort((a, b) => a.localeCompare(b));
 }
@@ -25,6 +25,6 @@ export function buildUsersFileCommand(workspace) {
   return {
     key: "tracked-users-file",
     label: `Build target users file from Findings — ${usernames.length || "selected"} user${usernames.length === 1 ? "" : "s"}`,
-    value: `users_file="{{workspaceRoot}}/{{targetName}}/loot/users.txt"; mkdir -p "$(dirname "$users_file")"; printf '%s\\n' ${values} | sed '/^[[:space:]]*$/d' | sort -fu > "$users_file"; echo "[*] Saved $(wc -l < "$users_file") users to $users_file"; cat "$users_file"`,
+    value: `users_file="{{workspaceRoot}}/{{targetSlug}}/loot/users.txt"; mkdir -p "$(dirname "$users_file")"; printf '%s\\n' ${values} | sed '/^[[:space:]]*$/d' | sort -fu > "$users_file"; echo "[*] Saved $(wc -l < "$users_file") users to $users_file"; cat "$users_file"`,
   };
 }

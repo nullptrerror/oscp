@@ -12,7 +12,7 @@ test("tracked users combine accounts, parsed users, and manual users for only th
   workspace.variables.user = "SVC_TGS";
   workspace.accounts = [{ targetId: "active", username: "Administrator" }, { targetId: "other", username: "ignore-me" }];
   workspace.users = [{ targetId: "active", username: "alice" }];
-  workspace.discoveries = [{ targetId: "active", type: "user", value: "bob" }];
+  workspace.discoveries = [{ targetId: "active", type: "user", value: "bob", status: "confirmed" }];
 
   assert.deepEqual(trackedUsernames(workspace), ["Administrator", "alice", "bob", "SVC_TGS"]);
   const command = buildUsersFileCommand(workspace).value;
@@ -21,8 +21,8 @@ test("tracked users combine accounts, parsed users, and manual users for only th
   assert.doesNotMatch(command, /ignore-me/);
 
   const roast = ALL_ITEMS.find((item) => item.id === "ad-roast");
-  const combined = getChecklistCommands(roast, workspace)[1].value;
-  assert.match(combined, /printf '%s\\n'.*Administrator.*SVC_TGS/);
-  assert.match(combined, /impacket-GetNPUsers/);
-  assert.match(combined, /-usersfile "\$users_file"/);
+  const roastCommands = getChecklistCommands(roast, workspace);
+  assert.match(roastCommands[0].value, /printf '%s\\n'.*Administrator.*SVC_TGS/);
+  assert.match(roastCommands[1].value, /impacket-GetNPUsers/);
+  assert.match(roastCommands[1].value, /-usersfile "\$users_file"/);
 });

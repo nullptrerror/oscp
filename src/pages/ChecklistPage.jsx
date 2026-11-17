@@ -11,6 +11,8 @@ import { FLAG_PROFILES, flagProfile } from "../lib/flagProfiles";
 import PdfMachineImporter from "../components/PdfMachineImporter";
 import PracticeBoxSelect from "../components/PracticeBoxSelect";
 import { PLATFORM_PHASES, platformLabel } from "../data/practiceBoxes";
+import { rankApplicableChecks } from "../lib/decisionSupport";
+import { PIVOT_PLAYBOOKS, PIVOT_STEPS } from "../data/pivotPlaybooks";
 
 function MachineRequired({ workspace, actions }) {
   const [draft, setDraft] = useState({ name: "", host: "", os: "Unknown", labType: "oscp", boxType: "unknown", practiceBoxId: "" });
@@ -83,14 +85,20 @@ export default function ChecklistPage() {
           item.detail,
           phase.title,
           ...item.commands.flatMap((command) => [command.label, command.value]),
+          ...(item.pivotPlaybookSelector
+            ? [
+              ...PIVOT_PLAYBOOKS.flatMap((playbook) => [playbook.title, playbook.summary, playbook.topology, playbook.scope]),
+              ...PIVOT_STEPS.flatMap((step) => [step.title, step.purpose, step.template, step.direction, step.routeOwner]),
+            ]
+            : []),
         ].filter(Boolean).join(" ").toLowerCase();
         return haystack.includes(normalizedQuery);
       }),
     })).filter((phase) => phase.items.length > 0),
     [hideComplete, normalizedQuery, workspace.completed, methodology],
   );
-  const recommendedItem = methodology.flatMap((phase) => phase.items.map((item) => ({ ...item, phase })))
-    .find((item) => !getScopedItemValue(workspace.completed, workspace, item.id, false));
+  const recommendations = useMemo(() => rankApplicableChecks(workspace, methodology), [workspace, methodology]);
+  const recommendedItem = recommendations[0];
 
   if (!workspace.activeTargetId) {
     return (
@@ -122,7 +130,7 @@ export default function ChecklistPage() {
         <div>
           <p className="eyebrow">Execution mode</p>
           <strong>{runner.available ? "Local Kali runner connected" : "Static documentation mode"}</strong>
-          <span>{runner.available ? `Commands run under ${runner.workspaceRoot}. Successful runs save evidence and complete the check.` : "Commands cannot execute from a statically hosted browser. Paste or attach each command's result instead."}</span>
+          <span>{runner.available ? `Commands run under ${runner.workspaceRoot}. Every run saves evidence for your review; exit status never completes a check.` : "Commands cannot execute from a statically hosted browser. Paste or attach each command's result, then classify it manually."}</span>
         </div>
         {runner.available && (
           <div className="runner-tool-list" aria-label="Local tool readiness">
@@ -152,12 +160,17 @@ export default function ChecklistPage() {
         {platformPhases && <label className="toggle-field"><input type="checkbox" checked={focusMode} onChange={(event) => setFocusMode(event.target.checked)} /><span>{platformLabel(activeTarget.boxType)} focus</span></label>}
       </div>
 
-      {recommendedItem && !normalizedQuery && (
-        <a className="next-action-card" href={`#item-${recommendedItem.id}`}>
-          <span>Next smallest action</span>
-          <strong>{recommendedItem.title}</strong>
-          <small>{recommendedItem.phase.title} · finish one result, write one conclusion, then move on.</small>
-        </a>
+      {recommendations.length > 0 && !normalizedQuery && (
+        <section className="applicability-recommendations" aria-label="Deterministic applicable checks">
+          <div><span>Operator decision support</span><small>Ranked only from confirmed facts; choose a card yourself.</small></div>
+          {recommendations.map((recommendation) => (
+            <a className="next-action-card" href={`#item-${recommendation.itemId}`} key={recommendation.itemId}>
+              <span>Applicable check</span>
+              <strong>{recommendation.title}</strong>
+              <small>{recommendation.phaseTitle} · {recommendation.reason}</small>
+            </a>
+          ))}
+        </section>
       )}
 
       <EvidenceInbox />
@@ -181,7 +194,7 @@ export default function ChecklistPage() {
                     <ChecklistItem
                       key={item.id}
                       item={item}
-                      recommended={recommendedItem?.id === item.id && !normalizedQuery}
+                      recommended={recommendedItem?.itemId === item.id && !normalizedQuery}
                       searchActive={Boolean(normalizedQuery)}
                       expandedResultsKey={expandedResultsKey}
                       onExpandedResultsChange={setExpandedResultsKey}

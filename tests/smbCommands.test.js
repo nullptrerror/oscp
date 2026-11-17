@@ -23,14 +23,15 @@ test("SMB commands include all-shares and one-directory variants per identity", 
 
 test("SMB commands include the current command-context credential", () => {
   const commands = buildSmbDownloadCommands([], {
+    selectedCredentialId: "credential-active",
     domain: "active.htb",
     user: "SVC_TGS",
-    password: "GPPstillStandingStrong2k18",
+    password: "Synthetic-SMB-42!",
   });
 
   assert.equal(commands.length, 4);
   assert.match(commands[2].label, /active\.htb\\SVC_TGS/);
-  assert.match(commands[2].value, /active\.htb\/SVC_TGS%GPPstillStandingStrong2k18/);
+  assert.match(commands[2].value, /active\.htb\/SVC_TGS%Synthetic-SMB-42!/);
   assert.match(commands[2].value, /loot\/smb\/active\.htb_SVC_TGS/);
   assert.match(commands[3].value, /\{\{smbShare\}\}/);
 });
@@ -38,6 +39,7 @@ test("SMB commands include the current command-context credential", () => {
 test("SMB commands deduplicate command-context and saved credentials", () => {
   const account = { domain: "active.htb", username: "SVC_TGS", secret: "Password1!" };
   const commands = buildSmbDownloadCommands([account], {
+    selectedCredentialId: "credential-active",
     domain: account.domain,
     user: account.username,
     password: account.secret,

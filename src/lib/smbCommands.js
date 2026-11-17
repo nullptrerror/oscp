@@ -6,7 +6,7 @@ const identityFolder = (domain, username) => {
 };
 
 const downloadBody = ({ folder, listCommand, downloadCommand }) => [
-  `root="{{workspaceRoot}}/{{targetName}}/loot/smb/${folder}";`,
+  `root="{{workspaceRoot}}/{{targetSlug}}/loot/smb/${folder}";`,
   'mkdir -p "$root";',
   listCommand,
   "| awk -F'|' '$1 == \"Disk\" {print $2}'",
@@ -21,7 +21,7 @@ const downloadBody = ({ folder, listCommand, downloadCommand }) => [
 ].join(" ");
 
 const singleDirectoryBody = ({ folder, auth, guest = false }) => [
-  `root="{{workspaceRoot}}/{{targetName}}/loot/smb/${folder}/{{smbShare}}/selected";`,
+  `root="{{workspaceRoot}}/{{targetSlug}}/loot/smb/${folder}/{{smbShare}}/selected";`,
   'mkdir -p "$root";',
   '(cd "$root" &&',
   guest
@@ -54,7 +54,7 @@ export function buildSmbDownloadCommands(accounts = [], variables = {}) {
     username: variables.user,
     secret: variables.password?.trim() || variables.hash?.trim(),
   };
-  const credentialAccounts = [contextAccount, ...accounts];
+  const credentialAccounts = variables.selectedCredentialId ? [contextAccount, ...accounts] : accounts;
 
   const seen = new Set();
   for (const account of credentialAccounts) {
@@ -75,6 +75,7 @@ export function buildSmbDownloadCommands(accounts = [], variables = {}) {
     commands.push({
       key: `smb-download-${account.id ?? folder}`,
       label: `Download every readable share — ${domain ? `${domain}\\` : ""}${username}`,
+      requiresSelectedCredential: true,
       value: downloadBody({
         folder,
         listCommand: `smbclient -g -L '//{{rhost}}' -U ${credential}${hashFlag} 2>/dev/null`,
@@ -84,6 +85,7 @@ export function buildSmbDownloadCommands(accounts = [], variables = {}) {
     commands.push({
       key: `smb-download-directory-${account.id ?? folder}`,
       label: `Download one directory — ${domain ? `${domain}\\` : ""}${username}`,
+      requiresSelectedCredential: true,
       value: singleDirectoryBody({ folder, auth: `-U ${credential}${hashFlag}` }),
     });
   }
