@@ -5,6 +5,7 @@ import { buildKerberosTicketCommands, buildSpnTgsCommands } from "./kerberosComm
 import { buildUsersFileCommand } from "./userCommands.js";
 import { buildSprayCommands } from "./sprayCommands.js";
 import { buildBloodHoundCommands } from "./bloodhoundCommands.js";
+import { buildTemporaryUserCommands } from "./temporaryUserCommands.js";
 import { createCommandRecord } from "./commandContract.js";
 import { stepsForPivotPlaybook } from "../data/pivotPlaybooks.js";
 import { isNtHash } from "./credentials.js";
@@ -26,6 +27,7 @@ export function getChecklistCommands(item, workspace, selectedPivotPlaybook = "p
   if (item.id === "ad-spn-tgs") commands = [...item.commands, ...(selectedAccount ? buildSpnTgsCommands(accounts, variables) : [])];
   if (item.id === "ad-domain-writedacl") commands = selectedAccount ? buildAclCommands(variables) : [];
   if (item.id === "ad-bloodhound-paths") commands = [...item.commands, ...buildBloodHoundCommands(variables)];
+  if (item.id === "ad-temporary-user") commands = buildTemporaryUserCommands(scopedAccounts, variables);
   if (item.id === "creds-crack") commands = [...item.commands, ...buildKerberosTicketCommands(workspace)];
   if (item.id === "ad-roast") {
     const usersFile = buildUsersFileCommand(workspace);

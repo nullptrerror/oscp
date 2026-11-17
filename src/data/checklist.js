@@ -36,6 +36,9 @@ export const DEFAULT_VARIABLES = {
   selectedCredentialId: "",
   credentialType: "",
   memberUser: "",
+  temporaryUser: "",
+  temporaryPassword: "",
+  temporaryCreatorCredentialId: "",
   targetGroup: "",
   aclTarget: "",
   aclPrincipal: "",
@@ -77,7 +80,7 @@ export const VARIABLE_GROUPS = [
   { label: "Operator", keys: ["lhost", "lport", "interface", "callbackHost"] },
   { label: "Target", keys: ["targetName", "targetSlug", "rhost", "tcpPorts", "udpPorts", "selectedServiceHost", "selectedServicePort", "userFlagName", "rootFlagName"] },
   { label: "Web", keys: ["webScheme", "webPort", "vhost", "baseUrl", "webPath", "webParameter", "webValue", "sessionCookie", "uploadFile", "uploadField", "uploadedRemotePath"] },
-  { label: "Identity", keys: ["domain", "realm", "baseDn", "dc", "dcIp", "dnsServer", "user", "credentialType", "memberUser", "targetGroup", "aclTarget", "aclPrincipal", "aclRights", "dcsyncUser", "bloodhoundSource", "bloodhoundTarget", "password", "gppCpassword", "hash"] },
+  { label: "Identity", keys: ["domain", "realm", "baseDn", "dc", "dcIp", "dnsServer", "user", "credentialType", "memberUser", "temporaryUser", "temporaryPassword", "temporaryCreatorCredentialId", "targetGroup", "aclTarget", "aclPrincipal", "aclRights", "dcsyncUser", "bloodhoundSource", "bloodhoundTarget", "password", "gppCpassword", "hash"] },
   { label: "Pivot", keys: ["pivotHost", "pivotUser", "pivotInterface", "proxyPort", "subnet", "internalHost", "internalSubnet"] },
   { label: "Resources", keys: ["smbShare", "smbDirectory", "nfsExport", "gppXmlFile", "exploitQuery", "exploitId", "exploitFile", "compiledExploit", "transferFile", "hashesFile", "hashMode", "sprayPassword", "sprayJitter", "sprayRockyouLimit", "wordlist"] },
 ];
@@ -176,9 +179,12 @@ const CHECKLIST_SOURCE = [
       {
         id: "svc-smb",
         title: "SMB / RPC (139, 445)",
-        detail: "Guest access is always available as a deliberate check. Authenticated commands appear only for the one credential explicitly selected for this machine. Downloads stay in an identity-specific folder; repeated bad passwords can lock accounts.",
+        detail: "Guest and null-session checks are always shown as deliberate checks; success is never assumed. Save share, domain-user, and display-information queries separately so each result can be reviewed and imported as unverified evidence. Authenticated commands appear only for the one credential explicitly selected for this machine. Downloads stay in an identity-specific folder; repeated bad passwords can lock accounts.",
         commands: [
           { label: "Anonymous SMB", value: "nxc smb {{rhost}} -u '' -p '' --shares --users --groups" },
+          { label: "Null-session SMB share inventory", value: "mkdir -p '{{workspaceRoot}}/{{targetSlug}}/loot/rpc'; smbclient -N -L '//{{rhost}}' | tee '{{workspaceRoot}}/{{targetSlug}}/loot/rpc/smb-null-shares.txt'" },
+          { label: "Null-session RPC domain users", value: "mkdir -p '{{workspaceRoot}}/{{targetSlug}}/loot/rpc'; rpcclient -N -U '' '{{rhost}}' -c 'enumdomusers' | tee '{{workspaceRoot}}/{{targetSlug}}/loot/rpc/enumdomusers.txt'" },
+          { label: "Null-session RPC user display information", value: "mkdir -p '{{workspaceRoot}}/{{targetSlug}}/loot/rpc'; rpcclient -N -U '' '{{rhost}}' -c 'querydispinfo' | tee '{{workspaceRoot}}/{{targetSlug}}/loot/rpc/querydispinfo.txt'" },
           { label: "Authenticated SMB", value: "nxc smb {{rhost}} -u '{{user}}' -p '{{password}}' --shares --users --groups --sessions" },
           { label: "Triage all downloaded SMB loot", value: "find '{{workspaceRoot}}/{{targetSlug}}/loot/smb' -type f -printf '%s %p\\n' | sort -nr > '{{workspaceRoot}}/{{targetSlug}}/loot/smb-file-index.txt'; grep -RniI -E 'pass(word)?|passwd|pwd|secret|token|api.?key|connection.?string|cpassword|user(name)?|BEGIN (RSA |OPENSSH )?PRIVATE KEY' '{{workspaceRoot}}/{{targetSlug}}/loot/smb' | tee '{{workspaceRoot}}/{{targetSlug}}/loot/smb-credential-hits.txt'" },
         ],
@@ -198,8 +204,10 @@ const CHECKLIST_SOURCE = [
       {
         id: "svc-ldap",
         title: "LDAP / Active Directory (389, 636)",
+        detail: "Read the Root DSE first and set the confirmed domain/base DN. Then try one anonymous directory query; access denied is still useful evidence. Confirm any returned account names in Findings before they can feed Kerberos commands.",
         commands: [
           { label: "Root DSE", value: "ldapsearch -x -H ldap://{{rhost}} -s base namingContexts defaultNamingContext" },
+          { label: "Anonymous LDAP user inventory", value: "mkdir -p '{{workspaceRoot}}/{{targetSlug}}/loot/ldap'; ldapsearch -x -LLL -H ldap://{{rhost}} -b '{{baseDn}}' '(&(objectCategory=person)(objectClass=user))' sAMAccountName memberOf | tee '{{workspaceRoot}}/{{targetSlug}}/loot/ldap/anonymous-users.txt'" },
           { label: "Authenticated users", value: "ldapsearch -x -H ldap://{{rhost}} -D '{{user}}@{{domain}}' -w '{{password}}' -b '{{baseDn}}' '(objectClass=user)' sAMAccountName memberOf" },
         ],
       },
@@ -579,14 +587,18 @@ const CHECKLIST_SOURCE = [
       {
         id: "ad-bloodhound-paths",
         title: "Find shortest BloodHound attack paths",
-        detail: "Upload the collected ZIP into BloodHound, set BLOODHOUND SOURCE and BLOODHOUND TARGET to object names (for example SVC-ALFRESCO@HTB.LOCAL and DOMAIN ADMINS@HTB.LOCAL), then run one generated command. It saves a Cypher query under the target notes directory; paste that query into Explore > Cypher. Mark compromised principals as owned to use the owned-to-high-value query. Review every returned edge before choosing an abuse command.",
+        detail: "Upload the collected ZIP into BloodHound, set BLOODHOUND SOURCE and BLOODHOUND TARGET to object names (for example OPERATOR@CORP.TEST and DOMAIN ADMINS@CORP.TEST), then run one generated command. It saves a Cypher query under the target notes directory; paste that query into Explore > Cypher. Mark compromised principals as owned to use the owned-to-high-value query. Review every returned edge before choosing an abuse command.",
         commands: [],
       },
       {
         id: "ad-roast",
         title: "Check for AS-REP roastable users",
+        detail: "Build users.txt only from operator-confirmed account names. Request AS-REPs as a separate target interaction, then crack the saved material entirely offline with one chosen tool. A recovered string remains a candidate credential until the operator saves and explicitly selects it.",
         commands: [
           { label: "AS-REP tracked users into target loot", value: "users_file=\"{{workspaceRoot}}/{{targetSlug}}/loot/users.txt\"; loot=\"{{workspaceRoot}}/{{targetSlug}}/loot/kerberos/asrep\"; test -s \"$users_file\" || { echo \"[-] Build the target users file from Findings first\"; exit 1; }; mkdir -p \"$loot\"; impacket-GetNPUsers '{{domain}}/' -dc-ip {{rhost}} -usersfile \"$users_file\" -no-pass -format hashcat -outputfile \"$loot/asrep.hashes\" | tee \"$loot/enumeration.txt\"" },
+          { label: "Verify selected AS-REP cracking wordlist", value: "test -r '{{wordlist}}' && wc -l '{{wordlist}}'" },
+          { label: "Crack saved AS-REP hashes with Hashcat", value: "loot='{{workspaceRoot}}/{{targetSlug}}/loot/kerberos/asrep'; hashes=\"$loot/asrep.hashes\"; test -s \"$hashes\" || { echo \"No AS-REP hashes found at $hashes\"; exit 1; }; hashcat -m 18200 \"$hashes\" '{{wordlist}}' --session '{{targetSlug}}-asrep'; hashcat -m 18200 \"$hashes\" --show | tee \"$loot/hashcat-cracked.txt\"" },
+          { label: "Crack saved AS-REP hashes with John", value: "loot='{{workspaceRoot}}/{{targetSlug}}/loot/kerberos/asrep'; hashes=\"$loot/asrep.hashes\"; test -s \"$hashes\" || { echo \"No AS-REP hashes found at $hashes\"; exit 1; }; john --format=krb5asrep --wordlist='{{wordlist}}' \"$hashes\"; john --format=krb5asrep --show \"$hashes\" | tee \"$loot/john-cracked.txt\"" },
         ],
       },
       {
@@ -607,6 +619,12 @@ const CHECKLIST_SOURCE = [
           { label: "Verify direct group members", value: "net rpc group members '{{targetGroup}}' -S '{{rhost}}' -U '{{domain}}/{{user}}%{{password}}'" },
           { label: "Cleanup: remove selected member", value: "net rpc group delmem '{{targetGroup}}' '{{memberUser}}' -S '{{rhost}}' -U '{{domain}}/{{user}}%{{password}}'" },
         ],
+      },
+      {
+        id: "ad-temporary-user",
+        title: "Create one temporary delegated account (fallback)",
+        detail: "Use only after confirming that the selected identity may create domain users and that adding the current principal directly is unsuitable. Record the original saved credential ID in TEMPORARY CREATOR CREDENTIAL before creation; lifecycle cards use that saved record and disable themselves whenever another credential is selected. Creation, verification, later group membership, ACL work, and deletion remain separate operator actions. Save and select the temporary credential for later ACL work, but reselect the original creator before cleanup. After DACL restoration and group cleanup, delete the exact account and confirm it is absent.",
+        commands: [],
       },
       {
         id: "ad-domain-writedacl",

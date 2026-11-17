@@ -45,6 +45,7 @@ const SERVICE_FACTS = Object.freeze({
   "ad-baseline": ["directory.active-directory.confirmed"],
   "ad-enum": ["directory.active-directory.confirmed", "credential.selected-and-confirmed"],
   "ad-bloodhound-paths": ["bloodhound.collection-imported"],
+  "ad-temporary-user": ["acl.user-creation.operator-confirmed", "credential.selected-and-confirmed"],
   "ad-roast": ["directory.active-directory.confirmed", "users.operator-confirmed"],
   "ad-spn-tgs": ["directory.active-directory.confirmed", "credential.selected-and-confirmed"],
   "ad-group-membership": ["acl.group-control.operator-confirmed", "credential.selected-and-confirmed"],

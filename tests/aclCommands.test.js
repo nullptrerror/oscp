@@ -5,17 +5,17 @@ import { renderCommand } from "../src/lib/workspace.js";
 
 const variables = {
   workspaceRoot: "/home/kali/oscp",
-  targetName: "Forest",
-  rhost: "10.129.95.210",
-  domain: "htb.local",
-  baseDn: "DC=htb,DC=local",
-  user: "svc-alfresco",
-  memberUser: "svc-alfresco",
-  targetGroup: "Exchange Windows Permissions",
+  targetName: "Directory Lab",
+  rhost: "192.0.2.10",
+  domain: "corp.test",
+  baseDn: "DC=corp,DC=test",
+  user: "operator",
+  memberUser: "operator",
+  targetGroup: "Directory Delegates",
   password: "Password123!",
   hash: "8846f7eaee8fb117ad06bdd830b7586c",
-  aclTarget: "htb.local",
-  aclPrincipal: "svc-alfresco",
+  aclTarget: "corp.test",
+  aclPrincipal: "operator",
   aclRights: "DCSync",
   dcsyncUser: "Administrator",
 };
@@ -36,11 +36,11 @@ test("DCSync workflow uses direct group membership and Impacket from Kali", () =
   const retrieveAt = commands.findIndex((command) => command.key === "acl-dcsync-impacket-password");
   const cleanupAt = commands.findIndex((command) => command.key === "acl-cleanup");
 
-  assert.match(combined, /net rpc group members 'Exchange Windows Permissions'/);
-  assert.match(combined, /net rpc group addmem 'Exchange Windows Permissions' 'svc-alfresco'/);
+  assert.match(combined, /net rpc group members 'Directory Delegates'/);
+  assert.match(combined, /net rpc group addmem 'Directory Delegates' 'operator'/);
   assert.match(combined, /impacket-dacledit -action write -rights 'DCSync'/);
-  assert.match(combined, /-principal 'svc-alfresco'/);
-  assert.match(combined, /-target-dn 'DC=htb,DC=local'/);
+  assert.match(combined, /-principal 'operator'/);
+  assert.match(combined, /-target-dn 'DC=corp,DC=test'/);
   assert.match(combined, /stamp=\$\(date \+%Y%m%d-%H%M%S\)/);
   assert.match(combined, /dcsync-before-\$stamp\.bak/);
   assert.match(combined, /DACL modified successfully!/);
@@ -74,9 +74,9 @@ test("unsupported rights produce a validation command", () => {
 });
 
 test("DCSync rejects a user ACL target and directs the operator to the domain", () => {
-  const commands = renderedCommands({ aclTarget: "svc-alfresco" });
+  const commands = renderedCommands({ aclTarget: "operator" });
   assert.deepEqual(commands.map((command) => command.key), ["acl-invalid-dcsync-target"]);
-  assert.match(commands[0].value, /Set ACL TARGET to htb\.local, not svc-alfresco/);
+  assert.match(commands[0].value, /Set ACL TARGET to corp\.test, not operator/);
 });
 
 test("hash-only authentication uses Impacket hashes and Samba pw-nt-hash", () => {
@@ -85,7 +85,7 @@ test("hash-only authentication uses Impacket hashes and Samba pw-nt-hash", () =>
 
   assert.match(combined, /-hashes ':8846f7eaee8fb117ad06bdd830b7586c'/);
   assert.match(combined, /--pw-nt-hash/);
-  assert.match(combined, /htb\.local\/svc-alfresco%8846f7eaee8fb117ad06bdd830b7586c/);
+  assert.match(combined, /corp\.test\/operator%8846f7eaee8fb117ad06bdd830b7586c/);
 });
 
 test("shell-quotes passwords containing apostrophes", () => {

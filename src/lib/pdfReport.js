@@ -21,14 +21,13 @@ import {
 } from "pdf-lib";
 import { ALL_ITEMS, CHECKLIST } from "../data/checklist.js";
 import { getActiveScope, getTargetItemValue, normalizeWorkspace } from "./workspace.js";
-import { confirmedDiscoveries, discoveryContext, discoveryKey, formatDiscovery, PARSER_TAGS, visibleDiscoveries } from "./evidence.js";
+import { confirmedDiscoveries, visibleDiscoveries } from "./evidence.js";
 import { describeCommand } from "./commandInsights.js";
 import { getOperatorProfile, githubProfile, initials } from "./profile.js";
 import { TERMINAL_THEME, terminalLines } from "./terminalText.js";
 import { buildReportStarters } from "./reportStarters.js";
 
 export const WORKSPACE_ATTACHMENT = "fieldnotes-workspace.json";
-const DISCOVERY_LABELS = Object.fromEntries(PARSER_TAGS.map((entry) => [entry.type, entry.label]));
 
 const PAGE_SIZE = [595.28, 841.89];
 const [PAGE_W, PAGE_H] = PAGE_SIZE;
@@ -37,7 +36,7 @@ const RIGHT = PAGE_W - 56;
 const CONTENT_W = RIGHT - LEFT;
 const CONTENT_TOP = PAGE_H - 104;
 const CONTENT_BOTTOM = 76;
-const TERMINAL_LINE_LIMIT = 10;
+const TERMINAL_LINE_LIMIT = 6;
 const TOC_ENTRIES_PER_PAGE = 34;
 
 const PALETTE = {
@@ -117,7 +116,41 @@ const EMOJI_PRESENTATION = /\p{Emoji_Presentation}|️|\p{Regional_Indicator}|�
 const PICTOGRAPHIC = /\p{Extended_Pictographic}/u;
 const EMOJI_CLUSTER = /\p{Regional_Indicator}{2}|[#*0-9]️?⃣|\p{Extended_Pictographic}[︎️]?\p{Emoji_Modifier}?(?:‍\p{Extended_Pictographic}[︎️]?\p{Emoji_Modifier}?)*/gu;
 const INVISIBLE = /[︎️‍​]/gu;
-const SUBSTITUTES = { "㉿": "@", " ": " ", " ": " ", " ": " " };
+const SUBSTITUTES = {
+  "㉿": "@",
+  " ": " ",
+  " ": " ",
+  " ": " ",
+  "┌": "+",
+  "┐": "+",
+  "└": "+",
+  "┘": "+",
+  "├": "+",
+  "┤": "+",
+  "┬": "+",
+  "┴": "+",
+  "┼": "+",
+  "─": "-",
+  "│": "|",
+  "╔": "+",
+  "╗": "+",
+  "╚": "+",
+  "╝": "+",
+  "╠": "+",
+  "╣": "+",
+  "╦": "+",
+  "╩": "+",
+  "╬": "+",
+  "═": "=",
+  "║": "|",
+  "✓": "OK",
+  "✔": "OK",
+  "✗": "X",
+  "✘": "X",
+  "→": "->",
+  "←": "<-",
+  "…": "...",
+};
 
 function createTypesetter(families, emojiImages) {
   const widthCache = new Map();
@@ -384,14 +417,102 @@ const portList = (...values) => [...new Set(values.flatMap((value) => String(val
 const homeRelative = (path) => String(path || "").replace(/^\/home\/kali(?=\/|$)/, "~").replace(/^\/root(?=\/|$)/, "~");
 
 export const orderCommandRuns = (commands = []) => commands
-  .map((command, index) => ({ command, index }))
+  .map((command, index) => {
+    const time = Date.parse(command.startedAt || command.copiedAt || command.recordedAt || "");
+    return {
+      command,
+      index,
+      sequence: Number.isFinite(command.sequence) ? command.sequence : Number.POSITIVE_INFINITY,
+      time: Number.isNaN(time) ? Number.POSITIVE_INFINITY : time,
+    };
+  })
   .sort((left, right) => {
-    const leftTime = Date.parse(left.command.startedAt || left.command.copiedAt || "");
-    const rightTime = Date.parse(right.command.startedAt || right.command.copiedAt || "");
-    if (Number.isNaN(leftTime) || Number.isNaN(rightTime) || leftTime === rightTime) return left.index - right.index;
-    return leftTime - rightTime;
+    if (left.sequence !== right.sequence) return left.sequence - right.sequence;
+    if (left.time !== right.time) return left.time - right.time;
+    return left.index - right.index;
   })
   .map(({ command }) => command);
+
+const eventTimestamp = (value) => {
+  const time = Date.parse(value || "");
+  return Number.isNaN(time) ? null : time;
+};
+
+// Preserve the global command timeline as one contiguous authoritative stream.
+// Evidence timestamps describe artifact capture, not attack chronology, so
+// items without commands follow the command stream and are ordered only among
+// themselves by their earliest evidence timestamp and stable checklist order.
+export function orderAttackPathEvents(items = [], commands = []) {
+  const itemById = new Map(items.map((item) => [item.id, item]));
+  const orderedCommands = orderCommandRuns(commands);
+  const commandItemIds = new Set(orderedCommands.map((command) => command.itemId));
+  const events = orderedCommands.map((command) => ({
+    kind: "command",
+    command,
+    item: itemById.get(command.itemId) || null,
+  }));
+  const itemOnlyEvents = items
+    .filter((item) => !commandItemIds.has(item.id) && (item.note || item.nextStep || item.evidence?.length))
+    .map((item, index) => ({
+      kind: "item",
+      item,
+      itemIndex: index,
+      time: Math.min(...(item.evidence || []).map((evidence) => eventTimestamp(evidence.createdAt)).filter((time) => time !== null)),
+    }))
+    .map((event) => ({ ...event, time: Number.isFinite(event.time) ? event.time : null }))
+    .sort((left, right) => {
+      if (left.time === null || right.time === null) return left.time === right.time ? left.itemIndex - right.itemIndex : left.time === null ? 1 : -1;
+      return left.time - right.time || left.itemIndex - right.itemIndex;
+    });
+
+  events.push(...itemOnlyEvents);
+
+  const seenItems = new Set();
+  return events.map((event) => {
+    const itemId = event.item?.id;
+    const showItemContext = Boolean(itemId && !seenItems.has(itemId));
+    if (showItemContext) seenItems.add(itemId);
+    return { ...event, showItemContext };
+  });
+}
+
+const outputLineText = (line) => (typeof line === "string"
+  ? line
+  : (line || []).map((segment) => segment.text || "").join(""));
+
+// A raw prefix often spends the entire excerpt on banners. Keep a bounded
+// head/tail balance so both command context and the final result remain visible.
+export function selectOutputExcerpt(sourceLines = [], limit = TERMINAL_LINE_LIMIT) {
+  const lines = [...sourceLines];
+  while (lines.length > 0 && !outputLineText(lines[0]).trim()) lines.shift();
+  while (lines.length > 0 && !outputLineText(lines[lines.length - 1]).trim()) lines.pop();
+  if (lines.length <= limit) return { lines, omitted: 0, splitAt: lines.length };
+  const contentLimit = Math.max(2, limit - 1); // reserve one visual line for the omission marker
+  const headCount = Math.ceil(contentLimit / 2);
+  const tailCount = contentLimit - headCount;
+  return {
+    lines: [...lines.slice(0, headCount), ...lines.slice(-tailCount)],
+    omitted: lines.length - contentLimit,
+    splitAt: headCount,
+  };
+}
+
+export function formatKaliPromptLines(command, path, unicode = true) {
+  const blue = PALETTE.kaliBlue;
+  const commandLines = String(command || "").replace(/\r\n/g, "\n").split("\n");
+  if (!unicode) {
+    return [
+      [{ text: `(kali@kali)-[${path}]`, style: { fg: blue, bold: true } }],
+      [{ text: "$ ", style: { fg: blue, bold: true } }, { text: commandLines[0], style: {} }],
+      ...commandLines.slice(1).map((line) => [{ text: line, style: {} }]),
+    ];
+  }
+  return [
+    [{ text: "┌──(", style: { fg: blue } }, { text: "kali㉿kali", style: { fg: blue, bold: true } }, { text: ")-[", style: { fg: blue } }, { text: path, style: { fg: "#ffffff", bold: true } }, { text: "]", style: { fg: blue } }],
+    [{ text: "└─", style: { fg: blue } }, { text: "$ ", style: { fg: blue, bold: true } }, { text: commandLines[0], style: {} }],
+    ...commandLines.slice(1).map((line) => [{ text: line, style: {} }]),
+  ];
+}
 
 // ---------------------------------------------------------------------------
 // PDF annotations and navigation
@@ -467,8 +588,43 @@ function roundedRect(page, x, y, width, height, radius, options) {
 
 // ---------------------------------------------------------------------------
 
-export async function generateReportPdf(workspace, targetId, options) {
-  return (await buildReportPdf(workspace, targetId, options)).bytes;
+let bundledNodeFontsPromise = null;
+
+// Direct Node report builders do not pass through the browser-only `?url`
+// asset loader. Load the same packaged fonts from disk so CLI-generated
+// reports retain Kali's Unicode prompt glyphs without any network access.
+export async function loadBundledNodePdfFonts() {
+  if (typeof process === "undefined" || !process.versions?.node) return null;
+  bundledNodeFontsPromise ??= (async () => {
+    const fsSpecifier = "node:fs/promises";
+    const { readFile } = await import(/* @vite-ignore */ fsSpecifier);
+    const fontUrls = [
+      new URL("../../node_modules/dejavu-fonts-ttf/ttf/DejaVuSans.ttf", import.meta.url),
+      new URL("../../node_modules/dejavu-fonts-ttf/ttf/DejaVuSans-Bold.ttf", import.meta.url),
+      new URL("../../node_modules/dejavu-fonts-ttf/ttf/DejaVuSansMono.ttf", import.meta.url),
+      new URL("../../node_modules/dejavu-fonts-ttf/ttf/DejaVuSansMono-Bold.ttf", import.meta.url),
+    ];
+    const [sans, sansBold, mono, monoBold] = await Promise.all(fontUrls.map((url) => readFile(url)));
+    return { sans, sansBold, mono, monoBold };
+  })().catch((error) => {
+    bundledNodeFontsPromise = null;
+    throw error;
+  });
+  return bundledNodeFontsPromise;
+}
+
+export async function generateReportPdf(workspace, targetId, options = {}) {
+  let fonts = options.fonts;
+  if (!fonts) {
+    try {
+      fonts = await loadBundledNodePdfFonts();
+    } catch {
+      // Standard PDF fonts and explicit ASCII substitutions remain a safe
+      // fallback when the optional packaged font files cannot be read.
+      fonts = null;
+    }
+  }
+  return (await buildReportPdf(workspace, targetId, { ...options, fonts })).bytes;
 }
 
 async function buildReportPdf(workspace, targetId, { fonts: fontBytes, rasterizeEmoji } = {}) {
@@ -748,36 +904,25 @@ async function buildReportPdf(workspace, targetId, { fonts: fontBytes, rasterize
   };
 
   const kaliPrompt = (command) => {
-    const blue = PALETTE.kaliBlue;
     const path = homeRelative(`${workspace.variables.workspaceRoot}/${data.target?.slug || workspace.variables.targetSlug || targetName}`);
-    const commandLines = String(command || "").replace(/\r\n/g, "\n").split("\n");
-    return [
-      [{ text: "┌──(", style: { fg: blue } }, { text: "kali㉿kali", style: { fg: blue, bold: true } }, { text: ")-[", style: { fg: blue } }, { text: path, style: { fg: "#ffffff", bold: true } }, { text: "]", style: { fg: blue } }],
-      [{ text: "└─", style: { fg: blue } }, { text: "$ ", style: { fg: blue, bold: true } }, { text: commandLines[0], style: {} }],
-      ...commandLines.slice(1).map((line) => [{ text: line, style: {} }]),
-    ];
+    return formatKaliPromptLines(command, path, families.unicode);
   };
 
   const outputBlock = (evidence, attachmentName) => {
-    const lines = terminalLines(evidence.content);
-    while (lines.length > 1 && lines[lines.length - 1].length === 0) lines.pop();
-    const omitted = Math.max(0, lines.length - TERMINAL_LINE_LIMIT);
+    const excerpt = selectOutputExcerpt(terminalLines(evidence.content));
+    const lines = [...excerpt.lines];
+    if (excerpt.omitted > 0) {
+      const attachment = attachmentName ? ` Full output: ${attachmentName}.` : " Full output is attached.";
+      lines.splice(excerpt.splitAt, 0, [{
+        text: `… ${excerpt.omitted} middle line${excerpt.omitted === 1 ? "" : "s"} omitted.${attachment}`,
+        style: { fg: TERMINAL_THEME.muted },
+      }]);
+    }
     terminal({
       title: evidence.label || evidence.filename || "Command output",
       meta: [evidence.commandResultState?.replace(/-/g, " "), formatBytes(evidence.size), formatTimestamp(evidence.createdAt)].filter(Boolean).join(" · "),
-      lines: lines.slice(0, TERMINAL_LINE_LIMIT),
-      omitted,
-      omittedNote: omitted ? `… ${omitted} more line${omitted === 1 ? "" : "s"} omitted. Full output is attached to this PDF${attachmentName ? ` as ${attachmentName}` : ""}.` : "",
+      lines,
     });
-  };
-
-  const parsedFindingsBlock = (discoveries = []) => {
-    if (discoveries.length === 0) return;
-    eyebrow(`Parser candidates · ${discoveries.length}`);
-    table(
-      [{ label: "Type", width: 0.18, bold: true }, { label: "Value", width: 0.42, mono: true }, { label: "Status", width: 0.16, bold: true }, { label: "Context", width: 0.24 }],
-      discoveries.map((entry) => [DISCOVERY_LABELS[entry.type] || entry.type.replace(/-/g, " "), entry.value, entry.status === "confirmed" ? "Confirmed" : "Unverified", discoveryContext(entry)]),
-    );
   };
 
   const loadFigure = async (dataUrl, mimeType) => {
@@ -903,21 +1048,22 @@ async function buildReportPdf(workspace, targetId, { fonts: fontBytes, rasterize
   );
   const ports = data.discoveries.filter((entry) => entry.type === "port")
     .sort((a, b) => (a.protocol || "").localeCompare(b.protocol || "") || Number(a.value) - Number(b.value));
-  eyebrow("Open ports");
-  table(
-    [{ label: "Port", width: 0.14, mono: true, bold: true }, { label: "Protocol", width: 0.14, mono: true }, { label: "State", width: 0.2, mono: true, color: PALETTE.accent }, { label: "Service", width: 0.26, mono: true }, { label: "Endpoint", width: 0.26, mono: true }],
-    ports.map((entry) => [entry.value, (entry.protocol || "").toUpperCase(), entry.state || "open", entry.service, entry.address]),
-    { empty: "No ports were parsed from scan output." },
-  );
+  eyebrow("Confirmed services", { keep: 30 });
+  if (ports.length > 0) {
+    const services = ports.map((entry) => `${entry.value}/${entry.protocol || "tcp"}${entry.service ? ` ${entry.service}` : ""}`).join(" · ");
+    paragraph(mono(services, { size: 8.1, color: PALETTE.ink }), { lineHeight: 12, after: 9 });
+  } else {
+    paragraph(span("No ports were parsed from scan output.", { size: 8.8, color: PALETTE.muted }), { after: 9 });
+  }
   const otherDiscoveries = data.discoveries.filter((entry) => entry.type !== "port");
   if (otherDiscoveries.length) {
-    eyebrow("Other parsed discoveries");
     const groups = new Map();
     for (const entry of otherDiscoveries) groups.set(entry.type, [...(groups.get(entry.type) || []), entry]);
-    table(
-      [{ label: "Type", width: 0.2, bold: true }, { label: "Values", width: 0.8, mono: true }],
-      [...groups].map(([type, entries]) => [type.replace(/-/g, " "), entries.map((entry) => formatDiscovery(entry).replace(/^[^:]+:\s*/, "")).join(", ")]),
-    );
+    eyebrow("Other confirmed facts", { keep: 30 });
+    const summary = [...groups]
+      .map(([type, entries]) => `${entries.length} ${type.replace(/-/g, " ")}${entries.length === 1 ? "" : "s"}`)
+      .join(" · ");
+    paragraph(span(`${summary}. Exact values remain in the attack path and embedded workspace.`, { size: 8.8, color: PALETTE.muted }), { after: 8 });
   }
 
   // Proof is intentionally near the front so access and screenshots are clear
@@ -934,63 +1080,85 @@ async function buildReportPdf(workspace, targetId, { fonts: fontBytes, rasterize
     entries.forEach((entry, index) => figure(figures[index], `${title} - ${entry.label}`));
   }
 
-  // ---- 4. Attack narrative ----------------------------------------------
-  section("Attack Narrative", { startPage: false });
-  paragraph(span("This section explains the assessment as a chain of decisions: what was being tested, what the evidence established, and why that result justified the next action. Exact commands and short console excerpts are retained in the appendix for reproducibility.", { size: 9.4, color: PALETTE.muted }), { after: 12 });
+  // ---- 4. Reproducible attack path ---------------------------------------
+  // Narrative, commands, and short output excerpts are deliberately kept in
+  // one chronological section. The earlier report rendered the same activity
+  // again in a command appendix, which made a single-machine report needlessly
+  // long without adding evidence.
+  section("Attack Path", { startPage: false });
+  paragraph(span(`Each step records the operator conclusion, exact command, timestamp, target scope, and a bounded head/tail output excerpt. Complete console logs remain embedded as PDF attachments.`, { size: 9.4, color: PALETTE.muted }), { after: 12 });
   const orderedCommands = orderCommandRuns(data.commandHistory);
-  const firstCommandIndex = new Map();
-  orderedCommands.forEach((command, index) => { if (!firstCommandIndex.has(command.itemId)) firstCommandIndex.set(command.itemId, index); });
-  const narrativeItems = data.items
-    .filter((item) => item.note || item.nextStep || item.evidence.some((evidence) => evidence.dataUrl && !PROOF_CATEGORIES.has(evidence.category)))
-    .sort((left, right) => (firstCommandIndex.get(left.id) ?? Number.MAX_SAFE_INTEGER) - (firstCommandIndex.get(right.id) ?? Number.MAX_SAFE_INTEGER));
-  if (narrativeItems.length === 0) callout("Narrative incomplete", "Recorded activity is preserved in the appendix, but no readable attack narrative has been written. Complete the two narrative prompts on the checklist before submission.", { fg: PALETTE.warn, bg: PALETTE.warnSoft });
+  const terminalEvidence = data.items.flatMap((item) => item.evidence).filter((evidence) => evidence.commandRunId);
+  const attackEvents = orderAttackPathEvents(data.items, orderedCommands);
+  if (attackEvents.length === 0) callout("Attack path incomplete", "No operator-confirmed narrative or terminal activity was recorded for this target.", { fg: PALETTE.warn, bg: PALETTE.warnSoft });
   const phaseNumbers = new Map(CHECKLIST.map((phase) => [phase.id, phase.number]));
+  const cleanNarrative = (value) => String(value || "").replace(/^(?:Draft|Attempt|Result):\s*/, "").trim();
   let currentPhase = null;
-  for (const item of narrativeItems) {
-    if (item.phaseId !== currentPhase) {
-      currentPhase = item.phaseId;
-      space(4);
-      eyebrow(`Phase ${phaseNumbers.get(item.phaseId) || ""} — ${item.phaseTitle}`, { keep: 140 });
+  let commandNumber = 0;
+  for (const event of attackEvents) {
+    const item = event.item;
+    const itemFinding = cleanNarrative(item?.note);
+    const itemDecision = cleanNarrative(item?.nextStep);
+    if (event.showItemContext && item) {
+      if (item.phaseId !== currentPhase) {
+        currentPhase = item.phaseId;
+        space(4);
+        eyebrow(`Phase ${phaseNumbers.get(item.phaseId) || ""} — ${item.phaseTitle}`, { keep: 120 });
+      }
+      subheading(item.title, { keep: 90 });
+      paragraph([span("Operator result  ", { size: 8, bold: true, color: PALETTE.muted }), span(item.resultState.replace(/-/g, " "), { size: 8.6, bold: true, color: item.completed ? PALETTE.accent : PALETTE.warn })], { after: 6 });
+      if (itemFinding) paragraph([span("Finding  ", { size: 8, bold: true, color: PALETTE.ink }), span(itemFinding, { size: 8.8, color: PALETTE.body })], { lineHeight: 13, after: 5 });
+      if (itemDecision) paragraph([span("Decision  ", { size: 8, bold: true, color: PALETTE.accent }), span(itemDecision, { size: 8.8, color: PALETTE.body })], { lineHeight: 13, after: 7 });
     }
-    subheading(item.title);
-    paragraph([span("Operator result  ", { size: 8, bold: true, color: PALETTE.muted }), span(item.resultState.replace(/-/g, " "), { size: 8.6, bold: true, color: item.completed ? PALETTE.accent : PALETTE.warn })], { after: 7 });
-    const commands = data.commandHistory.filter((command) => command.itemId === item.id);
-    const objective = item.detail || (commands[0] ? describeCommand(commands[0].command, commands[0].label).purpose : "Review the available evidence for this stage of the assessment.");
-    paragraph([span("Objective  ", { size: 8, bold: true, color: PALETTE.muted }), span(objective, { size: 9, color: PALETTE.body })], { lineHeight: 13, after: 8 });
-    if (item.note) callout(item.note.startsWith("Attempt:") ? "What was tested" : "What the evidence established", item.note.replace(/^(?:Draft|Attempt|Result):\s*/, ""), { fg: PALETTE.ink, bg: PALETTE.tint });
-    else callout("Narrative needed", "Explain the useful fact established by this step in plain language. Do not repeat the command.", { fg: PALETTE.warn, bg: PALETTE.warnSoft });
-    if (item.nextStep) callout(item.nextStep.startsWith("Attempt:") ? "Deterministic next-action rule" : "Why the next action followed", item.nextStep.replace(/^(?:Draft|Attempt|Result):\s*/, ""), { fg: PALETTE.accent, bg: PALETTE.accentSoft });
-    else callout("Decision needed", "Explain how the result narrowed the attack path or justified the next test.", { fg: PALETTE.warn, bg: PALETTE.warnSoft });
-    const itemDiscoveries = [...new Map(item.evidence.flatMap((evidence) => evidence.discoveries || []).map((entry) => [discoveryKey(entry), entry])).values()];
-    parsedFindingsBlock(itemDiscoveries);
-    for (const evidence of item.evidence) {
-      if (evidence.dataUrl && PROOF_CATEGORIES.has(evidence.category)) {
-        paragraph([span("Proof screenshot  ", { size: 8.6, bold: true, color: PALETTE.accent }), span(`${evidence.label} — shown under Proof of Compromise.`, { size: 8.6, color: PALETTE.muted })], { after: 8 });
-      } else if (evidence.dataUrl) {
-        figure(await loadFigure(evidence.dataUrl, evidence.mimeType), `${item.title} — ${evidence.label}`);
+
+    if (event.kind === "command") {
+      const { command } = event;
+      commandNumber += 1;
+      const insight = describeCommand(command.command, command.label);
+      ensure(96);
+      paragraph([
+        mono(`STEP ${String(commandNumber).padStart(2, "0")}  `, { size: 7.4, bold: true, color: PALETTE.accent }),
+        span(command.label || "Command", { size: 10.2, bold: true, color: PALETTE.ink }),
+      ], { lineHeight: 15, after: 4 });
+      if (!itemFinding) paragraph(span(insight.purpose, { size: 8.4, color: PALETTE.body }), { lineHeight: 12, after: 5 });
+      const commandFinding = cleanNarrative(command.established);
+      const commandDecision = cleanNarrative(command.nextAction);
+      if (commandFinding && commandFinding !== itemFinding) paragraph([span("Result  ", { size: 7.8, bold: true, color: PALETTE.accent }), span(commandFinding, { size: 8.2, color: PALETTE.body })], { lineHeight: 12, after: 4 });
+      if (commandDecision && commandDecision !== itemDecision) paragraph([span("Next  ", { size: 7.8, bold: true, color: PALETTE.accent }), span(commandDecision, { size: 8.2, color: PALETTE.body })], { lineHeight: 12, after: 5 });
+      if (command.commandResultState) paragraph([span("Command result  ", { size: 7.6, bold: true, color: PALETTE.muted }), span(command.commandResultState.replace(/-/g, " "), { size: 8, bold: true, color: command.commandResultState === "needs-review" ? PALETTE.warn : PALETTE.accent })], { lineHeight: 11, after: 4 });
+      terminal({
+        title: command.label || "Command",
+        meta: [command.address, formatTimestamp(command.startedAt || command.copiedAt || command.recordedAt)].filter(Boolean).join(" · "),
+        lines: kaliPrompt(command.command),
+      });
+      const results = terminalEvidence.filter((candidate) => candidate.commandRunId === command.id);
+      if (results.length === 0) paragraph(span("No captured console result was linked to this run.", { size: 8, color: PALETTE.warn }), { after: 7 });
+      for (const evidence of results) if (evidence.content) outputBlock(evidence, attachmentNames.get(evidence));
+    }
+
+    if (event.showItemContext && item) {
+      for (const evidence of item.evidence) {
+        if (evidence.dataUrl && PROOF_CATEGORIES.has(evidence.category)) {
+          paragraph([span("Proof  ", { size: 8, bold: true, color: PALETTE.accent }), span(`${evidence.label} — shown under Proof of Compromise.`, { size: 8.2, color: PALETTE.muted })], { after: 6 });
+        } else if (evidence.dataUrl) {
+          figure(await loadFigure(evidence.dataUrl, evidence.mimeType), `${item.title} — ${evidence.label}`);
+        } else if (evidence.content && !evidence.commandRunId) {
+          outputBlock(evidence, attachmentNames.get(evidence));
+        }
       }
     }
-    space(14);
+    space(event.kind === "command" ? 5 : 8);
   }
 
-  section("Technical Inventory", { startPage: false });
-  eyebrow("Credentials obtained");
+  // ---- 5. Credentials and artifacts -------------------------------------
+  section("Credentials and Artifacts", { startPage: false });
+  eyebrow("Credentials used in the attack path");
   table(
     [{ label: "Account", width: 0.34, mono: true, bold: true }, { label: "Secret", width: 0.42, mono: true }, { label: "Status", width: 0.24 }],
     data.accounts.map((account) => [`${account.domain ? `${account.domain}\\` : ""}${account.username}`, account.secret, account.status || "credential"]),
     { empty: "No credentials were saved for this machine." },
   );
-  eyebrow("Tracked users");
-  table(
-    [{ label: "User", width: 0.5, mono: true, bold: true }, { label: "Source", width: 0.5 }],
-    data.users.map((user) => [`${user.domain ? `${user.domain}\\` : ""}${user.username}`, user.source]),
-    { empty: "No standalone usernames were saved." },
-  );
-
-  // ---- 6. Recommendations ------------------------------------------------
-  section("Conclusion and Recommendations", { startPage: false });
-  prose(data.report.recommendations || "Record the remediation actions that would prevent the attack path and reduce the impact of credential reuse or excessive privilege.", { color: data.report.recommendations ? PALETTE.body : PALETTE.faint });
-  space(8);
+  paragraph(span(`${data.users.length} additional username${data.users.length === 1 ? " was" : "s were"} retained in the embedded workspace rather than expanded here.`, { size: 8.8, color: PALETTE.muted }), { after: 10 });
   eyebrow("Loot and proof inventory");
   table(
     [{ label: "Item", width: 0.28, bold: true }, { label: "Location", width: 0.34, mono: true }, { label: "Value", width: 0.38, mono: true }],
@@ -998,37 +1166,9 @@ async function buildReportPdf(workspace, targetId, { fonts: fontBytes, rasterize
     { empty: "No loot records were saved." },
   );
 
-  // ---- Appendix: concise command evidence --------------------------------
-  section("Appendix — Commands and Evidence", { startPage: true });
-  paragraph(span(`Commands are listed in execution order. Console output is limited to ${TERMINAL_LINE_LIMIT} lines per result to keep the report readable; complete logs remain embedded as PDF attachments.`, { size: 9.4, color: PALETTE.muted }), { after: 12 });
-  const terminalEvidence = data.items.flatMap((item) => item.evidence).filter((evidence) => evidence.commandRunId);
-  if (orderedCommands.length === 0) callout("No terminal runs", "No commands were launched through the local runner for this target.", { fg: PALETTE.warn, bg: PALETTE.warnSoft });
-  for (const [commandIndex, command] of orderedCommands.entries()) {
-    const item = data.items.find((candidate) => candidate.id === command.itemId);
-    const insight = describeCommand(command.command, command.label);
-    subheading(`${commandIndex + 1}. ${command.label || "Command"}`);
-    paragraph([
-      span(`${item?.title || "Checklist command"}  ·  `, { size: 8, bold: true, color: PALETTE.muted }),
-      span(insight.purpose, { size: 8.4, color: PALETTE.body }),
-    ], { lineHeight: 12, after: 7 });
-    if (command.commandResultState) paragraph([span("Command result  ", { size: 7.8, bold: true, color: PALETTE.muted }), span(command.commandResultState.replace(/-/g, " "), { size: 8.2, bold: true, color: command.commandResultState === "needs-review" ? PALETTE.warn : PALETTE.accent })], { lineHeight: 12, after: 5 });
-    paragraph([span("Expected return  ", { size: 7.8, bold: true, color: PALETTE.muted }), span(insight.returns, { size: 8.2, color: PALETTE.body })], { lineHeight: 12, after: 6 });
-    if (command.established) paragraph([span("Established  ", { size: 7.8, bold: true, color: PALETTE.accent }), span(command.established.replace(/^(?:Draft|Attempt|Result):\s*/, ""), { size: 8.2, color: PALETTE.body })], { lineHeight: 12, after: 5 });
-    if (command.nextAction) paragraph([span("Decision  ", { size: 7.8, bold: true, color: PALETTE.accent }), span(command.nextAction.replace(/^(?:Draft|Attempt|Result):\s*/, ""), { size: 8.2, color: PALETTE.body })], { lineHeight: 12, after: 7 });
-    terminal({
-      title: command.label || "Command",
-      meta: [command.address, formatTimestamp(command.startedAt || command.copiedAt)].filter(Boolean).join(" · "),
-      lines: kaliPrompt(command.command),
-    });
-    const results = terminalEvidence.filter((candidate) => candidate.commandRunId === command.id);
-    if (results.length === 0) paragraph(span("No captured console result was linked to this run.", { size: 8, color: PALETTE.warn }), { after: 9 });
-    for (const evidence of results) if (evidence.content) outputBlock(evidence, attachmentNames.get(evidence));
-  }
-  const additionalOutputs = data.items.flatMap((item) => item.evidence).filter((evidence) => evidence.content && !evidence.commandRunId);
-  if (additionalOutputs.length > 0) {
-    subheading("Additional pasted or attached output");
-    for (const evidence of additionalOutputs) outputBlock(evidence, attachmentNames.get(evidence));
-  }
+  // ---- 6. Recommendations ------------------------------------------------
+  section("Conclusion and Recommendations", { startPage: false });
+  prose(data.report.recommendations || "Record the remediation actions that would prevent the attack path and reduce the impact of credential reuse or excessive privilege.", { color: data.report.recommendations ? PALETTE.body : PALETTE.faint });
 
   // ---- Appendix: embedded files ------------------------------------------
   section("Appendix — Embedded Files", { startPage: data.loot.length > 6 });

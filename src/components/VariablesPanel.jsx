@@ -44,6 +44,9 @@ const LABELS = {
   selectedCredentialId: "Selected credential ID",
   credentialType: "Credential type",
   memberUser: "Member user",
+  temporaryUser: "Temporary user",
+  temporaryPassword: "Temporary password",
+  temporaryCreatorCredentialId: "Temporary creator credential ID",
   targetGroup: "Target group",
   aclTarget: "ACL target",
   aclPrincipal: "ACL principal",
@@ -105,6 +108,7 @@ export default function VariablesPanel() {
       ...activeAccounts.map((entry) => entry.username),
       ...activeDiscoveries.filter((entry) => entry.type === "user").map((entry) => entry.value),
     ]),
+    temporaryCreatorCredentialId: unique(activeAccounts.map((entry) => entry.id)),
     targetGroup: unique(activeDiscoveries.filter((entry) => entry.type === "group").map((entry) => entry.value)),
     aclTarget: unique([
       workspace.variables.domain,
@@ -224,7 +228,7 @@ export default function VariablesPanel() {
             <label key={key}>
               <span>{LABELS[key]}</span>
               <input
-                type={["password", "hash", "sessionCookie", "gppCpassword", "sprayPassword"].includes(key) && !showSecrets ? "password" : "text"}
+                type={["password", "hash", "temporaryPassword", "sessionCookie", "gppCpassword", "sprayPassword"].includes(key) && !showSecrets ? "password" : "text"}
                 list={suggestions[key]?.length ? `suggestions-${key}` : undefined}
                 value={workspace.variables[key] ?? ""}
                 onChange={(event) => actions.updateVariables({ [key]: event.target.value })}

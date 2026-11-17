@@ -153,7 +153,7 @@ export function parseEvidence(content = "", filename = "", { userFlagName = "loc
     if (explicit && !/STATUS_LOGON_FAILURE|STATUS_ACCOUNT_LOCKED_OUT/i.test(line)) {
       add("credential", `${explicit[1]}\\${explicit[2]}:${explicit[3]}`, { domain: explicit[1], username: explicit[2], secret: explicit[3], source: filename || "command output" });
     }
-    const user = line.match(/^\s*(?:user(?:name)?|samaccountname)\s*[:=]\s*([^\s,;]+)/i);
+    const user = line.match(/^\s*(?:user(?:name)?|samaccountname)\s*[:=]\s*\[?([^\]\s,;]+)\]?/i);
     if (user) {
       const principal = user[1].match(/^([^\\]+)\\(.+)$/);
       if (principal && !principal[2].endsWith("$")) add("user", principal[2], { domain: principal[1] });
@@ -165,6 +165,10 @@ export function parseEvidence(content = "", filename = "", { userFlagName = "loc
     }
     const nxcUser = line.match(/^(?:SMB|LDAP)\s+(?:\d{1,3}\.){3}\d{1,3}\s+\d+\s+\S+\s+([A-Za-z0-9._$-]+)\s+(?:\d{4}-\d{2}-\d{2}|badpwdcount\b)/i);
     if (nxcUser && !nxcUser[1].endsWith("$")) add("user", nxcUser[1]);
+    const rpcUser = line.match(/\buser:\[([^\]\r\n]+)\]\s+rid:\[[^\]]+\]/i);
+    if (rpcUser && !rpcUser[1].endsWith("$")) add("user", rpcUser[1]);
+    const rpcDisplayUser = line.match(/^\s*index:\s*0x[0-9a-f]+\s+RID:\s*0x[0-9a-f]+\s+acb:\s*0x[0-9a-f]+\s+Account:\s*([^\s]+)\s+Name:/i);
+    if (rpcDisplayUser && !rpcDisplayUser[1].endsWith("$")) add("user", rpcDisplayUser[1]);
     const group = line.match(/^\s*(?:group|memberof)\s*[:=]\s*(.+)$/i);
     if (group) add("group", group[1]);
   }

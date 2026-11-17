@@ -58,24 +58,24 @@ test("SPN TGS commands require a complete domain credential", () => {
 test("parsed Kerberos tickets generate per-user hashes.txt, Hashcat, and John commands", () => {
   const workspace = createDefaultWorkspace();
   workspace.activeTargetId = "active";
-  workspace.variables.targetName = "forest";
-  workspace.variables.domain = "htb.local";
+  workspace.variables.targetName = "directory-lab";
+  workspace.variables.domain = "corp.test";
   workspace.discoveries = [{
     targetId: "active",
     type: "kerberos-ticket",
     status: "confirmed",
     username: "svc-sql",
-    domain: "HTB.LOCAL",
+    domain: "CORP.TEST",
     ticket: "TGS",
-    value: "$krb5tgs$23$*svc-sql$HTB.LOCAL$MSSQLSvc/sql.htb.local*$abc$def",
+    value: "$krb5tgs$23$*svc-sql$CORP.TEST$MSSQLSvc/sql.corp.test*$abc$def",
   }];
 
   const commands = buildKerberosTicketCommands(workspace);
   assert.equal(commands.length, 3);
-  assert.match(commands[0].value, /tickets\/HTB\.LOCAL_svc-sql_tgs_etype23\/hashes\.txt/);
-  assert.match(commands[0].value, /\$krb5tgs\$23\$\*svc-sql\$HTB\.LOCAL/);
+  assert.match(commands[0].value, /tickets\/CORP\.TEST_svc-sql_tgs_etype23\/hashes\.txt/);
+  assert.match(commands[0].value, /\$krb5tgs\$23\$\*svc-sql\$CORP\.TEST/);
   assert.match(commands[1].value, /hashcat -m 13100/);
-  assert.match(commands[1].value, /forest-HTB\.LOCAL_svc-sql_tgs_etype23-23/);
+  assert.match(commands[1].value, /directory-lab-CORP\.TEST_svc-sql_tgs_etype23-23/);
   assert.match(commands[2].value, /john --format=krb5tgs/);
 });
 

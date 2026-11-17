@@ -68,6 +68,19 @@ active.htb\\alice`;
   assert.deepEqual(users, ["SVC_TGS", "Administrator", "alice"]);
 });
 
+test("null RPC enumeration yields reviewable user candidates", () => {
+  const output = `user:[Administrator] rid:[0x1f4]
+user:[svc-backup] rid:[0x47a]
+user:[DC01$] rid:[0x3e8]
+Account: injected Name: Not an rpcclient record
+index: 0x10f5 RID: 0x479 acb: 0x00000010 Account: svc-web Name: Web Service Desc: service account`;
+  const users = parseEvidence(output, "rpc-null-users.txt")
+    .filter((entry) => entry.type === "user")
+    .map((entry) => entry.value);
+
+  assert.deepEqual(users, ["Administrator", "svc-backup", "svc-web"]);
+});
+
 test("negative and errored Nmap script results do not become CVE findings", () => {
   const output = `Host script results:
 |_smb-vuln-ms10-054: false

@@ -19,7 +19,7 @@ export const MACHINE_VARIABLE_KEYS = [
   "selectedServiceHost", "selectedServicePort", "webScheme", "webPort", "vhost", "baseUrl",
   "webPath", "webParameter", "webValue", "sessionCookie", "uploadFile", "uploadField", "uploadedRemotePath",
   "subnet", "domain", "realm", "baseDn", "dc", "dcIp", "dnsServer",
-  "user", "selectedCredentialId", "credentialType", "memberUser", "targetGroup", "aclTarget", "aclPrincipal", "aclRights", "dcsyncUser", "bloodhoundSource", "bloodhoundTarget", "password", "gppCpassword", "hash",
+  "user", "selectedCredentialId", "credentialType", "memberUser", "temporaryUser", "temporaryPassword", "temporaryCreatorCredentialId", "targetGroup", "aclTarget", "aclPrincipal", "aclRights", "dcsyncUser", "bloodhoundSource", "bloodhoundTarget", "password", "gppCpassword", "hash",
   "smbShare", "smbDirectory", "nfsExport", "gppXmlFile", "exploitQuery", "exploitId", "exploitFile", "compiledExploit", "transferFile", "hashesFile", "hashMode",
   "pivotHost", "pivotUser", "pivotInterface", "proxyPort", "internalHost", "internalSubnet", "callbackHost",
   "sprayPassword", "sprayJitter", "sprayRockyouLimit", "userFlagName", "rootFlagName",

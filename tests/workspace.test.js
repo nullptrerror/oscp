@@ -253,6 +253,9 @@ test("LDAP group-control selections remain machine scoped", () => {
   const variables = pickMachineVariables({
     targetGroup: "Account Operators",
     memberUser: "svc_alfresco",
+    temporaryUser: "fieldnotes-temp",
+    temporaryPassword: "Synthetic-Temporary-42!",
+    temporaryCreatorCredentialId: "creator-id",
     aclTarget: "Account Operators",
     aclPrincipal: "svc_alfresco",
     aclRights: "WriteMembers",
@@ -261,6 +264,9 @@ test("LDAP group-control selections remain machine scoped", () => {
   });
   assert.equal(variables.targetGroup, "Account Operators");
   assert.equal(variables.memberUser, "svc_alfresco");
+  assert.equal(variables.temporaryUser, "fieldnotes-temp");
+  assert.equal(variables.temporaryPassword, "Synthetic-Temporary-42!");
+  assert.equal(variables.temporaryCreatorCredentialId, "creator-id");
   assert.equal(variables.aclTarget, "Account Operators");
   assert.equal(variables.aclPrincipal, "svc_alfresco");
   assert.equal(variables.aclRights, "WriteMembers");

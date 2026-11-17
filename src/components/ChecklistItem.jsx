@@ -149,7 +149,7 @@ export default function ChecklistItem({ item, searchActive = false, recommended 
           <div className="operator-notes narrative-prompts">
             <div className="narrative-prompt-head">
               <span>Report narrative</span>
-              <small>Explain the reasoning; the PDF keeps raw commands in an appendix.</small>
+              <small>Explain the reasoning; the PDF pairs it with each exact command in one compact attack path.</small>
             </div>
             <label htmlFor={`note-${item.id}`}>
               <span>What this established</span>

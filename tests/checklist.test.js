@@ -25,7 +25,7 @@ test("every command placeholder has an editable default variable", () => {
 });
 
 test("each checklist item includes static commands or a tested dynamic builder", () => {
-  const generatedItems = new Set(["ad-domain-writedacl", "ad-bloodhound-paths", "pivot-playbook"]);
+  const generatedItems = new Set(["ad-domain-writedacl", "ad-bloodhound-paths", "ad-temporary-user", "pivot-playbook"]);
   assert.deepEqual(ALL_ITEMS.filter((item) => item.commands.length === 0 && !generatedItems.has(item.id)), []);
 });
 
