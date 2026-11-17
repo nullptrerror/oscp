@@ -1,37 +1,72 @@
-import { lazy, Suspense, useCallback, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { useLocalRunner } from "../context/LocalRunnerContext";
+import { useTerminalWorkspace } from "../context/TerminalWorkspaceContext";
 import { fileToEvidence } from "../lib/evidence";
-import { createId } from "../lib/workspace";
+import { isInterruptInstruction, normalizeTerminalContext } from "../lib/terminalWorkspace";
 import EvidenceList from "./EvidenceList";
-
-const CommandTerminal = lazy(() => import("./CommandTerminal"));
 
 const MAX_RESULT_SIZE = 1024 * 1024;
 
-export default function CommandResultPanel({ itemId, commandKey, commandLabel, commandText, missing, runnable = true, disabledReason = "", localRunnerAllowed = true, runsOn = "lhost", entries, expanded, onExpandedChange }) {
+export default function CommandResultPanel({
+  itemId,
+  commandKey,
+  commandLabel,
+  commandText,
+  missing,
+  runnable = true,
+  disabledReason = "",
+  runsOn = "lhost",
+  terminal = "",
+  targetId,
+  targetName,
+  entries,
+  expanded,
+  onExpandedChange,
+}) {
   const { workspace, actions } = useWorkspace();
   const runner = useLocalRunner();
+  const terminalWorkspace = useTerminalWorkspace();
   const [result, setResult] = useState("");
   const [error, setError] = useState("");
-  const [terminalOpen, setTerminalOpen] = useState(false);
-  const activeRunId = useRef(null);
-  const recordedRunId = useRef(null);
+  const [selectedSessionId, setSelectedSessionId] = useState("");
   const resultBytes = useMemo(() => new Blob([result]).size, [result]);
-  const activeTarget = workspace.targets.find((target) => target.id === workspace.activeTargetId);
+  const activeTarget = workspace.targets.find((target) => target.id === targetId);
+  const activeEndpoint = activeTarget?.endpoints?.find((endpoint) => endpoint.id === activeTarget.activeEndpointId)
+    || activeTarget?.endpoints?.[0];
+  useEffect(() => {
+    setResult("");
+    setError("");
+    setSelectedSessionId("");
+  }, [targetId, activeEndpoint?.id, activeEndpoint?.address, commandKey, commandLabel, commandText]);
   const flagNames = useMemo(() => ({ user: activeTarget?.userFlagName, root: activeTarget?.rootFlagName }), [activeTarget?.rootFlagName, activeTarget?.userFlagName]);
-  const cwd = `${String(workspace.variables.workspaceRoot || "/home/kali/oscp").replace(/\/$/, "")}/${workspace.variables.targetSlug || "unassigned"}`;
+  const cwd = `${String(workspace.variables.workspaceRoot || "/home/kali/oscp").replace(/\/$/, "")}/${activeTarget?.slug || "unassigned"}`;
+  const requiredContext = normalizeTerminalContext(runsOn, terminal);
+  const opensNewSession = runsOn === "lhost" && !terminal;
+  const compatible = terminalWorkspace.compatibleSessions({
+    targetId,
+    runsOn,
+    terminal,
+    command: commandText,
+    endpointId: activeEndpoint?.id || null,
+    address: activeEndpoint?.address || activeTarget?.host || "",
+  });
+  const requiresExplicitSession = compatible.length > 1 || isInterruptInstruction(commandText);
+  const effectiveSessionId = compatible.some((session) => session.id === selectedSessionId)
+    ? selectedSessionId
+    : (!requiresExplicitSession && compatible.length === 1 ? compatible[0].id : "");
 
   const metadata = {
     commandKey,
     commandLabel,
     commandText,
+    endpointId: activeEndpoint?.id || null,
+    address: activeEndpoint?.address || activeTarget?.host || "",
   };
-
-  const save = (payload) => actions.addEvidence(itemId, { ...metadata, ...payload });
+  const save = (payload) => actions.addEvidence(itemId, { targetId, ...metadata, ...payload });
 
   const savePaste = () => {
-    if (!workspace.activeTargetId) {
+    if (!targetId) {
       setError("Select or create a machine before saving command output.");
       return;
     }
@@ -42,7 +77,7 @@ export default function CommandResultPanel({ itemId, commandKey, commandLabel, c
   };
 
   const addFiles = async (files) => {
-    if (!workspace.activeTargetId) {
+    if (!targetId) {
       setError("Select or create a machine before attaching command evidence.");
       return;
     }
@@ -56,95 +91,75 @@ export default function CommandResultPanel({ itemId, commandKey, commandLabel, c
     }
   };
 
-  const startTerminal = () => {
-    if (!workspace.activeTargetId) {
-      setError("Select or create a machine before running this command.");
-      return;
-    }
-    if (!runnable) {
-      setError(disabledReason || "This command is not executable until its safety contract and variables are satisfied.");
-      return;
-    }
-    if (!localRunnerAllowed) {
-      setError(`This card runs on ${runsOn}. Copy it into the correct confirmed shell; the Kali PTY will not launch target-side commands.`);
-      return;
-    }
-    const runId = createId("command");
-    activeRunId.current = runId;
-    recordedRunId.current = null;
-    window.dispatchEvent(new Event("fieldnotes:collapse-terminal-results"));
-    onExpandedChange?.(true);
-    setTerminalOpen(true);
+  const executionRequest = {
+    targetId,
+    targetName,
+    itemId,
+    commandKey,
+    label: commandLabel,
+    command: commandText,
+    runsOn,
+    terminal,
+    cwd,
+    flagNames,
+    endpointId: activeEndpoint?.id || null,
+    address: activeEndpoint?.address || activeTarget?.host || "",
   };
 
-  const recordTerminalStart = useCallback(() => {
-    const runId = activeRunId.current;
-    if (!runId || recordedRunId.current === runId) return;
-    recordedRunId.current = runId;
-    actions.recordCommand(itemId, { id: runId, commandKey, label: commandLabel, command: commandText, source: "local runner", startedAt: new Date().toISOString() });
-  }, [actions, commandKey, commandLabel, commandText, itemId]);
+  const openSession = () => {
+    if (!targetId || !runnable || missing.length > 0) {
+      setError(disabledReason || "Resolve this command's safety contract and variables before execution.");
+      return;
+    }
+    terminalWorkspace.openCommand(executionRequest);
+    setError("");
+  };
 
-  const finishTerminal = useCallback((execution) => {
-    save({
-      label: `${commandLabel} · terminal result`,
-      content: execution.content || `[Fieldnotes] Command exited ${execution.exitCode} without captured output.`,
-      source: "local-terminal",
-      exitCode: execution.exitCode,
-      logPath: execution.logPath,
-      journeyPath: execution.journeyPath,
-      commandRunId: activeRunId.current,
-    });
-    activeRunId.current = null;
-    if (!execution.flag) setTerminalOpen(false);
-    else setError(`${execution.flag.kind === "root" ? "Root / administrator" : "User-level"} proof candidate detected. Keep this terminal visible, verify the full proof context, and capture the screenshot before hiding it.`);
-  }, [actions, commandKey, commandLabel, commandText, itemId]);
+  const stageInSession = () => {
+    if (!targetId || !runnable || missing.length > 0) {
+      setError(disabledReason || "Resolve this command's safety contract and variables before staging it.");
+      return;
+    }
+    if (!effectiveSessionId) {
+      setError(`No ready ${requiredContext} session exists for this machine. Create or verify that embedded session first.`);
+      return;
+    }
+    if (!terminalWorkspace.stageCommand(effectiveSessionId, executionRequest)) {
+      setError("That session became busy or incompatible. Review the Terminal Workspace and try again.");
+      return;
+    }
+    setError("");
+  };
 
   return (
     <div className="command-results" onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); addFiles([...event.dataTransfer.files]); }}>
       <div className="command-results-bar">
         <button type="button" className="command-results-toggle" onClick={() => onExpandedChange?.(!expanded)} aria-expanded={expanded}>
-          <span>Results · {entries.length}</span>
-          <small>{expanded ? "Hide" : "Paste or attach output"}</small>
+          <span>Results · {entries.length}</span><small>{expanded ? "Hide" : "Paste or attach output"}</small>
         </button>
-        {runner.available && localRunnerAllowed && (
-          <button type="button" className="text-button run-command" onClick={startTerminal} disabled={!runnable || missing.length > 0 || terminalOpen} title={!runnable ? disabledReason || "Command execution is disabled." : undefined}>
-            Run in terminal
-          </button>
+        {runner.available && opensNewSession && (
+          <button type="button" className="text-button run-command" onClick={openSession} disabled={!runnable || missing.length > 0}>Run inside Fieldnotes</button>
         )}
-        {runner.available && !localRunnerAllowed && <span className="runner-host-note">Run on {runsOn}</span>}
+        {runner.available && !opensNewSession && (
+          <div className="session-route-control">
+            <select aria-label={`Embedded ${requiredContext} session for ${commandLabel}`} value={effectiveSessionId} onChange={(event) => setSelectedSessionId(event.target.value)} disabled={compatible.length === 0}>
+              {compatible.length === 0 && <option value="">No ready {requiredContext} session</option>}
+              {compatible.length > 0 && requiresExplicitSession && <option value="">Choose the exact session…</option>}
+              {compatible.map((session) => <option value={session.id} key={session.id}>{session.targetName} · {session.address || "unassigned endpoint"} · {session.label} · tab {session.id.slice(-6)}</option>)}
+            </select>
+            <button type="button" className="text-button run-command" onClick={stageInSession} disabled={!runnable || missing.length > 0 || !effectiveSessionId}>Stage in Fieldnotes</button>
+          </div>
+        )}
       </div>
       {expanded && <div className="command-results-body">
-      <div className="command-result-head">
-        <span>{entries.length} saved result{entries.length === 1 ? "" : "s"}</span>
-        <div>
-          <label className="text-button result-file-button">
-            Attach file
-            <input type="file" multiple onChange={(event) => { addFiles([...event.target.files]); event.target.value = ""; }} />
-          </label>
-        </div>
-      </div>
-      {!runner.available && <p className="static-runner-note">Static mode: run the command externally, then paste or attach its result here.</p>}
-      {terminalOpen && (
-        <Suspense fallback={<p className="static-runner-note">Loading terminal…</p>}>
-          <CommandTerminal
-            command={commandText}
-            cwd={cwd}
-            label={commandLabel}
-            flagNames={flagNames}
-            onClose={() => setTerminalOpen(false)}
-            onStart={recordTerminalStart}
-            onFinish={finishTerminal}
-          />
-        </Suspense>
-      )}
-      <textarea rows="3" value={result} onChange={(event) => setResult(event.target.value)} placeholder={`Paste only the result for “${commandLabel}”…`} aria-label={`Result for ${commandLabel}`} />
-      <div className="results-actions">
-        <span className={resultBytes > MAX_RESULT_SIZE ? "danger-text" : ""}>{(resultBytes / 1024).toFixed(1)} KB</span>
-        <button type="button" className="button secondary" onClick={savePaste} disabled={!result.trim() || resultBytes > MAX_RESULT_SIZE}>Save result</button>
-      </div>
-      {resultBytes > MAX_RESULT_SIZE && <p className="form-error">Result is larger than 1 MB. Attach a useful excerpt; the local terminal keeps the complete log on disk.</p>}
-      {error && <p className="form-error">{error}</p>}
-      <EvidenceList entries={entries} itemId={itemId} />
+        <div className="command-result-head"><span>{entries.length} saved result{entries.length === 1 ? "" : "s"}</span><div><label className="text-button result-file-button">Attach file<input type="file" multiple onChange={(event) => { addFiles([...event.target.files]); event.target.value = ""; }} /></label></div></div>
+        {!runner.available && <p className="static-runner-note">Execution is unavailable in this review-only build. Start the Vite project with its embedded local runner; no external terminal is required.</p>}
+        {runner.available && !opensNewSession && compatible.length === 0 && <p className="static-runner-note">This step requires an operator-confirmed {requiredContext} tab in the embedded Terminal Workspace. A card never guesses or creates that context.</p>}
+        <textarea rows="3" value={result} onChange={(event) => setResult(event.target.value)} placeholder={`Paste only the result for “${commandLabel}”…`} aria-label={`Result for ${commandLabel}`} />
+        <div className="results-actions"><span className={resultBytes > MAX_RESULT_SIZE ? "danger-text" : ""}>{(resultBytes / 1024).toFixed(1)} KB</span><button type="button" className="button secondary" onClick={savePaste} disabled={!result.trim() || resultBytes > MAX_RESULT_SIZE}>Save result</button></div>
+        {resultBytes > MAX_RESULT_SIZE && <p className="form-error">Result is larger than 1 MB. Attach a useful excerpt; the embedded runner keeps the complete log on disk.</p>}
+        {error && <p className="form-error">{error}</p>}
+        <EvidenceList entries={entries} itemId={itemId} />
       </div>}
     </div>
   );

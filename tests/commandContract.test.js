@@ -64,8 +64,11 @@ test("cross-platform filename tokens render without POSIX quotes in cmd.exe path
   const record = item.commands.find((command) => command.label === "User-level proof block");
   const rendered = renderCommandRecord(record, { userFlagName: "local-雪.txt" });
   assert.equal(rendered.runnable, true);
+  assert.match(rendered.command, /^cmd\.exe \/d \/c/u);
+  assert.match(rendered.command, /%USERNAME%/u);
   assert.match(rendered.command, /Desktop\\local-雪\.txt/u);
   assert.doesNotMatch(rendered.command, /Desktop\\'local-雪\.txt'/u);
+  assert.doesNotMatch(rendered.command, /\$env:|Get-Content|Select-String/u);
 });
 
 test("required variables are typed and credential commands require explicit selection", () => {

@@ -13,11 +13,13 @@ export default function CommandBlock({ command, variables, onCopy, itemId, comma
   const runCount = exactCommandRunCount(commandHistory, rendered.command, { targetId, targetName });
   const cleanup = command.cleanupCommand ? renderCommandTemplate(command.cleanupCommand, variables).command : "";
   const verification = command.verificationCommand ? renderCommandTemplate(command.verificationCommand, variables).command : "";
+  const substantiveEvidence = evidence.filter((entry) => entry.substantive !== false);
   const copyableInstruction = command.policy === "exam-core"
     && Boolean(command.terminal)
     && rendered.missing.length === 0
     && Object.keys(rendered.invalid || {}).length === 0;
   const copyable = rendered.runnable || copyableInstruction;
+  const terminalWorkspaceRunnable = rendered.runnable || copyableInstruction;
 
   const copy = async () => {
     if (!targetId) {
@@ -38,7 +40,7 @@ export default function CommandBlock({ command, variables, onCopy, itemId, comma
   };
 
   const updateStepResult = (state) => {
-    if ([RESULT_STATES.CONFIRMED, RESULT_STATES.NO_FINDING].includes(state) && evidence.length === 0) {
+    if ([RESULT_STATES.CONFIRMED, RESULT_STATES.NO_FINDING].includes(state) && substantiveEvidence.length === 0) {
       setStepStateError("Save output for this exact command before confirming its result.");
       return;
     }
@@ -100,7 +102,8 @@ export default function CommandBlock({ command, variables, onCopy, itemId, comma
       {Object.keys(rendered.invalid || {}).length > 0 && (
         <p className="command-warning">Invalid values: {Object.entries(rendered.invalid).map(([name, message]) => `${name} (${message})`).join("; ")}</p>
       )}
-      {command.executionEnabled === false && <p className="command-warning">Execution disabled: {command.disabledReason || (command.terminal ? `Copy this exact step into the confirmed ${command.terminal}; the Kali PTY will not launch it.` : `${command.policy} actions are never runnable in exam-safe mode.`)}</p>}
+      {command.executionEnabled === false && !copyableInstruction && <p className="command-warning">Execution disabled: {command.disabledReason || `${command.policy} actions are never runnable in exam-safe mode.`}</p>}
+      {copyableInstruction && <p className="command-warning">Manual console step: stage this exact input to an operator-confirmed {command.terminal} tab in the embedded Terminal Workspace.</p>}
       {contextError && <p className="command-warning">{contextError}</p>}
       <CommandResultPanel
         itemId={itemId}
@@ -108,10 +111,12 @@ export default function CommandBlock({ command, variables, onCopy, itemId, comma
         commandLabel={command.label}
         commandText={rendered.command}
         missing={rendered.missing}
-        runnable={rendered.runnable}
+        runnable={terminalWorkspaceRunnable}
         disabledReason={command.disabledReason || (command.executionEnabled === false ? `${command.policy} command is instructional only.` : "")}
-        localRunnerAllowed={command.runsOn === "lhost" && !command.terminal}
-        runsOn={command.terminal || command.runsOn}
+        runsOn={command.runsOn}
+        terminal={command.terminal || ""}
+        targetId={targetId}
+        targetName={targetName}
         entries={evidence}
         expanded={expandedResultsKey === `${itemId}::${commandKey}`}
         onExpandedChange={(open) => onExpandedResultsChange?.(open ? `${itemId}::${commandKey}` : null)}

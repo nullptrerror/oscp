@@ -11,7 +11,7 @@ Fieldnotes keeps four things together:
 
 The exam-time application is deterministic and fully offline. It has no AI runtime, chatbot, prompt field, cloud API, exploit selector, scan-to-exploit path, or automatic credential chain. Every attack-relevant action is a separately reviewed command card initiated by the operator.
 
-The static app has no login, cloud sync, database, rich-text editor, or plugin system. State is stored in browser `localStorage` and can be exported at any time. An optional localhost-only companion server can execute checklist commands in a real PTY on Kali while preserving the same static build.
+The app has no login, cloud sync, database, rich-text editor, or plugin system. State is stored in browser `localStorage` and can be exported at any time. Its localhost-only runner backs an embedded terminal workspace with real Kali PTYs; it never launches a desktop terminal window.
 
 ## Run on Kali
 
@@ -21,10 +21,10 @@ Node.js 22 is recommended (the project was created with Node 22.23.3).
 git clone <your-repository-url> fieldnotes-oscp
 cd fieldnotes-oscp
 npm ci
-npm run dev:local
+npm run dev
 ```
 
-Open the local URL printed by Vite. The top bar should report **Runner**, and the checklist shows whether the small Kali tool set is present. Commands gain an interactive **Run in terminal** action. For a production-style local run:
+Open the local URL printed by Vite. The top bar should report **Runner**, and the checklist shows whether the small Kali tool set is present. Commands run in persistent tabs inside Fieldnotes. For a production-style local run:
 
 ```bash
 npm test
@@ -34,7 +34,7 @@ npm run serve:local
 
 The local server binds only to `127.0.0.1` and permits working directories only beneath `/home/kali/oscp`. Override that root only when needed with `FIELDNOTES_WORKSPACE_ROOT=/another/path npm run serve:local`.
 
-For static hosting, use `npm run build` and publish `dist/`. The app automatically falls back to paste/upload mode when the local runner is absent. `npm run dev` also starts the ordinary static development mode without command execution.
+`npm run dev` and `npm run dev:local` both start the runner-backed Vite app on loopback. `npm run dev:static` is an explicit review-only mode for inspecting the static UI; it cannot execute commands. A published `dist/` build likewise supports notes, imports, and reports but requires `npm run serve:local` on Kali for embedded execution.
 
 If Vite reports that it cannot resolve `pdf-lib` after pulling newer commits, stop the development server, run `npm install` (or `npm ci` for a clean install), and restart it. The PDF dependency is recorded in both `package.json` and `package-lock.json`; an older `node_modules` directory is the usual cause.
 
@@ -43,11 +43,12 @@ If Vite reports that it cannot resolve `pdf-lib` after pulling newer commits, st
 1. Add a box under **Machines** with its initial IP. Fieldnotes assigns a unique filesystem-safe folder slug, such as `/home/kali/oscp/active/`, separately from the display name.
 2. Add or select endpoints inside that machine. Parsed IP addresses and hostname/IP pairs remain endpoint-bound candidates until you confirm them; changing endpoints never creates another machine folder.
 3. Set `LHOST`, the filesystem-safe target slug, TCP/UDP collections, selected service/web endpoint, domain context, and the default wordlist in the checklist's **Variables** panel. Select one saved credential explicitly before credential-derived cards are rendered.
-4. Work down the checklist. Each command has its own result area. Copying records the rendered command; running locally opens an interactive PTY for `sudo`, SSH, WinRM, and similar tools.
-5. A local run writes a dedicated log beneath `notes/commands/`, appends the complete journey to `notes/terminal.log`, and saves the captured result to that command. Exit code zero never completes a check or proves a hypothesis. Classify each command and its parent check explicitly as **finding confirmed**, **no finding**, **command failed**, **blocked**, or **needs review**.
-6. Review parser-extracted ports, domains, credentials, hashes, tickets, endpoints, and proof values under **Findings**. They remain unverified candidates and cannot affect variables or command generation until you confirm them.
-7. Fill in the operator profile under **Report** once (name, OSID, GitHub, photo — shared by every machine), attach user and root/Administrator proof screenshots, write the short narrative, and generate the machine PDF.
-8. Import that PDF on another machine to restore the full workspace. JSON export remains available as a fallback under **Backup**.
+4. Work down the checklist. LHOST cards open a new tab in the embedded terminal workspace. Long-running listeners, SSH, WinRM, and tunnel sessions remain visible there while you navigate the app. They stop only when you explicitly stop them or close the app.
+5. After verifying an interactive shell, label its tab with the confirmed context (`foothold-linux`, `foothold-windows`, `pivot`, or `ligolo-console`). A target-side card can then be staged only to a compatible tab for the same machine. Review the exact preview and press **Run reviewed command**; Fieldnotes never infers the context, sends the next card, or chains actions automatically.
+6. Each local run writes a dedicated log beneath `notes/commands/` and appends the complete journey to `notes/terminal.log`. **Save output snapshot** preserves the bounded capture without freeing a listener or foreground process; use **Mark prompt ready** only after the visible prompt can accept another command. Ctrl-C teardown cards target a reviewed tab explicitly. Exit code zero never completes a check or proves a hypothesis. Classify each command and its parent check explicitly as **finding confirmed**, **no finding**, **command failed**, **blocked**, or **needs review**.
+7. Review parser-extracted ports, domains, credentials, hashes, tickets, endpoints, and proof values under **Findings**. They remain unverified candidates and cannot affect variables or command generation until you confirm them.
+8. Fill in the operator profile under **Report** once (name, OSID, GitHub, photo — shared by every machine), attach user and root/Administrator proof screenshots, write the short narrative, and generate the machine PDF.
+9. Import that PDF on another machine to restore the full workspace. JSON export remains available as a fallback under **Backup**.
 
 The PDF has a cover page, clickable contents and bookmarks, and a header on every page with your circular profile photo, name, OSID, and linked GitHub profile. Its compact **Attack Path** presents each conclusion, exact command, timestamp, target, and a six-line output excerpt once, in chronological order; full console logs remain embedded as attachments instead of being duplicated in a second appendix. Dark terminal blocks keep ANSI colors (16/256/truecolor), Unicode box drawing, and emoji. Save output with colors intact (for example `nxc ... | tee out.log`, or `script -q out.log`) to keep them. DejaVu fonts ship with the app and are loaded by both browser and direct Node exports, so Kali prompt glyphs remain intact offline. Emoji are drawn with the system color-emoji font (`fonts-noto-color-emoji` on Kali). CJK text is not covered by the bundled fonts.
 
@@ -88,7 +89,7 @@ Exact resource contents can vary with the Kali package snapshot, so commands tha
 
 ## Data and security
 
-Passwords, hashes, commands, terminal logs, notes, and results are stored as plain text on disk and/or in browser storage, exported JSON, and the PDF's embedded workspace. This is an exam notebook, not a password manager. The runner deliberately executes the exact rendered shell command you select; keep it bound to localhost, review each command, lock the workstation, and protect reports and backups.
+Passwords, hashes, commands, terminal logs, notes, and results are stored as plain text on disk and/or in browser storage, exported JSON, and the PDF's embedded workspace. This is an exam notebook, not a password manager. Runner-created case/log directories are restricted to `0700` and terminal logs to `0600`; staged commands receive their own timestamped disk-log marker even when a remote console does not echo input. The runner deliberately executes the exact rendered shell command you select; keep it bound to localhost, review each command, lock the workstation, and protect reports and backups.
 
 If the browser reports a storage error, export a backup and remove large saved results. Text files are limited to 1 MB and screenshots/files to 3 MB. Keep large binaries and full scan archives in `/home/kali/oscp/<machine>/`; save useful excerpts or paths in the app.
 

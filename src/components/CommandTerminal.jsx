@@ -1,21 +1,21 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { useLocalRunner } from "../context/LocalRunnerContext";
 
-const CAPTURE_LIMIT = 1024 * 1024;
-
-export default function CommandTerminal({ command, cwd, label, flagNames, onClose, onStart, onFinish }) {
+export default function CommandTerminal({ session, active, onStarted, onOutput, onExit, onFailed, onProof }) {
   const runner = useLocalRunner();
   const hostRef = useRef(null);
-  const outputRef = useRef("");
   const socketRef = useRef(null);
-  const onStartRef = useRef(onStart);
-  const onFinishRef = useRef(onFinish);
-  const detectedFlagRef = useRef(null);
-  const [state, setState] = useState({ status: "connecting", logPath: "", message: "" });
-  onStartRef.current = onStart;
-  onFinishRef.current = onFinish;
+  const fitRef = useRef(null);
+  const terminalRef = useRef(null);
+  const finishedRef = useRef(false);
+  const lastInputRef = useRef("");
+  const lastStopRef = useRef(0);
+  const activeRef = useRef(active);
+  const callbacksRef = useRef({ onStarted, onOutput, onExit, onFailed, onProof });
+  activeRef.current = active;
+  callbacksRef.current = { onStarted, onOutput, onExit, onFailed, onProof };
 
   useEffect(() => {
     if (!runner.available || !hostRef.current) return undefined;
@@ -24,13 +24,8 @@ export default function CommandTerminal({ command, cwd, label, flagNames, onClos
     let input;
     let resize;
     let disposed = false;
-    let finished = false;
-    outputRef.current = "";
-    detectedFlagRef.current = null;
-    setState({ status: "connecting", logPath: "", message: "" });
+    finishedRef.current = false;
 
-    // Deferring setup prevents React Strict Mode's development-only probe mount
-    // from opening and immediately interrupting a WebSocket connection.
     const setupTimer = window.setTimeout(() => {
       if (disposed || !hostRef.current) return;
       terminal = new Terminal({
@@ -38,13 +33,15 @@ export default function CommandTerminal({ command, cwd, label, flagNames, onClos
         cursorBlink: true,
         fontFamily: 'Consolas, "DejaVu Sans Mono", "Liberation Mono", monospace',
         fontSize: 13,
-        scrollback: 8000,
+        scrollback: 12000,
         theme: { background: "#070a08", foreground: "#d9e6d7", cursor: "#a8d45b" },
       });
       const fit = new FitAddon();
       terminal.loadAddon(fit);
       terminal.open(hostRef.current);
-      fit.fit();
+      if (activeRef.current) fit.fit();
+      fitRef.current = fit;
+      terminalRef.current = terminal;
 
       socket = new WebSocket(runner.terminalUrl);
       socketRef.current = socket;
@@ -52,7 +49,8 @@ export default function CommandTerminal({ command, cwd, label, flagNames, onClos
         if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "input", data }));
       });
       resize = new ResizeObserver(() => {
-        fit.fit();
+        if (!activeRef.current || !hostRef.current?.offsetWidth) return;
+        try { fit.fit(); } catch { return; }
         if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "resize", cols: terminal.cols, rows: terminal.rows }));
       });
       resize.observe(hostRef.current);
@@ -62,48 +60,53 @@ export default function CommandTerminal({ command, cwd, label, flagNames, onClos
           socket.close();
           return;
         }
-        socket.send(JSON.stringify({ type: "start", command, cwd, label, flagNames, cols: terminal.cols, rows: terminal.rows }));
+        socket.send(JSON.stringify({
+          type: "start",
+          command: session.command,
+          cwd: session.cwd,
+          label: session.label,
+          flagNames: session.flagNames,
+          cols: terminal.cols,
+          rows: terminal.rows,
+        }));
       });
       socket.addEventListener("message", (event) => {
         let message;
         try {
           message = JSON.parse(event.data);
         } catch {
-          setState((current) => ({ ...current, status: "failed", message: "The terminal returned an invalid response." }));
+          callbacksRef.current.onFailed?.("The terminal returned an invalid response.");
           return;
         }
         if (message.type === "started") {
-          setState({ status: "running", logPath: message.logPath, message: "" });
-          onStartRef.current?.(message);
+          callbacksRef.current.onStarted?.(message);
           return;
         }
         if (message.type === "output") {
           terminal.write(message.data);
-          if (outputRef.current.length < CAPTURE_LIMIT) outputRef.current += message.data.slice(0, CAPTURE_LIMIT - outputRef.current.length);
+          callbacksRef.current.onOutput?.(message.data);
           return;
         }
         if (message.type === "flag") {
-          detectedFlagRef.current = message;
-          setState((current) => ({ ...current, flag: message }));
+          callbacksRef.current.onProof?.(message);
           terminal.writeln(`\r\n\x1b[1;33m[Fieldnotes] ${message.kind === "root" ? "Root / administrator" : "User-level"} proof candidate detected. Keep the full proof context visible for your screenshot.\x1b[0m`);
           return;
         }
         if (message.type === "exit") {
-          finished = true;
-          setState((current) => ({ ...current, status: message.exitCode === 0 ? "complete" : "failed", logPath: message.logPath, message: `Exit ${message.exitCode}` }));
-          onFinishRef.current?.({ content: outputRef.current, exitCode: message.exitCode, signal: message.signal, logPath: message.logPath, journeyPath: message.journeyPath, flag: detectedFlagRef.current });
+          finishedRef.current = true;
+          callbacksRef.current.onExit?.(message);
           return;
         }
         if (message.type === "error") {
           terminal.writeln(`\r\n[Fieldnotes] ${message.message}`);
-          setState((current) => ({ ...current, status: "failed", message: message.message }));
+          callbacksRef.current.onFailed?.(message.message, message);
         }
       });
       socket.addEventListener("error", () => {
-        if (!disposed) setState((current) => ({ ...current, status: "failed", message: "Terminal connection failed. Confirm the local runner is still running, then try again." }));
+        if (!disposed) callbacksRef.current.onFailed?.("Terminal connection failed. Confirm the embedded runner is still connected.", {});
       });
       socket.addEventListener("close", () => {
-        if (!disposed && !finished) setState((current) => ({ ...current, status: "failed", message: "The terminal connection closed before the command finished." }));
+        if (!disposed && !finishedRef.current) callbacksRef.current.onFailed?.("The embedded terminal connection closed before the process finished.", {});
       });
     }, 0);
 
@@ -113,27 +116,54 @@ export default function CommandTerminal({ command, cwd, label, flagNames, onClos
       resize?.disconnect();
       input?.dispose();
       terminal?.dispose();
+      fitRef.current = null;
+      terminalRef.current = null;
       if (socket?.readyState === WebSocket.OPEN) {
-        if (!finished) socket.send(JSON.stringify({ type: "kill" }));
+        if (!finishedRef.current) socket.send(JSON.stringify({ type: "kill" }));
         socket.close();
       }
       socketRef.current = null;
     };
-  }, [command, cwd, flagNames, label, runner.available, runner.terminalUrl]);
+  // A session owns one PTY for its lifetime. Context, tabs, and capture state
+  // deliberately do not recreate it.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runner.available, runner.terminalUrl, session.id]);
 
-  const stop = () => socketRef.current?.readyState === WebSocket.OPEN && socketRef.current.send(JSON.stringify({ type: "kill" }));
+  useEffect(() => {
+    if (!active) return undefined;
+    const frame = window.requestAnimationFrame(() => {
+      try { fitRef.current?.fit(); } catch { /* fitted after the terminal becomes visible */ }
+      terminalRef.current?.focus();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [active]);
+
+  useEffect(() => {
+    const request = session.inputRequest;
+    if (!request?.id || lastInputRef.current === request.id) return;
+    const socket = socketRef.current;
+    if (session.status !== "running" || socket?.readyState !== WebSocket.OPEN) return;
+    lastInputRef.current = request.id;
+    socket.send(JSON.stringify({
+      type: "input",
+      data: request.data,
+      proofCommand: request.proofCommand,
+      commandLabel: request.commandLabel,
+      flagNames: request.flagNames,
+    }));
+  }, [session.inputRequest, session.status]);
+
+  useEffect(() => {
+    if (!session.stopRequest || lastStopRef.current === session.stopRequest) return;
+    const socket = socketRef.current;
+    if (socket?.readyState !== WebSocket.OPEN) return;
+    lastStopRef.current = session.stopRequest;
+    socket.send(JSON.stringify({ type: "kill" }));
+  }, [session.status, session.stopRequest]);
 
   return (
-    <div className="command-terminal">
-      <div className="terminal-toolbar">
-        <span className={`terminal-state ${state.status}`}>{state.status}</span>
-        {state.logPath && <code title={state.logPath}>{state.logPath}</code>}
-        {state.status === "running" && <button type="button" className="text-button danger" onClick={stop}>Stop</button>}
-        <button type="button" className="text-button" onClick={onClose}>Hide</button>
-      </div>
+    <div className={`terminal-workspace-screen ${active ? "is-active" : ""}`} hidden={!active}>
       <div className="xterm-host" ref={hostRef} />
-      {state.flag && <div className="terminal-proof-alert"><strong>{state.flag.kind === "root" ? "Root / administrator" : "User-level"} proof candidate</strong><code>{state.flag.value}</code><span>Verify the target identity and IP are visible, then capture the entire terminal before hiding it.</span></div>}
-      {state.message && <p className={state.status === "failed" ? "form-error" : "terminal-message"}>{state.message}</p>}
     </div>
   );
 }

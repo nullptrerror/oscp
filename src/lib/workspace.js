@@ -448,6 +448,40 @@ export function getTargetItemValue(record, scope, itemId, fallback) {
   return record[`${scope}::${itemId}`] ?? record[itemId] ?? fallback;
 }
 
+export function getTargetItemStateKey(workspace, targetId, itemId) {
+  return `${getTargetScope(workspace, targetId)}::${itemId}`;
+}
+
+export function appendTargetItemEntry(record, workspace, targetId, itemId, entry) {
+  const key = getTargetItemStateKey(workspace, targetId, itemId);
+  const legacyEntries = getTargetScope(workspace, targetId) === getActiveScope(workspace) ? record[itemId] : undefined;
+  return {
+    ...record,
+    [key]: [...(record[key] ?? legacyEntries ?? []), entry],
+  };
+}
+
+export function buildTargetCommandEntry(workspace, targetId, itemId, command, defaults = {}) {
+  const target = workspace.targets.find((entry) => entry.id === targetId);
+  if (!target) return null;
+  const endpoint = target.endpoints?.find((entry) => entry.id === target.activeEndpointId) || target.endpoints?.[0];
+  const endpointId = command.endpointId ?? endpoint?.id ?? null;
+  const address = command.address
+    ?? target.endpoints?.find((entry) => entry.id === endpointId)?.address
+    ?? endpoint?.address
+    ?? target.host
+    ?? "";
+  return {
+    ...defaults,
+    ...command,
+    targetId,
+    targetName: target.name,
+    endpointId,
+    address,
+    itemId,
+  };
+}
+
 export function loadWorkspace() {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);

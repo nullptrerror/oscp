@@ -4,11 +4,13 @@ import { FLAG_PROFILES, flagProfile } from "../lib/flagProfiles";
 import PdfMachineImporter from "../components/PdfMachineImporter";
 import PracticeBoxSelect from "../components/PracticeBoxSelect";
 import { platformLabel } from "../data/practiceBoxes";
+import { useTerminalWorkspace } from "../context/TerminalWorkspaceContext";
 
 const EMPTY_MACHINE = { name: "", host: "", os: "Unknown", domain: "", notes: "", labType: "oscp", userFlagName: "local.txt", rootFlagName: "proof.txt", boxType: "unknown", practiceBoxId: "" };
 
 export default function TargetsPage() {
   const { workspace, actions } = useWorkspace();
+  const terminalWorkspace = useTerminalWorkspace();
   const [draft, setDraft] = useState(EMPTY_MACHINE);
   const [endpointDrafts, setEndpointDrafts] = useState({});
   const [mergeDestinations, setMergeDestinations] = useState({});
@@ -62,11 +64,12 @@ export default function TargetsPage() {
         <section className="record-list" aria-label="Saved machines">
           {workspace.targets.length === 0 ? <div className="empty-state compact"><p className="eyebrow">No machines yet</p><h2>Add the first box you are working.</h2></div> : workspace.targets.map((machine) => {
             const active = workspace.activeTargetId === machine.id;
+            const hasTerminalSessions = terminalWorkspace.hasSessionsForTarget(machine.id);
             return (
               <article className={`target-card ${active ? "is-active" : ""}`} key={machine.id}>
                 <div className="target-card-head">
                   <div><div className="record-badges"><span>{platformLabel(machine.boxType)}</span>{active && <span className="active-badge">Active machine</span>}</div><h2>{machine.name}</h2><code>/home/kali/oscp/{machine.slug}</code></div>
-                  <div className="record-actions">{active ? <button type="button" className="button secondary" onClick={actions.clearTargetSelection}>Unselect machine</button> : <button type="button" className="button secondary" onClick={() => actions.useTarget(machine)}>Use machine</button>}<button type="button" className="text-button danger" onClick={() => window.confirm(`Permanently delete ${machine.name} and all of its accounts, evidence, notes, discoveries, command history, and report data?`) && actions.deleteTarget(machine.id)}>Delete</button></div>
+                  <div className="record-actions">{active ? <button type="button" className="button secondary" onClick={actions.clearTargetSelection}>Unselect machine</button> : <button type="button" className="button secondary" onClick={() => actions.useTarget(machine)}>Use machine</button>}<button type="button" className="text-button danger" disabled={hasTerminalSessions} title={hasTerminalSessions ? "Stop and close every embedded terminal tab for this machine before deleting it." : undefined} onClick={() => window.confirm(`Permanently delete ${machine.name} and all of its accounts, evidence, notes, discoveries, command history, and report data?`) && actions.deleteTarget(machine.id)}>Delete</button></div>
                 </div>
 
                 <div className="machine-fields">
@@ -80,6 +83,7 @@ export default function TargetsPage() {
                 <div className="endpoint-list">
                   {(machine.endpoints || []).map((endpoint) => {
                     const selected = active && machine.activeEndpointId === endpoint.id;
+                    const hasEndpointSessions = terminalWorkspace.hasSessionsForEndpoint(machine.id, endpoint.id);
                     return (
                       <div className={`endpoint-card ${selected ? "is-selected" : ""}`} key={endpoint.id}>
                         <div className="endpoint-head"><strong>{endpoint.address}</strong>{selected && <span>Command target</span>}</div>
@@ -89,7 +93,7 @@ export default function TargetsPage() {
                           <label><span>TCP</span><input type="text" value={endpoint.tcpPorts || ""} onChange={(event) => actions.updateEndpoint(machine.id, endpoint.id, { tcpPorts: event.target.value })} /></label>
                           <label><span>UDP</span><input type="text" value={endpoint.udpPorts || ""} onChange={(event) => actions.updateEndpoint(machine.id, endpoint.id, { udpPorts: event.target.value })} /></label>
                         </div>
-                        <div className="endpoint-actions"><small>{endpoint.source || "manual"}</small><button type="button" className="button secondary" onClick={() => actions.useEndpoint(machine, endpoint)}>Use endpoint</button>{(machine.endpoints || []).length > 1 && <button type="button" className="text-button danger" onClick={() => actions.deleteEndpoint(machine.id, endpoint.id)}>Delete</button>}</div>
+                        <div className="endpoint-actions"><small>{endpoint.source || "manual"}</small><button type="button" className="button secondary" onClick={() => actions.useEndpoint(machine, endpoint)}>Use endpoint</button>{(machine.endpoints || []).length > 1 && <button type="button" className="text-button danger" disabled={hasEndpointSessions} title={hasEndpointSessions ? "Stop and close every embedded terminal tab for this endpoint before deleting it." : undefined} onClick={() => actions.deleteEndpoint(machine.id, endpoint.id)}>Delete</button>}</div>
                       </div>
                     );
                   })}
@@ -102,7 +106,7 @@ export default function TargetsPage() {
                       <option value="">Merge this machine into…</option>
                       {workspace.targets.filter((target) => target.id !== machine.id).map((target) => <option key={target.id} value={target.id}>{target.name}</option>)}
                     </select>
-                    <button type="button" className="button secondary" disabled={!mergeDestinations[machine.id]} onClick={() => {
+                    <button type="button" className="button secondary" disabled={!mergeDestinations[machine.id] || hasTerminalSessions} title={hasTerminalSessions ? "Stop and close every embedded terminal tab for this machine before merging it." : undefined} onClick={() => {
                       const destination = workspace.targets.find((target) => target.id === mergeDestinations[machine.id]);
                       if (destination && window.confirm(`Merge ${machine.name} into ${destination.name}? Case data and endpoints will move; ${machine.name} will be removed.`)) actions.mergeTarget(machine.id, destination.id);
                     }}>Merge case data</button>

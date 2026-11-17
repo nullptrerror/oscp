@@ -113,7 +113,7 @@ export function buildAclCommands(variables = {}) {
     {
       key: "acl-grant",
       label: `Grant ${right} — ${principal} on ${target}`,
-      value: `dacl_dir=${shellQuote(daclDir)}; mkdir -p "$dacl_dir"; stamp=$(date +%Y%m%d-%H%M%S); backup="$dacl_dir/${slug}-before-$stamp.bak"; grant_log="$dacl_dir/${slug}-grant-$stamp.log"; impacket-dacledit -action write -rights ${shellQuote(rightArg)} ${principalArg} ${targetArg} ${dcArg} -file "$backup" ${auth} 2>&1 | tee "$grant_log"; status=\${PIPESTATUS[0]}; test "$status" -eq 0 && grep -Fq 'DACL modified successfully!' "$grant_log" || { echo 'DACL modification was not confirmed'; exit 1; }; printf '%s\\n' "$backup" >${shellQuote(latestBackup)}`,
+      value: `dacl_dir=${shellQuote(daclDir)}; mkdir -p "$dacl_dir"; stamp=$(date +%Y%m%d-%H%M%S); backup="$dacl_dir/${slug}-before-$stamp.bak"; grant_log="$dacl_dir/${slug}-grant-$stamp.log"; impacket-dacledit -action write -rights ${shellQuote(rightArg)} ${principalArg} ${targetArg} ${dcArg} -file "$backup" ${auth} >"$grant_log" 2>&1; command_status=$?; cat "$grant_log"; test "$command_status" -eq 0 && grep -Fq 'DACL modified successfully!' "$grant_log" && test -s "$backup" || { echo 'DACL modification was not confirmed'; exit 1; }; printf '%s\\n' "$backup" >${shellQuote(latestBackup)}`,
     },
     {
       key: "acl-verify-grant",
@@ -150,7 +150,7 @@ export function buildAclCommands(variables = {}) {
   commands.push({
     key: "acl-cleanup",
     label: `Restore DACL backup — ${identity}`,
-    value: `backup_pointer=${shellQuote(latestBackup)}; test -s "$backup_pointer" || { echo 'No recorded DACL backup was found'; exit 1; }; backup=$(head -n1 "$backup_pointer"); test -f "$backup" || { echo "DACL backup not found: $backup"; exit 1; }; impacket-dacledit -action restore -file "$backup" ${dcArg} ${auth}`,
+    value: `dacl_dir=${shellQuote(daclDir)}; backup_pointer=${shellQuote(latestBackup)}; pointer_backup=$(head -n1 "$backup_pointer" 2>/dev/null || true); latest_backup=$(find "$dacl_dir" -maxdepth 1 -type f -name '${slug}-before-*.bak' -printf '%T@ %p\\n' | sort -n | tail -n1 | cut -d' ' -f2-); if test -n "$pointer_backup"; then case "$pointer_backup" in "$dacl_dir/${slug}-before-"*.bak) ;; *) printf '%s\\n' '[!] Ignoring an invalid DACL backup pointer'; pointer_backup= ;; esac; fi; if test -n "$pointer_backup" && test ! -f "$pointer_backup"; then printf '[!] Ignoring missing DACL backup: %s\\n' "$pointer_backup"; pointer_backup=; fi; backup="$latest_backup"; test -n "$backup" || backup="$pointer_backup"; if test -n "$pointer_backup" && test -n "$latest_backup" && test "$pointer_backup" != "$latest_backup"; then printf '%s\\n' '[!] Recorded DACL pointer is stale; using the newest backup'; fi; test -n "$backup" && test -f "$backup" || { echo 'No recorded DACL backup was found'; exit 1; }; printf '[*] Restoring DACL backup: %s\\n' "$backup"; impacket-dacledit -action restore -file "$backup" ${dcArg} ${auth} && printf '%s\\n' "$backup" >"$backup_pointer"`,
   });
 
   if (group) {

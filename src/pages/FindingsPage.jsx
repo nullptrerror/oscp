@@ -246,6 +246,18 @@ export default function FindingsPage() {
                 {entry.dataUrl && <img className="evidence-image" src={entry.dataUrl} alt={entry.label} />}
                 {entry.content && <TerminalOutput content={entry.content} />}
                 <p>{entry.phaseTitle}</p>
+                {entry.itemId && (
+                  <button
+                    type="button"
+                    className="text-button danger evidence-delete"
+                    onClick={() => {
+                      const confirmedRetention = "Confirmed parser facts and records derived from them remain; remove those separately if they are no longer valid.";
+                      if (window.confirm(`Delete this saved result? ${confirmedRetention}`)) actions.deleteEvidence(entry.itemId, entry.id);
+                    }}
+                  >
+                    Delete result
+                  </button>
+                )}
               </details>
             ))}
           </div>

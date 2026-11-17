@@ -3,6 +3,7 @@ import { auditCommandRecord, renderCommandRecord } from "../src/lib/commandContr
 import { getChecklistCommands } from "../src/lib/checklistCommands.js";
 import { createDefaultWorkspace } from "../src/lib/workspace.js";
 import { PIVOT_STEPS } from "../src/data/pivotPlaybooks.js";
+import { normalizeTerminalContext } from "../src/lib/terminalWorkspace.js";
 
 const staticCommands = ALL_ITEMS.flatMap((item) => item.commands);
 const failures = [];
@@ -121,6 +122,11 @@ function auditWorkspace(kind, secret, aclRights) {
       if (rendered.missing.length || Object.keys(rendered.invalid).length) {
         failures.push(`[${context}] ${command.id}: unresolved synthetic render (${[...rendered.missing, ...Object.keys(rendered.invalid)].join(", ")})`);
       }
+    }
+    const eligibleForEmbeddedExecution = command.executionEnabled === true
+      || (command.policy === "exam-core" && Boolean(command.terminal));
+    if (eligibleForEmbeddedExecution && !normalizeTerminalContext(command.runsOn, command.terminal)) {
+      failures.push(`[${context}] ${command.id}: no recognized embedded terminal route for ${command.terminal || command.runsOn}`);
     }
     const protocols = [...command.template.matchAll(/\bnxc\s+(smb|winrm|ssh)\b/giu)].map((match) => match[1].toLowerCase());
     if (new Set(protocols).size > 1) failures.push(`[${context}] ${command.id}: chains credential reuse across protocols`);

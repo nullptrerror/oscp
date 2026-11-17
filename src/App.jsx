@@ -9,6 +9,8 @@ import ExamClock from "./components/ExamClock";
 import RunnerStatus from "./components/RunnerStatus";
 import { LocalRunnerProvider } from "./context/LocalRunnerContext";
 import ExamSafetyPage from "./pages/ExamSafetyPage";
+import TerminalDock from "./components/TerminalDock";
+import { TerminalWorkspaceProvider } from "./context/TerminalWorkspaceContext";
 
 const pages = [
   { to: "/", label: "Checklist" },
@@ -21,7 +23,7 @@ const pages = [
 function AppRoutes() {
   const { workspace, saveState } = useWorkspace();
   const location = useLocation();
-  if (!workspace.activeTargetId && ["/vault", "/report"].includes(location.pathname)) return <Navigate to="/" replace />;
+  const redirectToChecklist = !workspace.activeTargetId && ["/vault", "/report"].includes(location.pathname);
   return (
     <div className="app-shell">
       <header className="topbar">
@@ -46,7 +48,7 @@ function AppRoutes() {
         </div>
       </header>
 
-      <Routes>
+      {redirectToChecklist ? <Navigate to="/" replace /> : <Routes>
         <Route
           path="/"
           element={<ChecklistPage />}
@@ -71,7 +73,8 @@ function AppRoutes() {
           path="/safety"
           element={<ExamSafetyPage />}
         />
-      </Routes>
+      </Routes>}
+      <TerminalDock />
     </div>
   );
 }
@@ -80,7 +83,9 @@ export default function App() {
   return (
     <LocalRunnerProvider>
       <WorkspaceProvider>
-        <AppRoutes />
+        <TerminalWorkspaceProvider>
+          <AppRoutes />
+        </TerminalWorkspaceProvider>
       </WorkspaceProvider>
     </LocalRunnerProvider>
   );

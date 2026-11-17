@@ -129,8 +129,8 @@ export default function ChecklistPage() {
       <section className={`runner-readiness ${runner.available ? "is-local" : "is-static"}`}>
         <div>
           <p className="eyebrow">Execution mode</p>
-          <strong>{runner.available ? "Local Kali runner connected" : "Static documentation mode"}</strong>
-          <span>{runner.available ? `Commands run under ${runner.workspaceRoot}. Every run saves evidence for your review; exit status never completes a check.` : "Commands cannot execute from a statically hosted browser. Paste or attach each command's result, then classify it manually."}</span>
+          <strong>{runner.available ? "Embedded Kali runner connected" : "Project runner unavailable"}</strong>
+          <span>{runner.available ? `Commands and persistent sessions stay inside Fieldnotes under ${runner.workspaceRoot}. Every captured step saves evidence for review; exit status never completes a check.` : "This build is review-only. Start the Vite project with its embedded local runner to execute commands without another terminal window."}</span>
         </div>
         {runner.available && (
           <div className="runner-tool-list" aria-label="Local tool readiness">

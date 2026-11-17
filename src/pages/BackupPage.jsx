@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { ALL_ITEMS } from "../data/checklist";
 import { downloadWorkspace, getScopedItemValue, normalizeWorkspace } from "../lib/workspace";
+import { useTerminalWorkspace } from "../context/TerminalWorkspaceContext";
 
 const formatBytes = (bytes) => {
   if (bytes < 1024) return `${bytes} B`;
@@ -11,8 +12,10 @@ const formatBytes = (bytes) => {
 
 export default function BackupPage() {
   const { workspace, actions } = useWorkspace();
+  const terminalWorkspace = useTerminalWorkspace();
   const fileInput = useRef(null);
   const [message, setMessage] = useState(null);
+  const hasTerminalSessions = terminalWorkspace.sessions.length > 0;
 
   const stats = useMemo(() => {
     const evidenceCount = Object.values(workspace.evidence).reduce((total, entries) => total + entries.length, 0);
@@ -33,6 +36,10 @@ export default function BackupPage() {
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
+    if (hasTerminalSessions) {
+      setMessage({ type: "error", text: "Stop and close every embedded terminal tab before replacing the workspace." });
+      return;
+    }
     if (file.size > 10 * 1024 * 1024) {
       setMessage({ type: "error", text: "That backup is larger than 10 MB and cannot be imported." });
       return;
@@ -50,6 +57,10 @@ export default function BackupPage() {
   };
 
   const reset = () => {
+    if (hasTerminalSessions) {
+      setMessage({ type: "error", text: "Stop and close every embedded terminal tab before resetting the workspace." });
+      return;
+    }
     if (!window.confirm("Reset every checklist item, target, account, loot record, note, and saved result in this browser?")) return;
     actions.resetWorkspace();
     setMessage({ type: "success", text: "The local workspace was reset." });
@@ -75,7 +86,7 @@ export default function BackupPage() {
         </div>
         <div className="backup-actions">
           <button type="button" className="button" onClick={() => downloadWorkspace(workspace)}>Export JSON backup</button>
-          <button type="button" className="button secondary" onClick={() => fileInput.current?.click()}>Import JSON backup</button>
+          <button type="button" className="button secondary" disabled={hasTerminalSessions} title={hasTerminalSessions ? "Stop and close every embedded terminal tab before replacing the workspace." : undefined} onClick={() => fileInput.current?.click()}>Import JSON backup</button>
           <input ref={fileInput} className="sr-only" type="file" accept="application/json,.json" onChange={importFile} />
         </div>
       </section>
@@ -97,7 +108,7 @@ export default function BackupPage() {
             <h2>This is a notebook, not a password manager.</h2>
             <p>Browser storage and exported JSON are not encrypted. Keep the machine locked, protect backups, and remove exam data when you no longer need it.</p>
           </div>
-          <button type="button" className="text-button danger reset-button" onClick={reset}>Reset local workspace</button>
+          <button type="button" className="text-button danger reset-button" disabled={hasTerminalSessions} title={hasTerminalSessions ? "Stop and close every embedded terminal tab before resetting the workspace." : undefined} onClick={reset}>Reset local workspace</button>
         </article>
       </section>
     </main>

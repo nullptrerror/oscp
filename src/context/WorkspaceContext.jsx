@@ -7,9 +7,12 @@ import {
   deleteMachineData,
   domainToBaseDn,
   getActiveScope,
+  appendTargetItemEntry,
+  buildTargetCommandEntry,
   getCommandResultStateKey,
   getItemStateKey,
   getScopedItemValue,
+  getTargetItemStateKey,
   importMachineData,
   loadWorkspace,
   normalizeWorkspace,
@@ -169,6 +172,9 @@ export function WorkspaceProvider({ children }) {
           const allowed = new Set(Object.values(RESULT_STATES));
           if (!allowed.has(state)) return current;
           const key = getItemStateKey(current, itemId);
+          const evidence = getScopedItemValue(current.evidence, current, itemId, [])
+            .filter((entry) => entry.substantive !== false);
+          if (COMPLETING_RESULT_STATES.has(state) && evidence.length === 0) return current;
           return {
             ...current,
             resultStates: { ...current.resultStates, [key]: state },
@@ -182,7 +188,7 @@ export function WorkspaceProvider({ children }) {
           const allowed = new Set(Object.values(RESULT_STATES));
           if (!allowed.has(state)) return current;
           const evidence = getScopedItemValue(current.evidence, current, itemId, [])
-            .filter((entry) => entry.commandKey === commandKey);
+            .filter((entry) => entry.commandKey === commandKey && entry.substantive !== false);
           if (COMPLETING_RESULT_STATES.has(state) && evidence.length === 0) return current;
           const key = getCommandResultStateKey(current, itemId, commandKey);
           return {
@@ -207,10 +213,13 @@ export function WorkspaceProvider({ children }) {
       },
       addEvidence(itemId, evidence) {
         update((current) => {
-          if (!current.activeTargetId) return current;
-          const key = getItemStateKey(current, itemId);
-          const target = current.targets.find((entry) => entry.id === current.activeTargetId);
-          const endpointId = target?.activeEndpointId || null;
+          const targetId = evidence.targetId || current.activeTargetId;
+          if (!targetId) return current;
+          const key = getTargetItemStateKey(current, targetId, itemId);
+          const target = current.targets.find((entry) => entry.id === targetId);
+          if (!target) return current;
+          const endpointId = evidence.endpointId ?? target?.activeEndpointId ?? null;
+          const machineLhost = current.variables.lhost;
           const parsed = visibleDiscoveries(
             discoveriesForChecklistItem(
               itemId,
@@ -219,17 +228,17 @@ export function WorkspaceProvider({ children }) {
                 [evidence.filename, evidence.label, evidence.commandText].filter(Boolean).join(" "),
                 normalizeFlagSettings(target),
               ),
-              { lhost: current.variables.lhost },
+              { lhost: machineLhost },
             ),
             {
               settings: current.parserSettings,
               ignored: current.ignoredDiscoveries,
-              targetId: current.activeTargetId,
+              targetId,
             },
           );
           const candidates = parsed.map((entry) => {
             const existing = current.discoveries.find((saved) => (
-              saved.targetId === current.activeTargetId && discoveryKey(saved) === discoveryKey(entry)
+              saved.targetId === targetId && discoveryKey(saved) === discoveryKey(entry)
             ));
             return { ...entry, endpointId: entry.endpointId || endpointId, status: existing?.status === "confirmed" ? "confirmed" : "candidate" };
           });
@@ -242,18 +251,18 @@ export function WorkspaceProvider({ children }) {
           });
           const createdAt = new Date().toISOString();
           const enrichedEvidence = {
+            ...evidence,
             id: createId("evidence"),
             createdAt,
-            targetId: current.activeTargetId,
-            targetName: target?.name || current.variables.targetName,
+            targetId,
+            targetName: target.name,
             endpointId,
             itemId,
-            ...evidence,
             discoveries: candidates,
             guidance: [],
           };
           const newDiscoveries = candidates.filter((candidate) => !current.discoveries.some((saved) => (
-            saved.targetId === current.activeTargetId
+            saved.targetId === targetId
             && saved.type === candidate.type
             && (saved.protocol || "") === (candidate.protocol || "")
             && (saved.address || "") === (candidate.address || "")
@@ -261,14 +270,14 @@ export function WorkspaceProvider({ children }) {
           ))).map((candidate) => ({
             id: createId("discovery"),
             createdAt,
-            targetId: current.activeTargetId,
-            targetName: target?.name || current.variables.targetName,
+            targetId,
+            targetName: target.name,
             itemId,
             evidenceId: enrichedEvidence.id,
             ...candidate,
           }));
           const commandStateKey = evidence.commandKey
-            ? getCommandResultStateKey(current, itemId, evidence.commandKey)
+            ? `${key}::${evidence.commandKey}`
             : "";
           return {
             ...current,
@@ -279,13 +288,7 @@ export function WorkspaceProvider({ children }) {
               nextAction: runNarrative.nextStep,
               exitCode: evidence.exitCode,
             } : entry) : current.commandHistory,
-            evidence: {
-              ...current.evidence,
-              [key]: [
-                ...getScopedItemValue(current.evidence, current, itemId, []),
-                enrichedEvidence,
-              ],
-            },
+            evidence: appendTargetItemEntry(current.evidence, current, targetId, itemId, enrichedEvidence),
             resultStates: {
               ...current.resultStates,
               [key]: RESULT_STATES.REVIEW,
@@ -631,13 +634,17 @@ export function WorkspaceProvider({ children }) {
       },
       recordCommand(itemId, command) {
         update((current) => {
-          if (!current.activeTargetId) return current;
-          const target = current.targets.find((entry) => entry.id === current.activeTargetId);
-          const endpoint = activeEndpoint(target);
-          const key = getItemStateKey(current, itemId);
+          const targetId = command.targetId || current.activeTargetId;
+          if (!targetId) return current;
+          const target = current.targets.find((entry) => entry.id === targetId);
+          if (!target) return current;
+          const key = getTargetItemStateKey(current, targetId, itemId);
           const draft = commandNarrativeDraft(command.command, command.label);
-          const hasFinding = Boolean(getScopedItemValue(current.notes, current, itemId, ""));
-          const hasNextStep = Boolean(getScopedItemValue(current.nextSteps, current, itemId, ""));
+          const legacyFinding = targetId === current.activeTargetId ? current.notes[itemId] : "";
+          const legacyNextStep = targetId === current.activeTargetId ? current.nextSteps[itemId] : "";
+          const legacySources = targetId === current.activeTargetId ? current.narrativeSources[itemId] : undefined;
+          const hasFinding = Boolean(current.notes[key] ?? legacyFinding ?? "");
+          const hasNextStep = Boolean(current.nextSteps[key] ?? legacyNextStep ?? "");
           return {
             ...current,
             notes: hasFinding ? current.notes : { ...current.notes, [key]: draft.finding },
@@ -645,23 +652,17 @@ export function WorkspaceProvider({ children }) {
             narrativeSources: hasFinding && hasNextStep ? current.narrativeSources : {
               ...current.narrativeSources,
               [key]: {
-                ...getScopedItemValue(current.narrativeSources, current, itemId, {}),
+                ...(current.narrativeSources[key] ?? legacySources ?? {}),
                 ...(!hasFinding ? { finding: draft.finding } : {}),
                 ...(!hasNextStep ? { nextStep: draft.nextStep } : {}),
               },
             },
-            commandHistory: [...current.commandHistory, {
+            commandHistory: [...current.commandHistory, buildTargetCommandEntry(current, targetId, itemId, command, {
               id: createId("command"),
               copiedAt: new Date().toISOString(),
-              targetId: current.activeTargetId,
-              targetName: target?.name || current.variables.targetName,
-              endpointId: endpoint?.id || null,
-              address: current.variables.rhost,
-              itemId,
               established: draft.finding,
               nextAction: draft.nextStep,
-              ...command,
-            }],
+            })],
           };
         });
       },

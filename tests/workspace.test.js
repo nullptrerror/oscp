@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  appendTargetItemEntry,
+  buildTargetCommandEntry,
   createDefaultWorkspace,
   deleteMachineData,
   domainToBaseDn,
@@ -8,6 +10,7 @@ import {
   getCommandResultStateValue,
   getItemStateKey,
   getScopedItemValue,
+  getTargetItemStateKey,
   importMachineData,
   MACHINE_VARIABLE_KEYS,
   normalizeWorkspace,
@@ -304,4 +307,50 @@ test("workspace normalization removes historical Nmap vendor hostnames", () => {
   });
   assert.deepEqual(restored.targets[0].endpoints[0].hostnames, ["dc.active.htb"]);
   assert.deepEqual(restored.discoveries.map((entry) => entry.value), ["dc.active.htb"]);
+});
+
+test("terminal records honor an explicit machine when another machine is active", () => {
+  const workspace = {
+    ...createDefaultWorkspace(),
+    activeTargetId: "target-b",
+    targets: [
+      { id: "target-a", name: "Target A", host: "192.0.2.10", activeEndpointId: "endpoint-a", endpoints: [{ id: "endpoint-a", address: "192.0.2.10" }] },
+      { id: "target-b", name: "Target B", host: "192.0.2.20", activeEndpointId: "endpoint-b", endpoints: [{ id: "endpoint-b", address: "192.0.2.20" }] },
+    ],
+  };
+  const command = buildTargetCommandEntry(workspace, "target-a", "proof", { id: "run-a", command: "whoami" });
+  assert.equal(command.targetId, "target-a");
+  assert.equal(command.targetName, "Target A");
+  assert.equal(command.endpointId, "endpoint-a");
+  assert.equal(command.address, "192.0.2.10");
+
+  const evidence = appendTargetItemEntry({}, workspace, "target-a", "proof", { id: "evidence-a" });
+  assert.equal(getTargetItemStateKey(workspace, "target-a", "proof"), "target-a::proof");
+  assert.deepEqual(evidence["target-a::proof"], [{ id: "evidence-a" }]);
+  assert.equal(evidence["target-b::proof"], undefined);
+});
+
+test("terminal command metadata preserves its launch endpoint after the machine selection changes", () => {
+  const workspace = {
+    ...createDefaultWorkspace(),
+    activeTargetId: "target-a",
+    targets: [{
+      id: "target-a",
+      name: "Target A",
+      host: "192.0.2.20",
+      activeEndpointId: "endpoint-new",
+      endpoints: [
+        { id: "endpoint-old", address: "192.0.2.10" },
+        { id: "endpoint-new", address: "192.0.2.20" },
+      ],
+    }],
+  };
+  const command = buildTargetCommandEntry(workspace, "target-a", "proof", {
+    id: "run-old",
+    command: "whoami",
+    endpointId: "endpoint-old",
+    address: "192.0.2.10",
+  });
+  assert.equal(command.endpointId, "endpoint-old");
+  assert.equal(command.address, "192.0.2.10");
 });

@@ -9,6 +9,7 @@ import { PIVOT_PLAYBOOKS, pivotPlaybookById } from "../data/pivotPlaybooks";
 export default function ChecklistItem({ item, searchActive = false, recommended = false, expandedResultsKey, onExpandedResultsChange }) {
   const { workspace, actions } = useWorkspace();
   const evidence = getScopedItemValue(workspace.evidence, workspace, item.id, []);
+  const substantiveEvidence = evidence.filter((entry) => entry.substantive !== false);
   const completed = Boolean(getScopedItemValue(workspace.completed, workspace, item.id, false));
   const resultState = getScopedItemValue(
     workspace.resultStates || {},
@@ -31,7 +32,7 @@ export default function ChecklistItem({ item, searchActive = false, recommended 
   useEffect(() => { if (recommended) setOpen(true); }, [recommended]);
 
   const updateResultState = (state) => {
-    if ([RESULT_STATES.CONFIRMED, RESULT_STATES.NO_FINDING].includes(state) && evidence.length === 0) {
+    if ([RESULT_STATES.CONFIRMED, RESULT_STATES.NO_FINDING].includes(state) && substantiveEvidence.length === 0) {
       setOpen(true);
       setCompletionError("Save command output before confirming a finding or recording no finding.");
       return;

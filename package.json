@@ -4,8 +4,9 @@
   "description": "Offline-first OSCP+ checklist and command notebook for Kali Linux",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --mode runner --host 127.0.0.1",
     "dev:local": "vite --mode runner --host 127.0.0.1",
+    "dev:static": "vite --host 127.0.0.1",
     "build": "vite build",
     "preview": "vite preview",
     "serve:local": "node server/local-server.mjs",

@@ -97,7 +97,7 @@ const CHECKLIST_SOURCE = [
         title: "Create a target workspace",
         detail: "Keep raw scans and evidence separate from working files.",
         commands: [
-          { label: "Create folders", value: "mkdir -p '{{workspaceRoot}}/{{targetSlug}}'/{scans,web,loot,exploits,notes} && cd '{{workspaceRoot}}/{{targetSlug}}'" },
+          { label: "Create folders", value: "root='{{workspaceRoot}}/{{targetSlug}}'; mkdir -p \"$root\"/{scans,web,loot,exploits,notes} && find \"$root\" -mindepth 1 -maxdepth 1 -type d -printf '%f\\n' | sort" },
           { label: "Start command log", value: "script -a '{{workspaceRoot}}/{{targetSlug}}/notes/terminal.log'" },
         ],
       },
@@ -501,8 +501,8 @@ const CHECKLIST_SOURCE = [
         id: "windows-context",
         title: "Capture host and user context",
         commands: [
-          { label: "Identity", value: "whoami /all & hostname & systeminfo & ipconfig /all" },
-          { label: "Local users", value: "net user & net localgroup administrators" },
+          { label: "Identity", value: "cmd.exe /d /c \"whoami /all & hostname & systeminfo & ipconfig /all\"" },
+          { label: "Local users", value: "cmd.exe /d /c \"net user & net localgroup administrators\"" },
         ],
       },
       {
@@ -519,8 +519,8 @@ const CHECKLIST_SOURCE = [
         title: "Inspect tasks, autoruns, and local ports",
         commands: [
           { label: "Scheduled tasks", value: "schtasks /query /fo LIST /v" },
-          { label: "Autoruns", value: "reg query HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Run & reg query HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" },
-          { label: "Listeners", value: "netstat -ano | findstr LISTENING & tasklist /svc" },
+          { label: "Autoruns", value: "cmd.exe /d /c \"reg query HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Run & reg query HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\"" },
+          { label: "Listeners", value: "cmd.exe /d /c \"netstat -ano | findstr LISTENING & tasklist /svc\"" },
         ],
       },
       {
@@ -528,16 +528,16 @@ const CHECKLIST_SOURCE = [
         title: "Check stored credentials and configuration",
         commands: [
           { label: "Credential Manager", value: "cmdkey /list" },
-          { label: "Unattended files", value: "dir /s /b C:\\*unattend*.xml C:\\*sysprep*.xml C:\\*.config 2>nul" },
-          { label: "PowerShell history", value: "type %APPDATA%\\Microsoft\\Windows\\PowerShell\\PSReadLine\\ConsoleHost_history.txt" },
+          { label: "Unattended files", value: "cmd.exe /d /c \"dir /s /b C:\\*unattend*.xml C:\\*sysprep*.xml C:\\*.config 2>nul\"" },
+          { label: "PowerShell history", value: "cmd.exe /d /c \"type %APPDATA%\\Microsoft\\Windows\\PowerShell\\PSReadLine\\ConsoleHost_history.txt\"" },
         ],
       },
       {
         id: "windows-privileges-policy",
         title: "Validate token privileges and installer policy",
         commands: [
-          { label: "Token privileges", value: "whoami /priv & whoami /groups" },
-          { label: "AlwaysInstallElevated", value: "reg query HKCU\\Software\\Policies\\Microsoft\\Windows\\Installer /v AlwaysInstallElevated & reg query HKLM\\Software\\Policies\\Microsoft\\Windows\\Installer /v AlwaysInstallElevated" },
+          { label: "Token privileges", value: "cmd.exe /d /c \"whoami /priv & whoami /groups\"" },
+          { label: "AlwaysInstallElevated", value: "cmd.exe /d /c \"reg query HKCU\\Software\\Policies\\Microsoft\\Windows\\Installer /v AlwaysInstallElevated & reg query HKLM\\Software\\Policies\\Microsoft\\Windows\\Installer /v AlwaysInstallElevated\"" },
           { label: "Program directory permissions", value: "powershell -c \"Get-ChildItem 'C:\\Program Files','C:\\Program Files (x86)' -Directory -ErrorAction SilentlyContinue | ForEach-Object { try { $acl=Get-Acl $_.FullName; [pscustomobject]@{Path=$_.FullName;Access=($acl.Access | ? {$_.IdentityReference -match 'Users|Everyone|Authenticated Users'} | % FileSystemRights) -join ','} } catch {} } | ? Access | Format-Table -Auto\"" },
         ],
       },
@@ -615,9 +615,9 @@ const CHECKLIST_SOURCE = [
         detail: "Use this only after confirming that the selected identity has GenericAll, GenericWrite, or WriteProperty over TARGET GROUP. These Kali-side Samba commands list direct members, add MEMBER USER, verify the result, and provide cleanup without requiring PowerShell or WinRM.",
         commands: [
           { label: "List direct group members", value: "net rpc group members '{{targetGroup}}' -S '{{rhost}}' -U '{{domain}}/{{user}}%{{password}}'" },
-          { label: "Add selected member", value: "net rpc group addmem '{{targetGroup}}' '{{memberUser}}' -S '{{rhost}}' -U '{{domain}}/{{user}}%{{password}}'" },
+          { label: "Add selected member", value: "net rpc group addmem '{{targetGroup}}' '{{memberUser}}' -S '{{rhost}}' -U '{{domain}}/{{user}}%{{password}}' && printf '%s\\n' 'Added {{memberUser}} to {{targetGroup}}'" },
           { label: "Verify direct group members", value: "net rpc group members '{{targetGroup}}' -S '{{rhost}}' -U '{{domain}}/{{user}}%{{password}}'" },
-          { label: "Cleanup: remove selected member", value: "net rpc group delmem '{{targetGroup}}' '{{memberUser}}' -S '{{rhost}}' -U '{{domain}}/{{user}}%{{password}}'" },
+          { label: "Cleanup: remove selected member", value: "net rpc group delmem '{{targetGroup}}' '{{memberUser}}' -S '{{rhost}}' -U '{{domain}}/{{user}}%{{password}}' && printf '%s\\n' 'Removed {{memberUser}} from {{targetGroup}}'" },
         ],
       },
       {
@@ -671,7 +671,7 @@ const CHECKLIST_SOURCE = [
         id: "creds-crack",
         title: "Try the common Kali wordlist",
         commands: [
-          { label: "Prepare rockyou", value: "test -f /usr/share/wordlists/rockyou.txt || sudo gzip -dk /usr/share/wordlists/rockyou.txt.gz" },
+          { label: "Prepare rockyou", value: "if test ! -f /usr/share/wordlists/rockyou.txt; then sudo gzip -dk /usr/share/wordlists/rockyou.txt.gz; fi; test -r /usr/share/wordlists/rockyou.txt && wc -l /usr/share/wordlists/rockyou.txt" },
           { label: "Hashcat", value: "hashcat -m {{hashMode}} '{{hashesFile}}' /usr/share/wordlists/rockyou.txt --status --session '{{targetSlug}}'" },
           { label: "John", value: "john --wordlist=/usr/share/wordlists/rockyou.txt '{{hashesFile}}' && john --show '{{hashesFile}}'" },
         ],
@@ -731,16 +731,16 @@ const CHECKLIST_SOURCE = [
         title: "Capture Windows proof context",
         detail: "Capture the proof value from its original location in an interactive shell. Keep ipconfig, whoami, the original file path, and file contents visible together in the screenshot.",
         commands: [
-          { label: "User-level proof block", value: "hostname & whoami & ipconfig & dir C:\\Users\\%USERNAME%\\Desktop\\{{userFlagName}} & type C:\\Users\\%USERNAME%\\Desktop\\{{userFlagName}}" },
-          { label: "Administrator proof block", value: "hostname & whoami & ipconfig & dir C:\\Users\\Administrator\\Desktop\\{{rootFlagName}} & type C:\\Users\\Administrator\\Desktop\\{{rootFlagName}}" },
+          { label: "User-level proof block", value: "cmd.exe /d /c \"hostname & whoami & ipconfig | findstr IPv4 & echo Proof path: C:\\Users\\%USERNAME%\\Desktop\\{{userFlagName}} & type C:\\Users\\%USERNAME%\\Desktop\\{{userFlagName}}\"" },
+          { label: "Administrator proof block", value: "cmd.exe /d /c \"hostname & whoami & ipconfig | findstr IPv4 & echo Proof path: C:\\Users\\Administrator\\Desktop\\{{rootFlagName}} & type C:\\Users\\Administrator\\Desktop\\{{rootFlagName}}\"" },
         ],
       },
       {
         id: "proof-artifacts",
         title: "Hash and inventory evidence",
         commands: [
-          { label: "Evidence hashes", value: "find '{{workspaceRoot}}/{{targetSlug}}' -type f -print0 | sort -z | xargs -0 sha256sum > '{{workspaceRoot}}/{{targetSlug}}/notes/SHA256SUMS'" },
-          { label: "File inventory", value: "find '{{workspaceRoot}}/{{targetSlug}}' -type f -printf '%TY-%Tm-%Td %TH:%TM %s %p\n' | sort > '{{workspaceRoot}}/{{targetSlug}}/notes/inventory.txt'" },
+          { label: "Evidence hashes", value: "root='{{workspaceRoot}}/{{targetSlug}}'; manifest=\"$root/notes/SHA256SUMS\"; temporary=\"$manifest.tmp\"; find \"$root\" -type f ! -path \"$manifest\" ! -path \"$temporary\" ! -path \"$root/notes/terminal.log\" ! -path \"$root/notes/commands/*\" -print0 | sort -z | xargs -0 sha256sum > \"$temporary\" && mv \"$temporary\" \"$manifest\"; count=$(wc -l < \"$manifest\"); printf 'Hashed %s static evidence files; live terminal logs excluded\\n' \"$count\"" },
+          { label: "File inventory", value: "root='{{workspaceRoot}}/{{targetSlug}}'; inventory=\"$root/notes/inventory.txt\"; temporary=\"$inventory.tmp\"; find \"$root\" -type f ! -path \"$inventory\" ! -path \"$temporary\" -printf '%TY-%Tm-%Td %TH:%TM %s %p\\n' | sort > \"$temporary\" && mv \"$temporary\" \"$inventory\"; wc -l \"$inventory\"" },
         ],
       },
       {
