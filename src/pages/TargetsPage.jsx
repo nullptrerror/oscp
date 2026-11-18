@@ -6,7 +6,9 @@ import PracticeBoxSelect from "../components/PracticeBoxSelect";
 import { platformLabel } from "../data/practiceBoxes";
 import { useTerminalWorkspace } from "../context/TerminalWorkspaceContext";
 
-const EMPTY_MACHINE = { name: "", host: "", os: "Unknown", domain: "", notes: "", labType: "oscp", userFlagName: "local.txt", rootFlagName: "proof.txt", boxType: "unknown", practiceBoxId: "" };
+const EMPTY_MACHINE = { name: "", slug: "", host: "", os: "Unknown", domain: "", notes: "", labType: "oscp", userFlagName: "local.txt", rootFlagName: "proof.txt", boxType: "unknown", practiceBoxId: "" };
+const FOLDER_SLUG_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$/;
+const FOLDER_SLUG_PATTERN_SOURCE = "[A-Za-z0-9][A-Za-z0-9._-]{0,79}";
 
 export default function TargetsPage() {
   const { workspace, actions } = useWorkspace();
@@ -14,11 +16,14 @@ export default function TargetsPage() {
   const [draft, setDraft] = useState(EMPTY_MACHINE);
   const [endpointDrafts, setEndpointDrafts] = useState({});
   const [mergeDestinations, setMergeDestinations] = useState({});
+  const [slugDrafts, setSlugDrafts] = useState({});
 
   const submit = (event) => {
     event.preventDefault();
     if (!draft.name.trim() || !draft.host.trim()) return;
-    actions.addTarget({ ...draft, name: draft.name.trim(), host: draft.host.trim() });
+    const requestedSlug = draft.slug.trim();
+    if (requestedSlug && !FOLDER_SLUG_PATTERN.test(requestedSlug)) return;
+    actions.addTarget({ ...draft, slug: requestedSlug || undefined, name: draft.name.trim(), host: draft.host.trim() });
     setDraft(EMPTY_MACHINE);
   };
 
@@ -45,6 +50,7 @@ export default function TargetsPage() {
             setDraft({ ...draft, practiceBoxId: box.id, name: box.name, os: box.os, boxType: box.platform, labType: box.labType, userFlagName: profile.userFlagName, rootFlagName: profile.rootFlagName });
           }} />
           <label><span>Machine / folder name *</span><input type="text" value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder="active" required /></label>
+          <label><span>Folder slug (optional)</span><input type="text" value={draft.slug} onChange={(event) => setDraft({ ...draft, slug: event.target.value })} placeholder="10.129.95.210" pattern={FOLDER_SLUG_PATTERN_SOURCE} maxLength="80" title="Use letters, numbers, dots, underscores, and hyphens; start with a letter or number." /><small>Defaults to the machine name. Set this before the first command when the evidence folder must follow a dated example layout.</small></label>
           <label><span>Initial IP or host *</span><input type="text" value={draft.host} onChange={(event) => setDraft({ ...draft, host: event.target.value })} placeholder="10.129.81.60" required /></label>
           <div className="form-row">
             <label><span>OS</span><select value={draft.os} onChange={(event) => setDraft({ ...draft, os: event.target.value })}><option>Unknown</option><option>Linux</option><option>Windows</option><option>Network device</option></select></label>
@@ -73,6 +79,12 @@ export default function TargetsPage() {
                 </div>
 
                 <div className="machine-fields">
+                  <label><span>Folder slug</span><input type="text" value={slugDrafts[machine.id] ?? machine.slug} onChange={(event) => setSlugDrafts((current) => ({ ...current, [machine.id]: event.target.value }))} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} onBlur={(event) => {
+                    const requestedSlug = event.currentTarget.value.trim();
+                    if (!FOLDER_SLUG_PATTERN.test(requestedSlug)) return;
+                    actions.updateTarget(machine.id, { slug: requestedSlug });
+                    setSlugDrafts((current) => { const next = { ...current }; delete next[machine.id]; return next; });
+                  }} pattern={FOLDER_SLUG_PATTERN_SOURCE} maxLength="80" aria-invalid={!FOLDER_SLUG_PATTERN.test((slugDrafts[machine.id] ?? machine.slug).trim())} title="Use letters, numbers, dots, underscores, and hyphens; start with a letter or number." disabled={hasTerminalSessions} /><small>Set before the first run. Existing files are not moved when this value changes.</small></label>
                   <label><span>Domain</span><input type="text" value={machine.domain || ""} onChange={(event) => actions.updateTarget(machine.id, { domain: event.target.value })} /></label>
                   <label><span>OS</span><select value={machine.os} onChange={(event) => actions.updateTarget(machine.id, { os: event.target.value })}><option>Unknown</option><option>Linux</option><option>Windows</option><option>Network device</option></select></label>
                   <label><span>Methodology</span><select value={machine.boxType || "unknown"} onChange={(event) => actions.updateTarget(machine.id, { boxType: event.target.value })}><option value="unknown">Unknown / show all</option><option value="linux">Linux</option><option value="windows">Standalone Windows</option><option value="ad">Windows Active Directory</option></select></label>

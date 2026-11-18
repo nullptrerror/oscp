@@ -6,6 +6,11 @@ import {
   compatibleTerminalSessions,
   isInterruptInstruction,
   normalizeTerminalContext,
+  rankTerminalSessions,
+  suggestedTerminalSession,
+  terminalStepSnapshotText,
+  TERMINAL_SESSION_ROLES,
+  terminalTranscriptScopeMatches,
   terminalWorkspaceInitialState,
   terminalWorkspaceReducer,
 } from "../lib/terminalWorkspace";
@@ -31,16 +36,25 @@ export function TerminalWorkspaceProvider({ children }) {
       commandKey: step.commandKey,
       label: step.label,
       command: step.command,
+      runsOn: step.runsOn,
       endpointId: step.endpointId,
       address: step.address,
       source: "local runner",
       startedAt: step.startedAt || new Date().toISOString(),
+      terminalSessionId: step.terminalSessionId,
+      terminalContext: step.terminalContext,
+      terminalRole: step.sessionRole,
+      cwd: step.cwd,
+      resultCategory: step.resultCategory,
+      reportContext: step.reportContext,
     });
   }, [actions]);
 
   const persistStepEvidence = useCallback((session, step, details = {}) => {
     if (!session || !step) return false;
-    const capture = captureRef.current.get(session.id) || "";
+    const rawCapture = captureRef.current.get(session.id) || "";
+    const renderedCapture = terminalStepSnapshotText(details.terminalSnapshot, step.command);
+    const capture = renderedCapture || rawCapture;
     const hasCapture = Boolean(capture.trim());
     const hasExitStatus = details.exitCode !== undefined || details.signal !== undefined;
     if (!hasCapture && step.evidenceSaved && !details.errorMessage && !hasExitStatus) return false;
@@ -63,12 +77,25 @@ export function TerminalWorkspaceProvider({ children }) {
       commandText: step.command,
       endpointId: step.endpointId,
       address: step.address,
+      terminalSessionId: session.id,
+      terminalContext: step.terminalContext || session.context,
+      terminalRole: step.sessionRole || session.sessionRole,
+      terminalCwd: step.cwd || session.cwd,
+      runsOn: step.runsOn,
     });
     captureRef.current.set(session.id, "");
     return true;
   }, [actions]);
 
   const openCommand = useCallback((request) => {
+    if (request.sessionRole === TERMINAL_SESSION_ROLES.MACHINE_LOG) {
+      const duplicate = stateRef.current.sessions.some((session) => (
+        terminalTranscriptScopeMatches(session, request)
+        && session.sessionRole === TERMINAL_SESSION_ROLES.MACHINE_LOG
+        && ["connecting", "running"].includes(session.status)
+      ));
+      if (duplicate) return "";
+    }
     const now = new Date().toISOString();
     const id = createId("terminal");
     const step = {
@@ -81,6 +108,14 @@ export function TerminalWorkspaceProvider({ children }) {
       endpointId: request.endpointId,
       address: request.address,
       requiredContext: "lhost",
+      runsOn: request.runsOn,
+      terminalSessionId: id,
+      terminalContext: "lhost",
+      sessionRole: request.sessionRole || TERMINAL_SESSION_ROLES.GENERAL,
+      terminalBehavior: request.terminalBehavior,
+      cwd: request.cwd,
+      resultCategory: request.resultCategory,
+      reportContext: request.reportContext,
       startedAt: now,
       initial: true,
     };
@@ -100,6 +135,12 @@ export function TerminalWorkspaceProvider({ children }) {
         context: "lhost",
         originContext: "lhost",
         contextConfirmed: true,
+        sessionRole: request.sessionRole || TERMINAL_SESSION_ROLES.GENERAL,
+        terminalBehavior: request.terminalBehavior,
+        promptReady: false,
+        readyConfirmedAt: "",
+        lastUsedAt: now,
+        commandCount: 1,
         status: "connecting",
         activeStep: step,
         pendingStep: null,
@@ -133,6 +174,13 @@ export function TerminalWorkspaceProvider({ children }) {
         runsOn: request.runsOn,
         terminal: request.terminal,
         flagNames: request.flagNames,
+        terminalSessionId: session.id,
+        terminalContext: session.context,
+        sessionRole: request.sessionRole || session.sessionRole || TERMINAL_SESSION_ROLES.GENERAL,
+        terminalBehavior: request.terminalBehavior,
+        cwd: request.cwd,
+        resultCategory: request.resultCategory,
+        reportContext: request.reportContext,
       },
     });
     dispatch({ type: "select-session", id: sessionId });
@@ -195,6 +243,8 @@ export function TerminalWorkspaceProvider({ children }) {
         journeyPath: details.journeyPath || session.journeyPath,
         activeStep: null,
         pendingStep: null,
+        promptReady: false,
+        readyConfirmedAt: "",
       },
     });
   }, [persistStepEvidence]);
@@ -218,35 +268,51 @@ export function TerminalWorkspaceProvider({ children }) {
       journeyPath: details.journeyPath || session.journeyPath,
       activeStep: null,
       pendingStep: null,
+      promptReady: false,
+      readyConfirmedAt: "",
     } });
   }, [persistStepEvidence, recordStep]);
 
   const terminalProof = useCallback((sessionId, proof) => {
-    dispatch({ type: "update-session", id: sessionId, patch: { proof } });
+    const session = stateRef.current.sessions.find((entry) => entry.id === sessionId);
+    dispatch({
+      type: "update-session",
+      id: sessionId,
+      patch: {
+        proof: {
+          ...proof,
+          command: session?.activeStep?.command || "",
+          commandLabel: session?.activeStep?.label || "",
+          capturedAt: new Date().toISOString(),
+        },
+      },
+    });
   }, []);
 
   const value = useMemo(() => ({
     ...state,
     activeSession: state.sessions.find((session) => session.id === state.activeSessionId) || null,
     compatibleSessions: (request) => compatibleTerminalSessions(state.sessions, request),
+    rankedSessions: (request) => rankTerminalSessions(state.sessions, request, { activeSessionId: state.activeSessionId }),
+    suggestedSession: (request) => suggestedTerminalSession(state.sessions, request, { activeSessionId: state.activeSessionId }),
     hasSessionsForTarget: (targetId) => state.sessions.some((session) => session.targetId === targetId),
     hasSessionsForEndpoint: (targetId, endpointId) => state.sessions.some((session) => session.targetId === targetId && session.endpointId === endpointId),
     openCommand,
     stageCommand,
     runStaged,
     cancelStaged: (id) => dispatch({ type: "cancel-staged", id }),
-    saveActiveStep: (id) => {
+    saveActiveStep: (id, terminalSnapshot) => {
       const session = stateRef.current.sessions.find((entry) => entry.id === id);
       if (!session?.activeStep?.hasCapture) return false;
-      if (!persistStepEvidence(session, session.activeStep)) return false;
+      if (!persistStepEvidence(session, session.activeStep, { terminalSnapshot })) return false;
       dispatch({ type: "mark-step-saved", id });
       return true;
     },
-    markSessionReady: (id) => {
+    markSessionReady: (id, terminalSnapshot) => {
       const session = stateRef.current.sessions.find((entry) => entry.id === id);
       if (!session?.activeStep || (!session.activeStep.hasCapture && !session.activeStep.evidenceSaved)) return false;
-      if (session.activeStep.hasCapture) persistStepEvidence(session, session.activeStep);
-      dispatch({ type: "finish-step", id });
+      if (session.activeStep.hasCapture) persistStepEvidence(session, session.activeStep, { terminalSnapshot });
+      dispatch({ type: "finish-step", id, readyAt: new Date().toISOString() });
       return true;
     },
     confirmContext: (id, context) => dispatch({ type: "confirm-context", id, context }),

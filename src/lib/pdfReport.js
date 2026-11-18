@@ -20,12 +20,31 @@ import {
   rgb,
 } from "pdf-lib";
 import { ALL_ITEMS, CHECKLIST } from "../data/checklist.js";
-import { getActiveScope, getTargetItemValue, normalizeWorkspace } from "./workspace.js";
+import {
+  commandResultReference,
+  getActiveScope,
+  getTargetCommandRunResultStateValue,
+  getTargetItemValue,
+  latestCommandResultReference,
+  normalizeWorkspace,
+  RESULT_STATES,
+} from "./workspace.js";
 import { confirmedDiscoveries, visibleDiscoveries } from "./evidence.js";
 import { describeCommand } from "./commandInsights.js";
 import { getOperatorProfile, githubProfile, initials } from "./profile.js";
 import { TERMINAL_THEME, terminalLines } from "./terminalText.js";
+import { normalizeTerminalDisplayLines } from "./reportTerminal.js";
 import { buildReportStarters } from "./reportStarters.js";
+import { buildTargetNarrativeModel } from "./narrative.js";
+import {
+  classifyCommandResult,
+  classifyItemResult,
+  resultCategoryLabel,
+  resultNarrativeLabel,
+  resultStateLabel,
+} from "./resultClassification.js";
+
+export { normalizeTerminalDisplayLines } from "./reportTerminal.js";
 
 export const WORKSPACE_ATTACHMENT = "fieldnotes-workspace.json";
 
@@ -36,7 +55,7 @@ const RIGHT = PAGE_W - 56;
 const CONTENT_W = RIGHT - LEFT;
 const CONTENT_TOP = PAGE_H - 104;
 const CONTENT_BOTTOM = 76;
-const TERMINAL_LINE_LIMIT = 6;
+const TERMINAL_LINE_LIMIT = 10;
 const TOC_ENTRIES_PER_PAGE = 34;
 
 const PALETTE = {
@@ -346,7 +365,51 @@ async function embedEmoji(pdf, corpus, rasterize) {
 // ---------------------------------------------------------------------------
 // Report data
 
-function targetData(workspace, targetId) {
+const substantiveCommandEvidence = (evidence) => evidence?.substantive !== false && Boolean(
+  String(evidence?.content || "").trim()
+  || evidence?.dataUrl
+  || evidence?.fileDataUrl,
+);
+
+export function resultBackedCommandRuns(commands = [], items = [], targetId = "") {
+  const evidence = items.flatMap((item) => item.evidence || []);
+  return commands.filter((command) => {
+    if (targetId && command.targetId && command.targetId !== targetId) return false;
+    return evidence.some((entry) => (
+      entry.commandRunId === command.id
+      && substantiveCommandEvidence(entry)
+      && (!targetId || !entry.targetId || entry.targetId === targetId)
+      && (!command.targetId || !entry.targetId || entry.targetId === command.targetId)
+    ));
+  });
+}
+
+const AUTH_VALIDATION_LABEL = /^Validate (?:SMB|WinRM|SSH) authentication\s+[—-]\s+(.+)$/iu;
+const AUTH_SUCCESS_SIGNAL = /(?:\bPwn3d!|\[\+\][^\n]*(?:\\|@)|\b(?:authentication|login|connection)\s+(?:succeeded|successful)\b)/iu;
+
+const accountIdentity = (account) => `${account?.domain ? `${account.domain}\\` : ""}${account?.username || ""}`.trim().toLowerCase();
+
+export function deriveReportAccountStatuses(accounts = [], commands = [], items = []) {
+  const evidence = items.flatMap((item) => item.evidence || []);
+  const validatedIdentities = new Set(commands.flatMap((command) => {
+    if (command.commandResultState !== RESULT_STATES.CONFIRMED) return [];
+    const identity = String(command.label || "").match(AUTH_VALIDATION_LABEL)?.[1]?.trim().toLowerCase();
+    if (!identity) return [];
+    const linkedOutput = evidence
+      .filter((entry) => entry.commandRunId === command.id && substantiveCommandEvidence(entry))
+      .map((entry) => String(entry.content || ""))
+      .join("\n");
+    return AUTH_SUCCESS_SIGNAL.test(linkedOutput) ? [identity] : [];
+  }));
+
+  return accounts.map((account) => {
+    if (!validatedIdentities.has(accountIdentity(account))) return account;
+    if (account.status && account.status !== "untested") return account;
+    return { ...account, status: "valid" };
+  });
+}
+
+export function buildTargetReportData(workspace, targetId) {
   const target = workspace.targets.find((entry) => entry.id === targetId)
     || workspace.targets.find((entry) => entry.id === workspace.activeTargetId)
     || { id: null, name: workspace.variables.targetName, host: workspace.variables.rhost, domain: workspace.variables.domain };
@@ -363,41 +426,91 @@ function targetData(workspace, targetId) {
     ignored: workspace.ignoredDiscoveries,
     targetId: target?.id,
   };
-  const commandHistory = (workspace.commandHistory || [])
-    .filter((entry) => belongs(entry) && entry.source === "local runner")
-    .map((entry) => ({
-      ...entry,
-      commandResultState: entry.commandKey
-        ? workspace.commandResultStates?.[`${scope}::${entry.itemId}::${entry.commandKey}`] || "needs-review"
-        : "",
-    }));
-  const items = ALL_ITEMS.map((item) => ({
-    ...item,
-    completed: Boolean(getTargetItemValue(workspace.completed, scope, item.id, false)),
-    resultState: getTargetItemValue(
+  const narrativeModel = buildTargetNarrativeModel(workspace, ALL_ITEMS, target?.id);
+  const scopedRuns = (workspace.commandHistory || [])
+    .filter((entry) => belongs(entry) && entry.source === "local runner");
+  const latestRunByCommandKey = new Map();
+  for (const entry of scopedRuns) {
+    if (entry.commandKey) latestRunByCommandKey.set(`${entry.itemId}\u0000${entry.commandKey}`, entry.id);
+  }
+  const scopedCommandHistory = scopedRuns
+    .map((entry) => {
+      const narrative = narrativeModel.commands[entry.id];
+      const resultReference = commandResultReference({ commandRunId: entry.id });
+      return {
+        ...entry,
+        established: narrative?.finding || entry.established,
+        nextAction: narrative?.nextStep || entry.nextAction,
+        resultCategory: narrative?.resultCategory || entry.resultCategory || classifyCommandResult(entry.itemId, entry),
+        commandResultState: narrative?.resultState || (entry.commandKey
+          ? getTargetCommandRunResultStateValue(
+            workspace.commandResultStates,
+            scope,
+            entry.itemId,
+            entry.commandKey,
+            resultReference,
+            RESULT_STATES.REVIEW,
+            { allowLegacy: latestRunByCommandKey.get(`${entry.itemId}\u0000${entry.commandKey}`) === entry.id },
+          )
+          : ""),
+      };
+    });
+  const candidateItems = ALL_ITEMS.map((item) => {
+    const narrative = narrativeModel.items[item.id];
+    const storedCompleted = Boolean(getTargetItemValue(workspace.completed, scope, item.id, false));
+    const resultState = narrative?.resultState || getTargetItemValue(
       workspace.resultStates || {},
       scope,
       item.id,
-      getTargetItemValue(workspace.completed, scope, item.id, false) ? "finding-confirmed" : "needs-review",
-    ),
-    note: getTargetItemValue(workspace.notes, scope, item.id, ""),
-    nextStep: getTargetItemValue(workspace.nextSteps, scope, item.id, ""),
-    evidence: getTargetItemValue(workspace.evidence, scope, item.id, []).map((entry) => ({
-      ...entry,
-      commandResultState: entry.commandKey
-        ? workspace.commandResultStates?.[`${scope}::${item.id}::${entry.commandKey}`] || "needs-review"
-        : "",
-      discoveries: visibleDiscoveries(entry.discoveries, discoveryOptions),
-    })),
-  })).filter((item) => item.completed || item.evidence.length > 0 || commandHistory.some((command) => command.itemId === item.id));
+      storedCompleted ? RESULT_STATES.CONFIRMED : RESULT_STATES.REVIEW,
+    );
+    return {
+      ...item,
+      completed: storedCompleted || [RESULT_STATES.CONFIRMED, RESULT_STATES.NO_FINDING].includes(resultState),
+      resultState,
+      resultCategory: narrative?.resultCategory || classifyItemResult(item, item.commands),
+      note: narrative?.finding || getTargetItemValue(workspace.notes, scope, item.id, ""),
+      nextStep: narrative?.nextStep || getTargetItemValue(workspace.nextSteps, scope, item.id, ""),
+      evidence: (() => {
+        const entries = getTargetItemValue(workspace.evidence, scope, item.id, []);
+        const latestReferences = new Map();
+        for (const entry of entries) {
+          if (entry.commandKey) latestReferences.set(entry.commandKey, latestCommandResultReference(entries, entry.commandKey));
+        }
+        return entries.map((entry) => {
+          const resultReference = commandResultReference(entry);
+          return {
+            ...entry,
+            commandResultState: entry.commandKey && resultReference
+              ? getTargetCommandRunResultStateValue(
+                workspace.commandResultStates,
+                scope,
+                item.id,
+                entry.commandKey,
+                resultReference,
+                RESULT_STATES.REVIEW,
+                { allowLegacy: latestReferences.get(entry.commandKey) === resultReference },
+              )
+              : "",
+            discoveries: visibleDiscoveries(entry.discoveries, discoveryOptions),
+          };
+        });
+      })(),
+    };
+  });
+  const commandHistory = resultBackedCommandRuns(scopedCommandHistory, candidateItems, target?.id);
+  const items = candidateItems.filter((item) => (
+    item.completed || item.evidence.length > 0 || commandHistory.some((command) => command.itemId === item.id)
+  ));
   const evidence = items.flatMap((item) => item.evidence);
+  const accounts = deriveReportAccountStatuses(workspace.accounts.filter(belongs), commandHistory, items);
   return {
     target,
     scope,
     report,
     profile: getOperatorProfile(workspace, report),
     items,
-    accounts: workspace.accounts.filter(belongs),
+    accounts,
     users: (workspace.users || []).filter(belongs),
     loot: workspace.loot.filter(belongs),
     discoveries: confirmedDiscoveries(visibleDiscoveries(workspace.discoveries, discoveryOptions)).filter(belongs),
@@ -415,6 +528,15 @@ const textCorpus = (data) => JSON.stringify(data, (key, value) => (
 const portList = (...values) => [...new Set(values.flatMap((value) => String(value || "").split(",")).map((port) => port.trim()).filter(Boolean))].join(", ");
 
 const homeRelative = (path) => String(path || "").replace(/^\/home\/kali(?=\/|$)/, "~").replace(/^\/root(?=\/|$)/, "~");
+
+export function formatCommandExecutionContext(command = {}) {
+  return [
+    command.runsOn ? `run on ${command.runsOn}` : "",
+    command.terminalContext ? `terminal ${command.terminalContext}` : "",
+    command.terminalRole ? `role ${command.terminalRole}` : "",
+    command.cwd ? `PTY workspace ${homeRelative(command.cwd)}` : "",
+  ].filter(Boolean).join(" · ");
+}
 
 export const orderCommandRuns = (commands = []) => commands
   .map((command, index) => {
@@ -480,6 +602,18 @@ const outputLineText = (line) => (typeof line === "string"
   ? line
   : (line || []).map((segment) => segment.text || "").join(""));
 
+export function terminalFontSize(sourceLines = []) {
+  const lengths = sourceLines
+    .map((line) => outputLineText(line).trimEnd().length)
+    .filter(Boolean)
+    .sort((left, right) => left - right);
+  const representative = lengths[Math.max(0, Math.ceil(lengths.length * 0.85) - 1)] || 0;
+  if (representative > 140) return 6.2;
+  if (representative > 112) return 6.5;
+  if (representative > 92) return 6.9;
+  return 7.3;
+}
+
 // A raw prefix often spends the entire excerpt on banners. Keep a bounded
 // head/tail balance so both command context and the final result remain visible.
 export function selectOutputExcerpt(sourceLines = [], limit = TERMINAL_LINE_LIMIT) {
@@ -510,6 +644,19 @@ export function formatKaliPromptLines(command, path, unicode = true) {
   return [
     [{ text: "┌──(", style: { fg: blue } }, { text: "kali㉿kali", style: { fg: blue, bold: true } }, { text: ")-[", style: { fg: blue } }, { text: path, style: { fg: "#ffffff", bold: true } }, { text: "]", style: { fg: blue } }],
     [{ text: "└─", style: { fg: blue } }, { text: "$ ", style: { fg: blue, bold: true } }, { text: commandLines[0], style: {} }],
+    ...commandLines.slice(1).map((line) => [{ text: line, style: {} }]),
+  ];
+}
+
+export function formatCommandPromptLines(command = {}, path = "", unicode = true) {
+  const commandText = command.command || command.commandText || "";
+  const context = command.terminalContext || command.runsOn || "lhost";
+  if (context === "lhost") return formatKaliPromptLines(commandText, path, unicode);
+  const prompt = context === "foothold-windows" ? "PS> " : context === "foothold-linux" ? "$ " : "> ";
+  const commandLines = String(commandText).replace(/\r\n/g, "\n").split("\n");
+  return [
+    [{ text: `[${context}]`, style: { fg: PALETTE.kaliBlue, bold: true } }],
+    [{ text: prompt, style: { fg: PALETTE.kaliBlue, bold: true } }, { text: commandLines[0], style: {} }],
     ...commandLines.slice(1).map((line) => [{ text: line, style: {} }]),
   ];
 }
@@ -628,7 +775,7 @@ export async function generateReportPdf(workspace, targetId, options = {}) {
 }
 
 async function buildReportPdf(workspace, targetId, { fonts: fontBytes, rasterizeEmoji } = {}) {
-  const data = targetData(workspace, targetId);
+  const data = buildTargetReportData(workspace, targetId);
   const pdf = await PDFDocument.create();
   const families = await loadFamilies(pdf, fontBytes);
   const emojiImages = families.unicode ? await embedEmoji(pdf, textCorpus(data), rasterizeEmoji) : new Map();
@@ -849,12 +996,11 @@ async function buildReportPdf(workspace, targetId, { fonts: fontBytes, rasterize
   };
 
   // A dark terminal window that keeps ANSI colors and splits cleanly across pages.
-  const terminal = ({ title, meta, lines: sourceLines, omitted = 0, omittedNote }) => {
-    const size = 7.5;
-    const lineHeight = 10.6;
+  const terminal = ({ title, meta, lines: sourceLines, omitted = 0, omittedNote, wrapMode = "hard" }) => {
+    const size = terminalFontSize(sourceLines);
+    const lineHeight = Math.max(9.2, size * 1.42);
     const padX = 11;
     const padY = 8;
-    const barHeight = 18;
     const style = (segmentStyle = {}) => {
       let fg = segmentStyle.fg || TERMINAL_THEME.foreground;
       let bg = segmentStyle.bg;
@@ -862,10 +1008,15 @@ async function buildReportPdf(workspace, targetId, { fonts: fontBytes, rasterize
       if (segmentStyle.dim) fg = mix(fg, TERMINAL_THEME.background, 0.6);
       return { family: "mono", size, color: fg, bg, bold: Boolean(segmentStyle.bold), underline: Boolean(segmentStyle.underline) };
     };
+    // Synthetic command blocks benefit from word-aware wrapping so verbs,
+    // paths, and proof labels do not split in the middle of a word. Captured
+    // terminal output keeps hard wrapping because its spacing may be evidence
+    // (tables, indentation, and pre-wrapped xterm rows in particular).
+    const wrapLine = wrapMode === "prose" ? ts.wrapProse : ts.wrapHard;
     const visual = [];
     for (const segments of sourceLines) {
       const units = ts.shape(segments.map((segment) => ({ text: segment.text, ...style(segment.style) })));
-      visual.push(...ts.wrapHard(units, CONTENT_W - padX * 2));
+      visual.push(...wrapLine(units, CONTENT_W - padX * 2));
     }
     if (omitted > 0) {
       visual.push([]);
@@ -873,11 +1024,20 @@ async function buildReportPdf(workspace, targetId, { fonts: fontBytes, rasterize
     }
     while (visual.length > 1 && visual[visual.length - 1].length === 0) visual.pop();
 
-    const titleUnits = ts.truncate(ts.shape([{ text: title, family: "mono", size: 7, bold: true, color: "#c7d4ca" }]), CONTENT_W * 0.58);
-    const metaUnits = meta ? ts.truncate(ts.shape([{ text: meta, family: "mono", size: 6.6, color: TERMINAL_THEME.muted }]), CONTENT_W * 0.36) : [];
+    const chromeWidth = CONTENT_W - 64;
+    const titleLines = (value) => ts.wrapProse(ts.shape([{ text: value, family: "mono", size: 6.9, bold: true, color: "#c7d4ca" }]), chromeWidth);
+    const firstTitleLines = titleLines(title);
+    const continuedTitleLines = titleLines(`${title} (continued)`);
+    const metaLines = meta ? ts.wrapProse(ts.shape([{ text: meta, family: "mono", size: 5.9, color: TERMINAL_THEME.muted }]), chromeWidth) : [];
+    // Header text is report evidence too: wrap it instead of truncating target
+    // scope, execution context, or timestamps. Keep enough height for the
+    // longer continuation label so page splits cannot reintroduce clipping.
+    const barHeight = Math.max(28, 5 + Math.max(firstTitleLines.length, continuedTitleLines.length) * 10 + metaLines.length * 9);
     let index = 0;
     let first = true;
     while (index < visual.length) {
+      const remainingHeight = barHeight + padY * 2 + lineHeight * (visual.length - index);
+      if (visual.length - index <= 14 && y - remainingHeight < CONTENT_BOTTOM) newPage();
       ensure(barHeight + padY * 2 + lineHeight * Math.min(3, visual.length - index));
       const capacity = Math.max(1, Math.floor((y - CONTENT_BOTTOM - barHeight - padY * 2) / lineHeight));
       const chunk = visual.slice(index, index + capacity);
@@ -886,10 +1046,17 @@ async function buildReportPdf(workspace, targetId, { fonts: fontBytes, rasterize
       roundedRect(page, LEFT, bottom, CONTENT_W, height, 5, { color: color(TERMINAL_THEME.chrome), borderColor: color(PALETTE.terminalBorder), borderWidth: 0.6 });
       roundedRect(page, LEFT + 0.3, bottom + 0.3, CONTENT_W - 0.6, height - barHeight - 0.3, 4.7, { color: color(TERMINAL_THEME.background) });
       page.drawRectangle({ x: LEFT + 0.3, y: y - barHeight - 6, width: CONTENT_W - 0.6, height: 6, color: color(TERMINAL_THEME.background) });
-      ["#ff5f56", "#ffbd2e", "#27c93f"].forEach((dot, dotIndex) => page.drawCircle({ x: LEFT + 12 + dotIndex * 9, y: y - barHeight / 2, size: 2.6, color: color(dot) }));
-      const label = first ? titleUnits : ts.truncate(ts.shape([{ text: `${title} (continued)`, family: "mono", size: 7, bold: true, color: "#c7d4ca" }]), CONTENT_W * 0.58);
-      ts.draw(page, label, LEFT + 44, y, barHeight);
-      if (metaUnits.length) ts.draw(page, metaUnits, RIGHT - 10 - ts.lineWidth(metaUnits), y, barHeight);
+      ["#ff5f56", "#ffbd2e", "#27c93f"].forEach((dot, dotIndex) => page.drawCircle({ x: LEFT + 12 + dotIndex * 9, y: y - 7, size: 2.6, color: color(dot) }));
+      const labelLines = first ? firstTitleLines : continuedTitleLines;
+      let chromeTop = y;
+      for (const labelLine of labelLines) {
+        ts.draw(page, labelLine, LEFT + 44, chromeTop, 10);
+        chromeTop -= 10;
+      }
+      for (const metaLine of metaLines) {
+        ts.draw(page, metaLine, LEFT + 44, chromeTop, 9);
+        chromeTop -= 9;
+      }
       let top = y - barHeight - padY;
       for (const line of chunk) {
         ts.draw(page, line, LEFT + padX, top, lineHeight);
@@ -905,11 +1072,16 @@ async function buildReportPdf(workspace, targetId, { fonts: fontBytes, rasterize
 
   const kaliPrompt = (command) => {
     const path = homeRelative(`${workspace.variables.workspaceRoot}/${data.target?.slug || workspace.variables.targetSlug || targetName}`);
-    return formatKaliPromptLines(command, path, families.unicode);
+    return formatCommandPromptLines(command, path, families.unicode);
   };
 
   const outputBlock = (evidence, attachmentName) => {
-    const excerpt = selectOutputExcerpt(terminalLines(evidence.content));
+    const normalizedLines = normalizeTerminalDisplayLines(terminalLines(evidence.content), evidence.commandText);
+    const displayLines = normalizedLines.length ? normalizedLines : [[{
+      text: "[No additional terminal output beyond the reviewed command input.]",
+      style: { fg: TERMINAL_THEME.muted },
+    }]];
+    const excerpt = selectOutputExcerpt(displayLines);
     const lines = [...excerpt.lines];
     if (excerpt.omitted > 0) {
       const attachment = attachmentName ? ` Full output: ${attachmentName}.` : " Full output is attached.";
@@ -919,8 +1091,8 @@ async function buildReportPdf(workspace, targetId, { fonts: fontBytes, rasterize
       }]);
     }
     terminal({
-      title: evidence.label || evidence.filename || "Command output",
-      meta: [evidence.commandResultState?.replace(/-/g, " "), formatBytes(evidence.size), formatTimestamp(evidence.createdAt)].filter(Boolean).join(" · "),
+      title: String(evidence.label || evidence.filename || "Command output").replace(/\s+·\s+embedded terminal(?:\s+(?:snapshot|failure|final result))?$/iu, ""),
+      meta: [evidence.address, evidence.commandResultState?.replace(/-/g, " "), formatBytes(evidence.size), formatTimestamp(evidence.createdAt)].filter(Boolean).join(" · "),
       lines,
     });
   };
@@ -1086,13 +1258,14 @@ async function buildReportPdf(workspace, targetId, { fonts: fontBytes, rasterize
   // again in a command appendix, which made a single-machine report needlessly
   // long without adding evidence.
   section("Attack Path", { startPage: false });
-  paragraph(span(`Each step records the operator conclusion, exact command, timestamp, target scope, and a bounded head/tail output excerpt. Complete console logs remain embedded as PDF attachments.`, { size: 9.4, color: PALETTE.muted }), { after: 12 });
+  paragraph(span(`Each step records the operator conclusion, exact command, timestamp, target scope, execution context, and a bounded head/tail output excerpt. Complete console logs remain embedded as PDF attachments.`, { size: 9.4, color: PALETTE.muted }), { after: 12 });
   const orderedCommands = orderCommandRuns(data.commandHistory);
   const terminalEvidence = data.items.flatMap((item) => item.evidence).filter((evidence) => evidence.commandRunId);
   const attackEvents = orderAttackPathEvents(data.items, orderedCommands);
   if (attackEvents.length === 0) callout("Attack path incomplete", "No operator-confirmed narrative or terminal activity was recorded for this target.", { fg: PALETTE.warn, bg: PALETTE.warnSoft });
   const phaseNumbers = new Map(CHECKLIST.map((phase) => [phase.id, phase.number]));
-  const cleanNarrative = (value) => String(value || "").replace(/^(?:Draft|Attempt|Result):\s*/, "").trim();
+  const cleanNarrative = (value) => String(value || "").replace(/^(?:Draft|Attempt|Result|Derived):\s*/, "").trim();
+  const genericNextAction = "Preserve the reviewed output and continue only with a manually selected follow-up whose prerequisites are now satisfied.";
   let currentPhase = null;
   let commandNumber = 0;
   for (const event of attackEvents) {
@@ -1106,16 +1279,24 @@ async function buildReportPdf(workspace, targetId, { fonts: fontBytes, rasterize
         eyebrow(`Phase ${phaseNumbers.get(item.phaseId) || ""} — ${item.phaseTitle}`, { keep: 120 });
       }
       subheading(item.title, { keep: 90 });
-      paragraph([span("Operator result  ", { size: 8, bold: true, color: PALETTE.muted }), span(item.resultState.replace(/-/g, " "), { size: 8.6, bold: true, color: item.completed ? PALETTE.accent : PALETTE.warn })], { after: 6 });
-      if (itemFinding) paragraph([span("Finding  ", { size: 8, bold: true, color: PALETTE.ink }), span(itemFinding, { size: 8.8, color: PALETTE.body })], { lineHeight: 13, after: 5 });
-      if (itemDecision) paragraph([span("Decision  ", { size: 8, bold: true, color: PALETTE.accent }), span(itemDecision, { size: 8.8, color: PALETTE.body })], { lineHeight: 13, after: 7 });
+      paragraph([span(`Operator result · ${resultCategoryLabel(item.resultCategory)}  `, { size: 8, bold: true, color: PALETTE.muted }), span(resultStateLabel(item.resultState, item.resultCategory), { size: 8.6, bold: true, color: item.completed ? PALETTE.accent : PALETTE.warn })], { after: 6 });
+      // A command-backed item immediately renders the reviewed per-command
+      // result and next action below. Repeating its aggregated item prose here
+      // produces long, circular paragraphs (especially for create/verify/
+      // cleanup lifecycles). Evidence-only items still receive the full item
+      // narrative because no command section follows them.
+      if (event.kind !== "command" && itemFinding) paragraph([span(`${resultNarrativeLabel(item.resultCategory)}  `, { size: 8, bold: true, color: PALETTE.ink }), span(itemFinding, { size: 8.8, color: PALETTE.body })], { lineHeight: 13, after: 5 });
+      if (event.kind !== "command" && itemDecision) paragraph([span("Decision  ", { size: 8, bold: true, color: PALETTE.accent }), span(itemDecision, { size: 8.8, color: PALETTE.body })], { lineHeight: 13, after: 7 });
     }
 
     if (event.kind === "command") {
       const { command } = event;
       commandNumber += 1;
       const insight = describeCommand(command.command, command.label);
-      ensure(96);
+      // Keep a step heading and its first evidence card together. A smaller
+      // reserve allowed a heading to become the final line on a page while the
+      // command and terminal evidence started on the next page.
+      ensure(168);
       paragraph([
         mono(`STEP ${String(commandNumber).padStart(2, "0")}  `, { size: 7.4, bold: true, color: PALETTE.accent }),
         span(command.label || "Command", { size: 10.2, bold: true, color: PALETTE.ink }),
@@ -1123,13 +1304,21 @@ async function buildReportPdf(workspace, targetId, { fonts: fontBytes, rasterize
       if (!itemFinding) paragraph(span(insight.purpose, { size: 8.4, color: PALETTE.body }), { lineHeight: 12, after: 5 });
       const commandFinding = cleanNarrative(command.established);
       const commandDecision = cleanNarrative(command.nextAction);
+      const showCommandDecision = commandDecision
+        && commandDecision !== itemDecision
+        && commandDecision !== genericNextAction;
       if (commandFinding && commandFinding !== itemFinding) paragraph([span("Result  ", { size: 7.8, bold: true, color: PALETTE.accent }), span(commandFinding, { size: 8.2, color: PALETTE.body })], { lineHeight: 12, after: 4 });
-      if (commandDecision && commandDecision !== itemDecision) paragraph([span("Next  ", { size: 7.8, bold: true, color: PALETTE.accent }), span(commandDecision, { size: 8.2, color: PALETTE.body })], { lineHeight: 12, after: 5 });
-      if (command.commandResultState) paragraph([span("Command result  ", { size: 7.6, bold: true, color: PALETTE.muted }), span(command.commandResultState.replace(/-/g, " "), { size: 8, bold: true, color: command.commandResultState === "needs-review" ? PALETTE.warn : PALETTE.accent })], { lineHeight: 11, after: 4 });
+      if (showCommandDecision) paragraph([span("Next  ", { size: 7.8, bold: true, color: PALETTE.accent }), span(commandDecision, { size: 8.2, color: PALETTE.body })], { lineHeight: 12, after: 5 });
+      if (command.commandResultState) paragraph([span(`Command result · ${resultCategoryLabel(command.resultCategory)}  `, { size: 7.6, bold: true, color: PALETTE.muted }), span(resultStateLabel(command.commandResultState, command.resultCategory), { size: 8, bold: true, color: command.commandResultState === "needs-review" ? PALETTE.warn : PALETTE.accent })], { lineHeight: 11, after: 4 });
       terminal({
         title: command.label || "Command",
-        meta: [command.address, formatTimestamp(command.startedAt || command.copiedAt || command.recordedAt)].filter(Boolean).join(" · "),
-        lines: kaliPrompt(command.command),
+        meta: [
+          command.address,
+          formatCommandExecutionContext(command),
+          formatTimestamp(command.startedAt || command.copiedAt || command.recordedAt),
+        ].filter(Boolean).join(" · "),
+        lines: kaliPrompt(command),
+        wrapMode: "prose",
       });
       const results = terminalEvidence.filter((candidate) => candidate.commandRunId === command.id);
       if (results.length === 0) paragraph(span("No captured console result was linked to this run.", { size: 8, color: PALETTE.warn }), { after: 7 });
@@ -1158,12 +1347,12 @@ async function buildReportPdf(workspace, targetId, { fonts: fontBytes, rasterize
     data.accounts.map((account) => [`${account.domain ? `${account.domain}\\` : ""}${account.username}`, account.secret, account.status || "credential"]),
     { empty: "No credentials were saved for this machine." },
   );
-  paragraph(span(`${data.users.length} additional username${data.users.length === 1 ? " was" : "s were"} retained in the embedded workspace rather than expanded here.`, { size: 8.8, color: PALETTE.muted }), { after: 10 });
+  paragraph(span(`${data.users.length} tracked username${data.users.length === 1 ? " was" : "s were"} retained in the embedded workspace rather than expanded here.`, { size: 8.8, color: PALETTE.muted }), { after: 10 });
   eyebrow("Loot and proof inventory");
   table(
     [{ label: "Item", width: 0.28, bold: true }, { label: "Location", width: 0.34, mono: true }, { label: "Value", width: 0.38, mono: true }],
     data.loot.map((entry) => [entry.label, entry.location, entry.value]),
-    { empty: "No loot records were saved." },
+    { empty: "No separate loot ledger records were saved; command evidence and PDF attachments remain preserved." },
   );
 
   // ---- 6. Recommendations ------------------------------------------------

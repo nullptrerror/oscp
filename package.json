@@ -12,7 +12,7 @@
     "serve:local": "node server/local-server.mjs",
     "test": "node --test",
     "audit:commands": "node scripts/audit-commands.mjs",
-    "audit:examples": "node scripts/audit-examples.mjs examples/active"
+    "audit:examples": "node scripts/audit-examples.mjs examples"
   },
   "keywords": [
     "oscp",

@@ -38,6 +38,7 @@ export default function FindingsPage() {
   }).filter((entry) => !workspace.activeTargetId || entry.targetId === workspace.activeTargetId);
   const targetIgnored = workspace.ignoredDiscoveries.filter((entry) => !workspace.activeTargetId || entry.targetId === workspace.activeTargetId);
   const targetCommands = (workspace.commandHistory || []).filter((entry) => !workspace.activeTargetId || entry.targetId === workspace.activeTargetId).sort((a, b) => b.copiedAt.localeCompare(a.copiedAt));
+  const linkedCommandRuns = new Set(savedResults.map((entry) => entry.commandRunId).filter(Boolean));
 
   const addAccount = (event) => {
     event.preventDefault();
@@ -225,7 +226,26 @@ export default function FindingsPage() {
         </div>
         {targetCommands.length === 0 ? <EmptyMessage>Only commands copied from the checklist appear here and in the PDF.</EmptyMessage> : (
           <div className="results-grid">
-            {targetCommands.map((entry) => <article className="result-card" key={entry.id}><div className="copied-command-head"><strong>{entry.label}</strong><time>{new Date(entry.copiedAt).toLocaleString()}</time></div><pre>{entry.command}</pre><p>{entry.address}</p></article>)}
+            {targetCommands.map((entry) => (
+              <article className="result-card" key={entry.id}>
+                <div className="copied-command-head"><strong>{entry.label}</strong><time>{new Date(entry.copiedAt).toLocaleString()}</time></div>
+                <pre>{entry.command}</pre>
+                <p>{entry.address}</p>
+                {!linkedCommandRuns.has(entry.id) && (
+                  <button
+                    type="button"
+                    className="text-button danger"
+                    onClick={() => {
+                      if (window.confirm("Remove this unlinked command-history entry? Saved command results cannot be removed here.")) {
+                        actions.deleteCommandHistoryEntry(entry.id);
+                      }
+                    }}
+                  >
+                    Remove unlinked history
+                  </button>
+                )}
+              </article>
+            ))}
           </div>
         )}
       </section>

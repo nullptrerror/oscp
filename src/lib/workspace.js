@@ -63,10 +63,60 @@ export const uniqueTargetSlug = (targets = [], requested = "target") => {
   return `${base}-${suffix}`;
 };
 
+export const normalizeTargetPatch = (targets = [], targetId, patch = {}) => {
+  if (patch.slug === undefined) return patch;
+  return {
+    ...patch,
+    slug: uniqueTargetSlug(targets.filter((target) => target.id !== targetId), patch.slug),
+  };
+};
+
 export const createId = (prefix = "item") => {
   const suffix = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   return `${prefix}-${suffix}`;
 };
+
+export function materializeLegacyCommandResultStates(record = {}, evidenceRecord = {}) {
+  const next = { ...(record || {}) };
+  for (const [itemStateKey, entries] of Object.entries(evidenceRecord || {})) {
+    if (!Array.isArray(entries)) continue;
+    const separator = itemStateKey.lastIndexOf("::");
+    if (separator < 1) continue;
+    const scope = itemStateKey.slice(0, separator);
+    const itemId = itemStateKey.slice(separator + 2);
+    const latestByCommandKey = new Map();
+    for (const entry of entries) {
+      if (!entry?.commandKey) continue;
+      const resultReference = commandResultReference(entry);
+      if (resultReference) latestByCommandKey.set(entry.commandKey, resultReference);
+    }
+    for (const [commandKey, resultReference] of latestByCommandKey) {
+      const legacyKey = getTargetCommandResultStateKey(scope, itemId, commandKey);
+      if (next[legacyKey] === undefined) continue;
+      const exactKey = getTargetCommandResultStateKey(scope, itemId, commandKey, resultReference);
+      if (next[exactKey] === undefined) next[exactKey] = next[legacyKey];
+      delete next[legacyKey];
+    }
+  }
+  return next;
+}
+
+export function commandResultStatesAfterEvidence(
+  record,
+  scope,
+  itemId,
+  evidence,
+  existingEvidence = [],
+) {
+  const itemStateKey = `${scope}::${itemId}`;
+  const stable = materializeLegacyCommandResultStates(record, { [itemStateKey]: existingEvidence });
+  const resultReference = commandResultReference(evidence);
+  if (!evidence?.commandKey || !resultReference) return stable;
+  return {
+    ...stable,
+    [getTargetCommandResultStateKey(scope, itemId, evidence.commandKey, resultReference)]: RESULT_STATES.REVIEW,
+  };
+}
 
 export const clearMachineVariables = (variables) => ({
   ...variables,
@@ -363,9 +413,14 @@ export function normalizeWorkspace(value) {
     && accounts.some((account) => account.id === accountId && account.targetId === targetId)
   )));
   const completed = normalizeScopedRecord(value.completed);
+  const evidence = normalizeScopedRecord(value.evidence);
   const suppliedResultStates = normalizeScopedRecord(value.resultStates);
   const validResultStates = new Set(Object.values(RESULT_STATES));
   const resultStates = Object.fromEntries(Object.entries(suppliedResultStates).filter(([, state]) => validResultStates.has(state)));
+  const suppliedCommandResultStates = Object.fromEntries(
+    Object.entries(normalizeScopedRecord(value.commandResultStates)).filter(([, state]) => validResultStates.has(state)),
+  );
+  const commandResultStates = materializeLegacyCommandResultStates(suppliedCommandResultStates, evidence);
   // Older and partially upgraded workspaces may only have the boolean. Keep
   // that work while making result state the single source of completion truth.
   for (const [key, isComplete] of Object.entries(completed)) {
@@ -391,11 +446,11 @@ export function normalizeWorkspace(value) {
     loot: asArray(value.loot).map(scopeEntry),
     completed,
     resultStates,
-    commandResultStates: Object.fromEntries(Object.entries(normalizeScopedRecord(value.commandResultStates)).filter(([, state]) => validResultStates.has(state))),
+    commandResultStates,
     notes: normalizeScopedRecord(value.notes),
     nextSteps: normalizeScopedRecord(value.nextSteps),
     narrativeSources: normalizeScopedRecord(value.narrativeSources),
-    evidence: normalizeScopedRecord(value.evidence),
+    evidence,
     discoveries: asArray(value.discoveries).filter((entry) => {
       if (entry.type === "hostname" && ["nmap.org", "www.nmap.org"].includes(String(entry.value).toLowerCase())) return false;
       if (["ip", "endpoint"].includes(entry.type) && entry.value === variables.lhost) return false;
@@ -433,6 +488,69 @@ export function getCommandResultStateKey(workspace, itemId, commandKey) {
 
 export function getCommandResultStateValue(record, workspace, itemId, commandKey, fallback = "") {
   return record?.[getCommandResultStateKey(workspace, itemId, commandKey)] ?? fallback;
+}
+
+export function commandResultReference(entry = {}) {
+  if (entry.commandRunId) return `run:${entry.commandRunId}`;
+  if (entry.id) return `evidence:${entry.id}`;
+  return "";
+}
+
+export function getTargetCommandResultStateKey(scope, itemId, commandKey, resultReference = "") {
+  const legacyKey = `${scope}::${itemId}::${commandKey}`;
+  return resultReference ? `${legacyKey}::${resultReference}` : legacyKey;
+}
+
+export function getCommandRunResultStateKey(workspace, itemId, commandKey, resultReference) {
+  return getTargetCommandResultStateKey(getActiveScope(workspace), itemId, commandKey, resultReference);
+}
+
+export function getTargetCommandRunResultStateValue(
+  record,
+  scope,
+  itemId,
+  commandKey,
+  resultReference,
+  fallback = "",
+  { allowLegacy = false } = {},
+) {
+  if (!commandKey || !resultReference) return fallback;
+  const exact = record?.[getTargetCommandResultStateKey(scope, itemId, commandKey, resultReference)];
+  if (exact !== undefined) return exact;
+  if (allowLegacy) {
+    return record?.[getTargetCommandResultStateKey(scope, itemId, commandKey)] ?? fallback;
+  }
+  return fallback;
+}
+
+export function getCommandRunResultStateValue(
+  record,
+  workspace,
+  itemId,
+  commandKey,
+  resultReference,
+  fallback = "",
+  options = {},
+) {
+  return getTargetCommandRunResultStateValue(
+    record,
+    getActiveScope(workspace),
+    itemId,
+    commandKey,
+    resultReference,
+    fallback,
+    options,
+  );
+}
+
+export function latestCommandResultReference(entries = [], commandKey = "") {
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index];
+    if (commandKey && entry?.commandKey !== commandKey) continue;
+    const reference = commandResultReference(entry);
+    if (reference) return reference;
+  }
+  return "";
 }
 
 export function getScopedItemValue(record, workspace, itemId, fallback) {

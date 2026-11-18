@@ -24,6 +24,7 @@ export const MAX_WEBSOCKET_BUFFER = 1024 * 1024;
 const WEBSOCKET_RESUME_BUFFER = 256 * 1024;
 const PRIVATE_DIRECTORY_MODE = 0o700;
 const PRIVATE_FILE_MODE = 0o600;
+const PRIVATE_UMASK = 0o077;
 const TERMINAL_LIMITS = Object.freeze({ minCols: 20, maxCols: 300, minRows: 5, maxRows: 120, defaultCols: 120, defaultRows: 32 });
 const token = crypto.randomBytes(24).toString("hex");
 const allowedRoot = path.resolve(process.env.FIELDNOTES_WORKSPACE_ROOT || (process.platform === "win32" ? process.cwd() : "/home/kali/oscp"));
@@ -31,6 +32,47 @@ const allowedRootExisted = fs.existsSync(allowedRoot);
 fs.mkdirSync(allowedRoot, { recursive: true, mode: PRIVATE_DIRECTORY_MODE });
 if (!allowedRootExisted) fs.chmodSync(allowedRoot, PRIVATE_DIRECTORY_MODE);
 const allowedRootReal = fs.realpathSync(allowedRoot);
+
+const transcriptRegistryKey = (filePath) => {
+  const resolved = path.resolve(filePath);
+  return path.join(fs.realpathSync(path.dirname(resolved)), path.basename(resolved));
+};
+
+export const createTranscriptOwnershipRegistry = () => {
+  const owners = new Map();
+  return Object.freeze({
+    acquire(filePath, ownerId = crypto.randomUUID()) {
+      const canonicalPath = transcriptRegistryKey(filePath);
+      if (owners.has(canonicalPath)) {
+        throw new Error("A recorded terminal already owns this machine transcript. Exit or close that terminal before starting another one.");
+      }
+      const token = Object.freeze({ ownerId: String(ownerId), filePath: canonicalPath });
+      owners.set(canonicalPath, token);
+      let released = false;
+      return Object.freeze({
+        ...token,
+        release() {
+          if (released) return false;
+          released = true;
+          if (owners.get(canonicalPath) !== token) return false;
+          owners.delete(canonicalPath);
+          return true;
+        },
+      });
+    },
+    isOwned(filePath) {
+      return owners.has(transcriptRegistryKey(filePath));
+    },
+    get size() {
+      return owners.size;
+    },
+  });
+};
+
+// This registry is intentionally process-wide rather than WebSocket- or
+// endpoint-scoped. Every browser tab connected to this runner therefore sees
+// the same canonical transcript ownership boundary.
+const transcriptOwnershipRegistry = createTranscriptOwnershipRegistry();
 
 const json = (response, status, body) => {
   response.writeHead(status, {
@@ -94,7 +136,7 @@ export const resolveConfinedDirectory = (root, requested) => {
 
 const resolveWorkingDirectory = (requested) => resolveConfinedDirectory(allowedRootReal, requested);
 
-export const createPrivateLogStream = (filePath) => {
+const openPrivateLogDescriptor = (filePath) => {
   let descriptor;
   try {
     try {
@@ -110,11 +152,88 @@ export const createPrivateLogStream = (filePath) => {
     descriptor = fs.openSync(filePath, flags, PRIVATE_FILE_MODE);
     if (!fs.fstatSync(descriptor).isFile()) throw new Error("Terminal log descriptor must reference a regular file");
     fs.fchmodSync(descriptor, PRIVATE_FILE_MODE);
-    return fs.createWriteStream(filePath, { fd: descriptor, autoClose: true });
+    return descriptor;
   } catch (error) {
     if (descriptor !== undefined) fs.closeSync(descriptor);
     throw error;
   }
+};
+
+export const createPrivateLogStream = (filePath) => {
+  const descriptor = openPrivateLogDescriptor(filePath);
+  return fs.createWriteStream(filePath, { fd: descriptor, autoClose: true });
+};
+
+export const withPrivateUmask = (operation) => {
+  const previous = process.umask(PRIVATE_UMASK);
+  try {
+    return operation();
+  } finally {
+    process.umask(previous);
+  }
+};
+
+export const preparePrivateLogFile = (filePath) => {
+  const descriptor = openPrivateLogDescriptor(filePath);
+  fs.closeSync(descriptor);
+  return filePath;
+};
+
+const privateLogIdentity = (filePath) => {
+  const stats = fs.lstatSync(filePath);
+  if (stats.isSymbolicLink()) throw new Error("Terminal log path must not be a symbolic link");
+  if (!stats.isFile()) throw new Error("Terminal log path must be a regular file");
+  return { dev: stats.dev, ino: stats.ino };
+};
+
+export const assertPrivateLogIdentity = (filePath, expected) => {
+  const current = privateLogIdentity(filePath);
+  if (!expected || current.dev !== expected.dev || current.ino !== expected.ino) {
+    throw new Error("Terminal transcript changed while the recorded shell was starting");
+  }
+  return true;
+};
+
+const shellSingleQuote = (value) => `'${String(value).replace(/'/g, `'"'"'`)}'`;
+
+const exactScriptAppendPath = (command) => {
+  const prefix = "script -a ";
+  const source = String(command || "").trim();
+  if (!source.startsWith(prefix)) return "";
+  const quoted = source.slice(prefix.length);
+  if (quoted.length < 2 || quoted[0] !== "'" || quoted.at(-1) !== "'") return "";
+  const value = quoted.slice(1, -1).replaceAll(`'"'"'`, "'");
+  return shellSingleQuote(value) === quoted && path.isAbsolute(value) ? value : "";
+};
+
+export const transcriptShellJourneyPath = (command, cwd, requestedCwd = cwd, canonicalJourneyPath = "") => {
+  if (process.platform === "win32") return "";
+  const requestedJourneyPath = exactScriptAppendPath(command);
+  if (!requestedJourneyPath || path.basename(requestedJourneyPath) !== "terminal.log") return "";
+  const journeyPath = canonicalJourneyPath || path.join(path.resolve(cwd), "notes", "terminal.log");
+  try {
+    const requestedNotes = fs.realpathSync(path.dirname(requestedJourneyPath));
+    const canonicalNotes = fs.realpathSync(path.dirname(journeyPath));
+    if (requestedNotes !== canonicalNotes) return "";
+    const requestedCwdNotes = fs.realpathSync(path.join(path.resolve(requestedCwd || cwd), "notes"));
+    return requestedNotes === requestedCwdNotes ? journeyPath : "";
+  } catch {
+    return "";
+  }
+};
+
+export const prepareTerminalJourney = (command, cwd, requestedCwd = cwd) => {
+  const canonicalCwd = fs.realpathSync(path.resolve(cwd));
+  const canonicalNotes = fs.realpathSync(path.join(canonicalCwd, "notes"));
+  const requestedNotes = fs.realpathSync(path.join(path.resolve(requestedCwd || cwd), "notes"));
+  if (requestedNotes !== canonicalNotes) throw new Error("Terminal transcript path does not match the validated working directory");
+  const journeyPath = path.join(canonicalNotes, "terminal.log");
+  const childOwnedPath = transcriptShellJourneyPath(command, canonicalCwd, requestedCwd, journeyPath);
+  if (childOwnedPath) {
+    preparePrivateLogFile(childOwnedPath);
+    return { journeyPath, journeyLog: null, childOwned: true, childIdentity: privateLogIdentity(childOwnedPath) };
+  }
+  return { journeyPath, journeyLog: createPrivateLogStream(journeyPath), childOwned: false };
 };
 
 export const terminalLogHeading = (label, command, timestamp = new Date().toISOString()) => {
@@ -260,6 +379,13 @@ export function attachRunnerWebSocket(server) {
     let terminalFailureReported = false;
     let sessionLogPath = "";
     let sessionJourneyPath = "";
+    let transcriptLease = null;
+
+    const releaseTranscriptLease = () => {
+      const lease = transcriptLease;
+      transcriptLease = null;
+      return lease?.release() || false;
+    };
 
     const clearFlowTimer = () => {
       if (flowTimer) clearTimeout(flowTimer);
@@ -279,7 +405,14 @@ export function attachRunnerWebSocket(server) {
       });
       finalizeSession?.({ exitCode: null, signal: "terminal-error", notifyClient: false });
       const failedTerminal = terminal;
-      try { failedTerminal?.kill(); } catch { terminal = null; }
+      if (!failedTerminal) {
+        releaseTranscriptLease();
+        return;
+      }
+      try { failedTerminal.kill(); } catch {
+        terminal = null;
+        releaseTranscriptLease();
+      }
     };
 
     const outputBackedUp = () => (
@@ -328,7 +461,15 @@ export function attachRunnerWebSocket(server) {
         journeyPath: sessionJourneyPath,
       });
       finalizeSession?.({ exitCode: null, signal: "log-error", notifyClient: false });
-      try { terminal?.kill(); } catch { terminal = null; }
+      const failedTerminal = terminal;
+      if (!failedTerminal) {
+        releaseTranscriptLease();
+        return;
+      }
+      try { failedTerminal.kill(); } catch {
+        terminal = null;
+        releaseTranscriptLease();
+      }
     };
 
     socket.on("message", (raw) => {
@@ -352,9 +493,11 @@ export function attachRunnerWebSocket(server) {
           const stamp = new Date().toISOString().replace(/[:.]/g, "-");
           const uniqueSuffix = crypto.randomBytes(6).toString("hex");
           sessionLogPath = path.join(logDirectory, `${stamp}-${safeSlug(message.label)}-${uniqueSuffix}.log`);
-          sessionJourneyPath = path.join(cwd, "notes", "terminal.log");
+          const journey = prepareTerminalJourney(message.command, cwd, message.cwd);
+          sessionJourneyPath = journey.journeyPath;
+          if (journey.childOwned) transcriptLease = transcriptOwnershipRegistry.acquire(journey.journeyPath);
           commandLog = createPrivateLogStream(sessionLogPath);
-          journeyLog = createPrivateLogStream(sessionJourneyPath);
+          journeyLog = journey.journeyLog;
           finalizeSession = createTerminalFinalizer({
             commandLog,
             journeyLog,
@@ -363,10 +506,10 @@ export function attachRunnerWebSocket(server) {
             notify: (payload) => send(socket, payload),
           });
           commandLog.on("error", failForLogError);
-          journeyLog.on("error", failForLogError);
+          journeyLog?.on("error", failForLogError);
           const heading = terminalLogHeading(message.label, message.command);
           commandLog.write(heading);
-          journeyLog.write(heading);
+          journeyLog?.write(heading);
 
           const shell = process.platform === "win32" ? "powershell.exe" : (process.env.SHELL || "/bin/bash");
           const args = process.platform === "win32"
@@ -374,18 +517,24 @@ export function attachRunnerWebSocket(server) {
             : ["-lc", message.command];
           const dimensions = terminalDimensions(message.cols, message.rows);
           acceptingOutput = true;
-          terminal = pty.spawn(shell, args, {
+          terminal = withPrivateUmask(() => pty.spawn(shell, args, {
             name: "xterm-256color",
             ...dimensions,
             cwd,
             env: { ...process.env, TERM: "xterm-256color" },
-          });
+          }));
+          // GNU script accepts a pathname rather than an inherited descriptor.
+          // Revalidate immediately after spawn to catch a same-user pathname
+          // swap during startup; the 0700 parent directory is the cross-user
+          // boundary, while a process already running as this user remains
+          // inside the user's own trust boundary.
+          if (journey.childOwned) assertPrivateLogIdentity(journey.journeyPath, journey.childIdentity);
           send(socket, { type: "started", logPath: sessionLogPath, journeyPath: sessionJourneyPath, pid: terminal.pid });
           terminal.onData((data) => {
             if (!acceptingOutput) return;
             try {
               commandLog.write(data);
-              journeyLog.write(data);
+              journeyLog?.write(data);
             } catch (error) {
               failForLogError(error);
               return;
@@ -407,6 +556,7 @@ export function attachRunnerWebSocket(server) {
             acceptingOutput = false;
             clearFlowTimer();
             finalizeSession?.({ exitCode, signal });
+            releaseTranscriptLease();
             terminal = null;
           });
           terminal.on?.("error", (error) => {
@@ -423,7 +573,14 @@ export function attachRunnerWebSocket(server) {
           }
           const failedTerminal = terminal;
           terminal = null;
-          try { failedTerminal?.kill(); } catch { /* the failed PTY is already gone */ }
+          if (!failedTerminal) releaseTranscriptLease();
+          else {
+            // Keep the lease until the spawned process is confirmed dead. This
+            // extra listener covers a rare setup failure before the normal
+            // exit listener above could be installed.
+            try { failedTerminal.onExit(() => releaseTranscriptLease()); } catch { /* retain the lease rather than permit overlap */ }
+            try { failedTerminal.kill(); } catch { releaseTranscriptLease(); }
+          }
           send(socket, {
             type: "error",
             message: error instanceof Error ? error.message : "Could not start terminal.",
@@ -474,6 +631,7 @@ export function attachRunnerWebSocket(server) {
       clearFlowTimer();
       if (!terminal) {
         finalizeSession?.({ exitCode: null, signal: "socket-closed", notifyClient: false });
+        releaseTranscriptLease();
         return;
       }
       closeFallback = setTimeout(() => {
@@ -482,7 +640,7 @@ export function attachRunnerWebSocket(server) {
         finalizeSession?.({ exitCode: null, signal: "socket-closed", notifyClient: false });
         const stuckTerminal = terminal;
         terminal = null;
-        try { stuckTerminal?.kill("SIGKILL"); } catch { /* already gone */ }
+        try { stuckTerminal?.kill("SIGKILL"); } catch { releaseTranscriptLease(); }
       }, 250);
       closeFallback.unref?.();
       try {
@@ -493,6 +651,7 @@ export function attachRunnerWebSocket(server) {
         acceptingOutput = false;
         finalizeSession?.({ exitCode: null, signal: "kill-error", notifyClient: false });
         terminal = null;
+        releaseTranscriptLease();
       }
     });
   });

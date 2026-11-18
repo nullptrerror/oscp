@@ -3,15 +3,22 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { PDFDict, PDFDocument, PDFName } from "pdf-lib";
 import {
+  buildTargetReportData,
   extractWorkspaceFromPdf,
+  deriveReportAccountStatuses,
+  formatCommandPromptLines,
+  formatCommandExecutionContext,
   formatKaliPromptLines,
   generateReportPdf,
   inspectWorkspacePdf,
+  normalizeTerminalDisplayLines,
   orderAttackPathEvents,
   orderCommandRuns,
+  resultBackedCommandRuns,
   selectOutputExcerpt,
+  terminalFontSize,
 } from "../src/lib/pdfReport.js";
-import { createDefaultWorkspace } from "../src/lib/workspace.js";
+import { createDefaultWorkspace, normalizeWorkspace, RESULT_STATES, WORKSPACE_VERSION } from "../src/lib/workspace.js";
 
 const PIXEL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 
@@ -76,6 +83,17 @@ test("direct Node generation embeds the bundled Unicode font for Kali prompt gly
   assert.doesNotMatch(prompt, /\?{2,}/u);
 });
 
+test("remote commands render an honest compact context prompt instead of a synthetic Kali prompt", () => {
+  const lines = formatCommandPromptLines({
+    command: "cmd.exe /d /c whoami",
+    runsOn: "foothold-windows",
+    terminalContext: "foothold-windows",
+  }, "~/oscp/forest", true).map((line) => line.map((segment) => segment.text).join(""));
+
+  assert.deepEqual(lines, ["[foothold-windows]", "PS> cmd.exe /d /c whoami"]);
+  assert.doesNotMatch(lines.join("\n"), /kali/u);
+});
+
 test("a twelve-command machine report remains concise without dropping full evidence attachments", async () => {
   const workspace = sampleWorkspace();
   const scope = "target-active::recon-tcp-detail";
@@ -122,6 +140,185 @@ test("PDF command runs retain chronological order when an earlier command is run
   ];
 
   assert.deepEqual(orderCommandRuns(commands).map((command) => command.id), ["first-run", "second-run", "rerun-first"]);
+});
+
+test("PDF report data preserves per-run outcomes and visible execution context across reruns", () => {
+  const workspace = createDefaultWorkspace();
+  workspace.activeTargetId = "forest";
+  workspace.targets = [{ id: "forest", name: "Forest", host: "10.0.0.1", endpoints: [{ id: "ep", address: "10.0.0.1" }] }];
+  workspace.commandHistory = [
+    {
+      id: "failed-run",
+      targetId: "forest",
+      source: "local runner",
+      itemId: "svc-smb",
+      commandKey: "list-shares",
+      label: "List shares",
+      command: "smbclient -L //10.0.0.1 -N",
+      runsOn: "lhost",
+      terminalContext: "lhost",
+      terminalRole: "machine-log",
+      cwd: "/home/kali/oscp/forest",
+    },
+    {
+      id: "confirmed-rerun",
+      targetId: "forest",
+      source: "local runner",
+      itemId: "svc-smb",
+      commandKey: "list-shares",
+      label: "List shares",
+      command: "smbclient -L //10.0.0.1 -N",
+      runsOn: "lhost",
+      terminalContext: "lhost",
+      terminalRole: "machine-log",
+      cwd: "/home/kali/oscp/forest",
+    },
+  ];
+  workspace.evidence["forest::svc-smb"] = [
+    { id: "failed-evidence", targetId: "forest", commandRunId: "failed-run", commandKey: "list-shares", content: "Connection refused" },
+    { id: "confirmed-evidence", targetId: "forest", commandRunId: "confirmed-rerun", commandKey: "list-shares", content: "Sharename Public" },
+  ];
+  workspace.commandResultStates["forest::svc-smb::list-shares::run:failed-run"] = RESULT_STATES.FAILED;
+  workspace.commandResultStates["forest::svc-smb::list-shares::run:confirmed-rerun"] = RESULT_STATES.CONFIRMED;
+
+  const data = buildTargetReportData(workspace, "forest");
+
+  assert.deepEqual(data.commandHistory.map((entry) => entry.commandResultState), [RESULT_STATES.FAILED, RESULT_STATES.CONFIRMED]);
+  assert.equal(
+    formatCommandExecutionContext(data.commandHistory[0]),
+    "run on lhost · terminal lhost · role machine-log · PTY workspace ~/oscp/forest",
+  );
+  assert.equal(
+    formatCommandExecutionContext({
+      runsOn: "foothold-linux",
+      terminalContext: "foothold-linux",
+      terminalRole: "general",
+      cwd: "/home/kali/oscp/forest",
+    }),
+    "run on foothold-linux · terminal foothold-linux · role general · PTY workspace ~/oscp/forest",
+  );
+});
+
+test("PDF report data keeps a migrated legacy outcome on the pre-rerun command", () => {
+  const workspace = normalizeWorkspace({
+    version: WORKSPACE_VERSION,
+    activeTargetId: "forest",
+    targets: [{ id: "forest", name: "Forest", host: "10.0.0.1", endpoints: [{ id: "ep", address: "10.0.0.1" }] }],
+    commandHistory: [{
+      id: "legacy-run",
+      targetId: "forest",
+      source: "local runner",
+      itemId: "svc-smb",
+      commandKey: "list-shares",
+      label: "List shares",
+      command: "smbclient -L //10.0.0.1 -N",
+    }],
+    evidence: {
+      "forest::svc-smb": [{ id: "legacy-evidence", targetId: "forest", commandRunId: "legacy-run", commandKey: "list-shares", content: "Sharename Public" }],
+    },
+    commandResultStates: {
+      "forest::svc-smb::list-shares": RESULT_STATES.CONFIRMED,
+    },
+  });
+  workspace.commandHistory.push({
+    id: "new-rerun",
+    targetId: "forest",
+    source: "local runner",
+    itemId: "svc-smb",
+    commandKey: "list-shares",
+    label: "List shares",
+    command: "smbclient -L //10.0.0.1 -N",
+  });
+  workspace.evidence["forest::svc-smb"].push({ id: "new-evidence", targetId: "forest", commandRunId: "new-rerun", commandKey: "list-shares", content: "Connection refused" });
+  workspace.commandResultStates["forest::svc-smb::list-shares::run:new-rerun"] = RESULT_STATES.REVIEW;
+
+  const data = buildTargetReportData(workspace, "forest");
+
+  assert.deepEqual(data.commandHistory.map((entry) => entry.commandResultState), [RESULT_STATES.CONFIRMED, RESULT_STATES.REVIEW]);
+});
+
+test("report command runs exclude orphaned history after its saved result is removed", () => {
+  const commands = [
+    { id: "canonical", targetId: "forest", source: "local runner" },
+    { id: "orphan", targetId: "forest", source: "local runner" },
+  ];
+  const items = [{
+    id: "recon-tcp-all",
+    evidence: [{ commandRunId: "canonical", targetId: "forest", content: "53/tcp open domain" }],
+  }];
+
+  assert.deepEqual(resultBackedCommandRuns(commands, items, "forest").map((command) => command.id), ["canonical"]);
+});
+
+test("report command runs remain linked while any substantive snapshot is retained", () => {
+  const commands = [{ id: "scan", targetId: "forest", source: "local runner" }];
+  const items = [{
+    id: "recon-tcp-all",
+    evidence: [
+      { commandRunId: "scan", targetId: "forest", content: "[Fieldnotes] Process ended with exit code 0.", substantive: false },
+      { commandRunId: "scan", targetId: "forest", content: "Nmap scan report for 10.129.95.210", substantive: true },
+    ],
+  }];
+
+  assert.deepEqual(resultBackedCommandRuns(commands, items, "forest").map((command) => command.id), ["scan"]);
+  assert.deepEqual(resultBackedCommandRuns(commands, [{ ...items[0], evidence: [items[0].evidence[0]] }], "forest"), []);
+});
+
+test("report command runs cannot be backed by evidence from another target", () => {
+  const commands = [
+    { id: "shared-id", targetId: "forest", source: "local runner" },
+    { id: "other-run", targetId: "active", source: "local runner" },
+  ];
+  const items = [{
+    id: "recon-tcp-all",
+    evidence: [
+      { commandRunId: "shared-id", targetId: "active", content: "foreign result" },
+      { commandRunId: "other-run", targetId: "active", content: "active result" },
+    ],
+  }];
+
+  assert.deepEqual(resultBackedCommandRuns(commands, items, "forest"), []);
+  assert.deepEqual(resultBackedCommandRuns(commands, items, "active").map((command) => command.id), ["other-run"]);
+});
+
+test("report accounts become valid only from confirmed successful authentication evidence", () => {
+  const accounts = [
+    { id: "svc", domain: "htb.local", username: "svc-alfresco", status: "untested" },
+    { id: "admin", domain: "htb.local", username: "Administrator", status: "untested" },
+    { id: "locked", domain: "htb.local", username: "locked-user", status: "locked" },
+  ];
+  const commands = [
+    { id: "svc-auth", label: "Validate WinRM authentication — htb.local\\svc-alfresco", commandResultState: "finding-confirmed" },
+    { id: "admin-exit", label: "Validate SMB authentication — htb.local\\Administrator", commandResultState: "finding-confirmed" },
+    { id: "locked-auth", label: "Validate SSH authentication — htb.local\\locked-user", commandResultState: "finding-confirmed" },
+  ];
+  const items = [{
+    evidence: [
+      { commandRunId: "svc-auth", content: "WINRM host [+] htb.local\\svc-alfresco:secret (Pwn3d!)" },
+      { commandRunId: "admin-exit", content: "[Fieldnotes] Process ended with exit code 0.", substantive: false },
+      { commandRunId: "locked-auth", content: "SSH host [+] htb.local\\locked-user:secret" },
+    ],
+  }];
+
+  const derived = deriveReportAccountStatuses(accounts, commands, items);
+  assert.equal(derived[0].status, "valid");
+  assert.equal(derived[1].status, "untested", "exit zero is not authentication evidence");
+  assert.equal(derived[2].status, "locked", "explicit operator status is preserved");
+  assert.equal(accounts[0].status, "untested", "report derivation does not mutate the workspace");
+});
+
+test("authentication evidence cannot validate a different account or an unconfirmed run", () => {
+  const accounts = [{ domain: "htb.local", username: "Administrator", status: "untested" }];
+  const items = [{ evidence: [
+    { commandRunId: "other", content: "SMB host [+] htb.local\\Administrator:hash (Pwn3d!)" },
+    { commandRunId: "review", content: "SMB host [+] htb.local\\Administrator:hash (Pwn3d!)" },
+  ] }];
+  const commands = [
+    { id: "other", label: "Validate SMB authentication — htb.local\\other-user", commandResultState: "finding-confirmed" },
+    { id: "review", label: "Validate SMB authentication — htb.local\\Administrator", commandResultState: "needs-review" },
+  ];
+
+  assert.equal(deriveReportAccountStatuses(accounts, commands, items)[0].status, "untested");
 });
 
 test("explicit command sequence overrides artifact timestamps with stable fallback ordering", () => {
@@ -182,6 +379,42 @@ test("console excerpts trim blanks and preserve a bounded head/tail balance", ()
   assert.deepEqual(excerpt.lines, ["banner", "command context", "early result", "final result", "completion signal"]);
   assert.equal(excerpt.omitted, 2);
   assert.equal(excerpt.splitAt, 3);
+});
+
+test("terminal display cleanup removes echoed input and duplicate prompts while preserving proof context", () => {
+  const command = "cmd.exe /d /c \"hostname & whoami & ipconfig\"";
+  const prompt = "*Evil-WinRM* PS C:\\Users\\student\\Documents>";
+  const lines = normalizeTerminalDisplayLines([
+    [{ text: "┌──(kali㉿kali)-[~/oscp/forest]", style: {} }],
+    [{ text: `${prompt} ${command}`, style: { fg: "#ff5f5f" } }],
+    [],
+    [{ text: "IPv4 Address. . . . . . . . . . . : 10.0.0.10", style: {} }],
+    [{ text: "Proof path: C:\\Users\\student\\Desktop\\user.txt", style: {} }],
+    [{ text: `${prompt} ${prompt}`, style: { fg: "#ff5f5f" } }],
+  ], command);
+  const text = lines.map((line) => line.map((segment) => segment.text).join(""));
+
+  assert.deepEqual(text, [
+    "IPv4 Address. . . . . . . . . . . : 10.0.0.10",
+    "Proof path: C:\\Users\\student\\Desktop\\user.txt",
+    prompt,
+  ]);
+});
+
+test("terminal display cleanup drops a carriage-repaint command tail without hiding the result", () => {
+  const command = "test 'creator' = 'creator' || { exit 1; }; net rpc user info 'temp-user' -S '10.0.0.10' -U 'LAB/operator%secret'";
+  const lines = normalizeTerminalDisplayLines([
+    [{ text: "1; }; net 'temp-user' -S '10.0.0.10' -U 'LAB/operator%secret'>", style: {} }],
+    [{ text: "Failed to get groups for 'temp-user': no mapping", style: {} }],
+  ], command).map((line) => line.map((segment) => segment.text).join(""));
+
+  assert.deepEqual(lines, ["Failed to get groups for 'temp-user': no mapping"]);
+});
+
+test("terminal font sizing stays readable while fitting unusually long reviewed commands", () => {
+  assert.equal(terminalFontSize([[{ text: "short result", style: {} }]]), 7.3);
+  assert.equal(terminalFontSize([[{ text: "x".repeat(100), style: {} }]]), 6.9);
+  assert.equal(terminalFontSize([[{ text: "x".repeat(150), style: {} }]]), 6.2);
 });
 
 test("PDF inspection reports older machines that did not store a lab style", async () => {

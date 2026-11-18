@@ -5,7 +5,7 @@ import { stripAnsi } from "../src/lib/terminalText.js";
 
 const args = process.argv.slice(2);
 const showValues = args.includes("--show-values");
-const root = path.resolve(args.find((entry) => !entry.startsWith("--")) || "examples/active");
+const root = path.resolve(args.find((entry) => !entry.startsWith("--")) || "examples");
 const textExtensions = new Set([".txt", ".log", ".nmap", ".gnmap", ".hashes", ".xml", ".ini", ".inf"]);
 
 if (!fs.existsSync(root)) {

@@ -3,8 +3,16 @@ import assert from "node:assert/strict";
 import {
   appendBoundedTerminalText,
   compatibleTerminalSessions,
+  logicalTerminalSnapshotLines,
   normalizeTerminalContext,
+  rankTerminalSessions,
+  suggestedTerminalSession,
+  TERMINAL_BEHAVIORS,
+  TERMINAL_SESSION_ROLES,
+  terminalCommandCwd,
   terminalInputForCommand,
+  terminalStepSnapshotText,
+  terminalTranscriptScopeMatches,
   terminalWorkspaceInitialState,
   terminalWorkspaceReducer,
 } from "../src/lib/terminalWorkspace.js";
@@ -17,8 +25,12 @@ const session = (patch = {}) => ({
   targetName: "Target A",
   endpointId: "endpoint-a",
   address: "192.0.2.10",
+  cwd: "/home/kali/oscp/target-a",
   context: "foothold-windows",
   contextConfirmed: true,
+  promptReady: true,
+  sessionRole: TERMINAL_SESSION_ROLES.GENERAL,
+  terminalBehavior: TERMINAL_BEHAVIORS.INTERACTIVE_SHELL,
   status: "running",
   transcript: "",
   activeStep: null,
@@ -36,6 +48,12 @@ test("named terminal labels map to typed embedded contexts", () => {
   assert.equal(normalizeTerminalContext("future-host"), null);
 });
 
+test("terminal CWD uses the same trimmed workspace root as command rendering", () => {
+  assert.equal(terminalCommandCwd("  /home/kali/oscp  ", "forest"), "/home/kali/oscp/forest");
+  assert.equal(terminalCommandCwd("/home/kali/oscp///", "forest"), "/home/kali/oscp/forest");
+  assert.equal(terminalCommandCwd("/", "forest"), "/forest");
+});
+
 test("every eligible catalog command has a recognized embedded execution route", () => {
   const commands = [...ALL_ITEMS.flatMap((item) => item.commands), ...PIVOT_STEPS];
   const eligible = commands.filter((command) => command.executionEnabled === true || (command.policy === "exam-core" && command.terminal));
@@ -50,12 +68,40 @@ test("compatible sessions require the same target, confirmed context, and an idl
     session({ id: "wrong-context", context: "foothold-linux" }),
     session({ id: "unconfirmed", contextConfirmed: false }),
     session({ id: "busy", activeStep: { runId: "run" } }),
+    session({ id: "prompt-not-ready", promptReady: false }),
     session({ id: "ended", status: "complete" }),
   ];
   assert.deepEqual(
     compatibleTerminalSessions(sessions, { targetId: "target-a", endpointId: "endpoint-a", address: "192.0.2.10", runsOn: "foothold-windows" }).map((entry) => entry.id),
     ["terminal-a"],
   );
+});
+
+test("terminal suggestions rank exact scope and a reusable recorded shell without staging it", () => {
+  const sessions = [
+    session({ id: "general", context: "lhost", originContext: "lhost", lastUsedAt: "2026-11-17T12:00:00Z" }),
+    session({ id: "recorded", context: "lhost", originContext: "lhost", sessionRole: TERMINAL_SESSION_ROLES.MACHINE_LOG, lastUsedAt: "2026-11-17T11:00:00Z" }),
+    session({ id: "other-folder", context: "lhost", originContext: "lhost", cwd: "/home/kali/oscp/other" }),
+  ];
+  const request = { targetId: "target-a", endpointId: "endpoint-a", address: "192.0.2.10", runsOn: "lhost", cwd: "/home/kali/oscp/target-a", command: "nmap -sV 192.0.2.10" };
+  const ranked = rankTerminalSessions(sessions, request);
+  assert.deepEqual(ranked.map((entry) => entry.session.id), ["recorded", "general"]);
+  assert.equal(suggestedTerminalSession(sessions, request)?.session.id, "recorded");
+  assert.equal(ranked[0].session.pendingStep, null);
+  assert.equal(ranked[0].session.inputRequest, undefined);
+});
+
+test("equal compatible tabs require an explicit choice and role-specific cleanup finds only its owner", () => {
+  const sessions = [
+    session({ id: "one", context: "lhost", originContext: "lhost" }),
+    session({ id: "two", context: "lhost", originContext: "lhost" }),
+    session({ id: "logged", context: "lhost", originContext: "lhost", sessionRole: TERMINAL_SESSION_ROLES.MACHINE_LOG }),
+  ];
+  const ordinary = { targetId: "target-a", endpointId: "endpoint-a", address: "192.0.2.10", runsOn: "lhost", cwd: "/home/kali/oscp/target-a", command: "whoami" };
+  assert.equal(suggestedTerminalSession(sessions.slice(0, 2), ordinary), null);
+  const cleanup = { ...ordinary, command: "exit", sessionRole: TERMINAL_SESSION_ROLES.MACHINE_LOG, requiresExplicitSession: true };
+  assert.deepEqual(compatibleTerminalSessions(sessions, cleanup).map((entry) => entry.id), ["logged"]);
+  assert.equal(suggestedTerminalSession(sessions, cleanup), null);
 });
 
 test("compatible sessions are isolated to the endpoint snapshot that opened them", () => {
@@ -70,6 +116,57 @@ test("compatible sessions are isolated to the endpoint snapshot that opened them
     runsOn: "foothold-windows",
   };
   assert.deepEqual(compatibleTerminalSessions(sessions, request).map((entry) => entry.id), ["endpoint-b"]);
+});
+
+test("recorded transcript ownership follows the machine workspace rather than the selected endpoint", () => {
+  const recorded = session({
+    context: "lhost",
+    originContext: "lhost",
+    sessionRole: TERMINAL_SESSION_ROLES.MACHINE_LOG,
+  });
+  const switchedEndpoint = {
+    targetId: "target-a",
+    endpointId: "endpoint-b",
+    address: "192.0.2.20",
+    runsOn: "lhost",
+    cwd: recorded.cwd,
+    command: "exit",
+    sessionRole: TERMINAL_SESSION_ROLES.MACHINE_LOG,
+  };
+  assert.equal(terminalTranscriptScopeMatches(recorded, switchedEndpoint), true);
+  assert.deepEqual(compatibleTerminalSessions([recorded], switchedEndpoint).map((entry) => entry.id), [recorded.id]);
+  assert.ok(rankTerminalSessions([recorded], switchedEndpoint)[0].reasons.includes("same transcript folder"));
+  assert.ok(!rankTerminalSessions([recorded], switchedEndpoint)[0].reasons.includes("same endpoint"));
+
+  assert.equal(terminalTranscriptScopeMatches(recorded, { ...switchedEndpoint, cwd: "/home/kali/oscp/other" }), false);
+  assert.equal(terminalTranscriptScopeMatches(recorded, { ...switchedEndpoint, targetId: "target-b" }), false);
+});
+
+test("ordinary LHOST commands reuse a recorded machine shell after an endpoint switch", () => {
+  const recorded = session({
+    context: "lhost",
+    originContext: "lhost",
+    sessionRole: TERMINAL_SESSION_ROLES.MACHINE_LOG,
+  });
+  const request = {
+    targetId: recorded.targetId,
+    endpointId: "endpoint-b",
+    address: "192.0.2.20",
+    runsOn: "lhost",
+    cwd: recorded.cwd,
+    command: "nmap -Pn 192.0.2.20",
+  };
+  assert.deepEqual(compatibleTerminalSessions([recorded], request).map((entry) => entry.id), [recorded.id]);
+  const ranked = rankTerminalSessions([recorded], request)[0];
+  assert.ok(ranked.reasons.includes("same transcript folder"));
+  assert.ok(!ranked.reasons.includes("same endpoint"));
+
+  const generalLocal = session({ id: "general-local", context: "lhost", originContext: "lhost" });
+  assert.deepEqual(
+    compatibleTerminalSessions([generalLocal], request),
+    [],
+    "a general local tab remains bound to the endpoint that opened it",
+  );
 });
 
 test("staging is inert until the operator explicitly runs the reviewed command", () => {
@@ -87,6 +184,34 @@ test("staging is inert until the operator explicitly runs the reviewed command",
   assert.equal(running.sessions[0].inputRequest.proofCommand, "whoami");
   assert.equal(running.sessions[0].inputRequest.commandLabel, "Identity");
   assert.deepEqual(running.sessions[0].inputRequest.flagNames, { user: "user.txt", root: "root.txt" });
+});
+
+test("a recorded shell becomes reusable only after manual prompt confirmation", () => {
+  const recorded = session({
+    context: "lhost",
+    originContext: "lhost",
+    promptReady: false,
+    sessionRole: TERMINAL_SESSION_ROLES.MACHINE_LOG,
+    terminalBehavior: TERMINAL_BEHAVIORS.INTERACTIVE_SHELL,
+    activeStep: { runId: "script-run", command: "script -a '/home/kali/oscp/target-a/notes/terminal.log'", hasCapture: true },
+  });
+  let state = terminalWorkspaceReducer(terminalWorkspaceInitialState, { type: "add-session", session: recorded });
+  const request = { targetId: "target-a", endpointId: "endpoint-a", address: "192.0.2.10", runsOn: "lhost", cwd: recorded.cwd, command: "whoami" };
+  assert.deepEqual(compatibleTerminalSessions(state.sessions, request), []);
+
+  state = terminalWorkspaceReducer(state, { type: "finish-step", id: recorded.id, readyAt: "2026-11-17T12:00:00Z" });
+  assert.equal(state.sessions[0].promptReady, true);
+  assert.equal(state.sessions[0].id, recorded.id);
+
+  const step = { ...request, runId: "whoami-run", requiredContext: "lhost", label: "Identity" };
+  state = terminalWorkspaceReducer(state, { type: "stage-command", id: recorded.id, step });
+  assert.equal(state.sessions[0].pendingStep.command, "whoami");
+  assert.equal(state.sessions[0].inputRequest, undefined);
+
+  state = terminalWorkspaceReducer(state, { type: "run-staged", id: recorded.id, startedAt: "2026-11-17T12:01:00Z", requestId: "whoami-input" });
+  assert.equal(state.sessions[0].id, recorded.id);
+  assert.equal(state.sessions[0].promptReady, false);
+  assert.equal(state.sessions[0].inputRequest.data, "whoami\r");
 });
 
 test("a staged command cannot cross machine or session-context boundaries", () => {
@@ -143,6 +268,50 @@ test("terminal step capture is bounded without storing unbounded output in React
   const captured = appendBoundedTerminalText("prefix", huge);
   assert.equal(captured.length, 1024 * 1024);
   assert.equal(captured, "x".repeat(1024 * 1024));
+});
+
+test("rendered terminal snapshots rejoin xterm wraps before report layout", () => {
+  const snapshot = {
+    lines: [
+      { text: "┌──(kali㉿kali)-[~/oscp/forest]", isWrapped: false },
+      { text: "└─$ cmd.exe /d /c \"hostname & whoami & ipconfig | findstr IPv4 & echo Proof path: C:\\Users\\", isWrapped: false },
+      { text: "Administrator\\Desktop\\root.txt\"", isWrapped: true },
+      { text: "FOREST", isWrapped: false },
+      { text: "IPv4 Address. . . . . . . . . . . : 10.129.95.210", isWrapped: false },
+      { text: "*Evil-WinRM* PS C:\\Users\\Administrator\\Documents>", isWrapped: false },
+    ],
+  };
+
+  assert.deepEqual(logicalTerminalSnapshotLines(snapshot), [
+    "┌──(kali㉿kali)-[~/oscp/forest]",
+    "└─$ cmd.exe /d /c \"hostname & whoami & ipconfig | findstr IPv4 & echo Proof path: C:\\Users\\Administrator\\Desktop\\root.txt\"",
+    "FOREST",
+    "IPv4 Address. . . . . . . . . . . : 10.129.95.210",
+    "*Evil-WinRM* PS C:\\Users\\Administrator\\Documents>",
+  ]);
+});
+
+test("step evidence uses the latest rendered command and retains proof IP context", () => {
+  const command = "cmd.exe /d /c \"hostname & whoami & ipconfig | findstr IPv4\"";
+  const snapshot = {
+    lines: [
+      { text: `*Evil-WinRM* PS C:\\Users\\svc> ${command}`, isWrapped: false },
+      { text: "FOREST", isWrapped: false },
+      { text: "htb\\svc", isWrapped: false },
+      { text: "IPv4 Address. . . . . . . . . . . : 10.129.95.210", isWrapped: false },
+      { text: "*Evil-WinRM* PS C:\\Users\\svc>", isWrapped: false },
+      { text: `*Evil-WinRM* PS C:\\Users\\svc> ${command}`, isWrapped: false },
+      { text: "FOREST", isWrapped: false },
+      { text: "htb\\svc", isWrapped: false },
+      { text: "IPv4 Address. . . . . . . . . . . : 10.129.95.210", isWrapped: false },
+      { text: "*Evil-WinRM* PS C:\\Users\\svc>", isWrapped: false },
+    ],
+  };
+  const captured = terminalStepSnapshotText(snapshot, command);
+
+  assert.equal(captured.split(command).length - 1, 1);
+  assert.match(captured, /10\.129\.95\.210/u);
+  assert.match(captured, /^\*Evil-WinRM\* PS/u);
 });
 
 test("saving a snapshot rearms capture for later output from the same command", () => {

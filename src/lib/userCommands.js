@@ -25,6 +25,7 @@ export function buildUsersFileCommand(workspace) {
   return {
     key: "tracked-users-file",
     label: `Build target users file from Findings — ${usernames.length || "selected"} user${usernames.length === 1 ? "" : "s"}`,
+    resultCategory: "preparation",
     value: `users_file="{{workspaceRoot}}/{{targetSlug}}/loot/users.txt"; mkdir -p "$(dirname "$users_file")"; printf '%s\\n' ${values} | sed '/^[[:space:]]*$/d' | sort -fu > "$users_file"; echo "[*] Saved $(wc -l < "$users_file") users to $users_file"; cat "$users_file"`,
   };
 }

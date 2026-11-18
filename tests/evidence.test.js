@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { discoveriesForChecklistItem, guidanceForDiscoveries, mergePortLists, parseEvidence, routeEvidence, visibleDiscoveries } from "../src/lib/evidence.js";
+import { discoveriesForChecklistItem, formatDiscovery, guidanceForDiscoveries, mergePortLists, parseEvidence, routeEvidence, visibleDiscoveries } from "../src/lib/evidence.js";
 
 test("nmap output yields ports and useful guidance", () => {
   const discoveries = parseEvidence("445/tcp open microsoft-ds\n5985/tcp open wsman", "tcp-detail.nmap");
@@ -19,6 +19,38 @@ test("cracked Kerberos output yields a credential without treating failure as va
   assert.equal(ticket.domain, "ACTIVE.HTB");
   assert.equal(ticket.etype, "23");
   assert.equal(parseEvidence("ACTIVE\\bob:bad STATUS_LOGON_FAILURE").some((item) => item.type === "credential"), false);
+});
+
+test("John abbreviated AS-REP output becomes a masked credential candidate, not a ticket", () => {
+  const line = "$krb5asrep$23$svc-alfresco@HTB.LOCAL:Synthetic-Recovery-42!";
+  const discoveries = parseEvidence(line, "john-cracked.txt");
+  const credential = discoveries.find((item) => item.type === "credential");
+
+  assert.deepEqual(credential, {
+    type: "credential",
+    value: "svc-alfresco:Synthetic-Recovery-42!",
+    domain: "HTB.LOCAL",
+    username: "svc-alfresco",
+    secret: "Synthetic-Recovery-42!",
+    source: "john-cracked.txt",
+  });
+  assert.equal(discoveries.some((item) => item.type === "kerberos-ticket"), false);
+  assert.equal(formatDiscovery(credential), "credential: HTB.LOCAL\\svc-alfresco");
+  assert.doesNotMatch(formatDiscovery(credential), /Synthetic-Recovery/);
+});
+
+test("raw and fully cracked type-23 AS-REP material remain distinguishable", () => {
+  const raw = "$krb5asrep$23$svc-alfresco@HTB.LOCAL:0123456789abcdef$abcdef0123456789";
+  const rawDiscoveries = parseEvidence(raw, "asrep.hashes");
+  assert.equal(rawDiscoveries.filter((item) => item.type === "kerberos-ticket").length, 1);
+  assert.equal(rawDiscoveries.some((item) => item.type === "credential"), false);
+
+  const cracked = `${raw}:Synthetic-Recovery-42!`;
+  const crackedDiscoveries = parseEvidence(cracked, "hashcat-cracked.txt");
+  assert.equal(crackedDiscoveries.filter((item) => item.type === "kerberos-ticket").length, 1);
+  assert.equal(crackedDiscoveries.filter((item) => item.type === "credential").length, 1);
+  assert.equal(crackedDiscoveries.find((item) => item.type === "kerberos-ticket").value, raw);
+  assert.equal(crackedDiscoveries.find((item) => item.type === "credential").secret, "Synthetic-Recovery-42!");
 });
 
 test("AES AS-REP hashes retain their user, realm, and etype", () => {
@@ -128,6 +160,41 @@ test("flags and Kerberos ticket material are not mislabeled as NTLM hashes", () 
   assert.deepEqual(parseEvidence("Administrator:500:aad3b435b51404eeaad3b435b51404ee:8846f7eaee8fb117ad06bdd830b7586c:::")
     .filter((entry) => entry.type === "ntlm-hash")
     .map((entry) => entry.value), ["8846f7eaee8fb117ad06bdd830b7586c"]);
+});
+
+test("SecretsDump output yields one reusable NT-hash credential without parsing headers or Kerberos keys", () => {
+  const ntHash = "0123456789abcdef0123456789abcdef";
+  const output = `[*] Dumping Domain Credentials (domain\\uid:rid:lmhash:nthash)
+htb.local\\Administrator:500:aad3b435b51404eeaad3b435b51404ee:${ntHash}:::
+[*] Kerberos keys grabbed
+htb.local\\Administrator:aes256-cts-hmac-sha1-96:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+htb.local\\Administrator:aes128-cts-hmac-sha1-96:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+htb.local\\Administrator:des-cbc-md5:cccccccccccccccc`;
+  const discoveries = parseEvidence(output, "dcsync.txt");
+
+  assert.deepEqual(discoveries.filter((entry) => entry.type === "credential"), [{
+    type: "credential",
+    value: `htb.local\\Administrator:${ntHash}`,
+    domain: "htb.local",
+    username: "Administrator",
+    secret: ntHash,
+    source: "dcsync.txt",
+  }]);
+  assert.deepEqual(discoveries.filter((entry) => entry.type === "ntlm-hash"), [{
+    type: "ntlm-hash",
+    value: ntHash,
+    domain: "htb.local",
+    username: "Administrator",
+  }]);
+});
+
+test("explicit credentials preserve passwords containing colons", () => {
+  const credential = parseEvidence("ACTIVE\\bob:Synthetic:Pass42", "validation.txt")
+    .find((entry) => entry.type === "credential");
+
+  assert.equal(credential.domain, "ACTIVE");
+  assert.equal(credential.username, "bob");
+  assert.equal(credential.secret, "Synthetic:Pass42");
 });
 
 test("scan and SMB output associate hostnames with endpoint addresses", () => {

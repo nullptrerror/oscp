@@ -36,6 +36,68 @@ const defaults = {
   fallback: "Re-check route ownership, callback direction, listener address, tool version, and the selected host before choosing a documented fallback playbook.",
 };
 
+const PIVOT_PREPARATION_STEPS = new Set([
+  "ligolo-inventory",
+  "ligolo-source-hash",
+]);
+
+const PIVOT_DISCOVERY_STEPS = new Set([
+  "direct-route",
+  "ssh-proxy-scan",
+]);
+
+const PIVOT_VALIDATION_STEPS = new Set([
+  "direct-service",
+  "direct-dns",
+  "ligolo-linux-hash",
+  "ligolo-windows-hash",
+  "ligolo-session-select",
+  "ligolo-route-verify",
+  "ligolo-reachability",
+  "ligolo-dns",
+  "ligolo-second-hash",
+  "ligolo-second-session-select",
+  "ligolo-second-route-verify",
+  "ligolo-second-reachability",
+  "ligolo-second-dns",
+  "ssh-proxy-dns",
+  "chisel-scan",
+  "socat-verify",
+]);
+
+const PIVOT_CLEANUP_STEPS = new Set([
+  "ligolo-listener-stop",
+  "ligolo-lhost-listener-stop",
+  "ligolo-tunnel-stop",
+  "ligolo-route-delete",
+  "ligolo-interface-delete",
+  "ligolo-agent-stop",
+  "ligolo-stage-server-stop",
+  "ligolo-proxy-stop",
+  "ligolo-linux-file-cleanup",
+  "ligolo-windows-file-cleanup",
+  "ligolo-second-callback-stop",
+  "ligolo-second-tunnel-stop",
+  "ligolo-second-route-delete",
+  "ligolo-second-interface-delete",
+  "ligolo-second-agent-stop",
+  "ligolo-second-stage-relay-stop",
+  "ligolo-second-transport-relay-stop",
+  "ligolo-second-file-cleanup",
+  "chisel-client-stop",
+  "chisel-server-stop",
+  "chisel-file-cleanup",
+  "socat-stop",
+]);
+
+const resultCategoryForPivotStep = (id) => {
+  if (PIVOT_PREPARATION_STEPS.has(id)) return "preparation";
+  if (PIVOT_DISCOVERY_STEPS.has(id)) return "discovery";
+  if (PIVOT_VALIDATION_STEPS.has(id)) return "validation";
+  if (PIVOT_CLEANUP_STEPS.has(id)) return "cleanup";
+  return "change";
+};
+
 function pivotStep({
   id,
   title,
@@ -61,6 +123,7 @@ function pivotStep({
     },
     prerequisites: prerequisites || defaults.prerequisites,
     ...metadata,
+    resultCategory: metadata.resultCategory || resultCategoryForPivotStep(id),
   };
   return Object.freeze(createCommandRecord({ id: "pivot-playbooks", title: "Manual pivot playbooks" }, raw));
 }

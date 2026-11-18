@@ -9,12 +9,16 @@ import {
   getActiveScope,
   appendTargetItemEntry,
   buildTargetCommandEntry,
-  getCommandResultStateKey,
+  commandResultStatesAfterEvidence,
+  commandResultReference,
+  getCommandRunResultStateKey,
   getItemStateKey,
   getScopedItemValue,
   getTargetItemStateKey,
+  getTargetCommandResultStateKey,
   importMachineData,
   loadWorkspace,
+  normalizeTargetPatch,
   normalizeWorkspace,
   pickMachineVariables,
   RESULT_STATES,
@@ -182,15 +186,19 @@ export function WorkspaceProvider({ children }) {
           };
         });
       },
-      setCommandResultState(itemId, commandKey, state) {
+      setCommandResultState(itemId, commandKey, state, resultReference) {
         update((current) => {
-          if (!current.activeTargetId || !commandKey) return current;
+          if (!current.activeTargetId || !commandKey || !resultReference) return current;
           const allowed = new Set(Object.values(RESULT_STATES));
           if (!allowed.has(state)) return current;
           const evidence = getScopedItemValue(current.evidence, current, itemId, [])
-            .filter((entry) => entry.commandKey === commandKey && entry.substantive !== false);
+            .filter((entry) => (
+              entry.commandKey === commandKey
+              && commandResultReference(entry) === resultReference
+              && entry.substantive !== false
+            ));
           if (COMPLETING_RESULT_STATES.has(state) && evidence.length === 0) return current;
-          const key = getCommandResultStateKey(current, itemId, commandKey);
+          const key = getCommandRunResultStateKey(current, itemId, commandKey, resultReference);
           return {
             ...current,
             commandResultStates: { ...(current.commandResultStates || {}), [key]: state },
@@ -276,9 +284,16 @@ export function WorkspaceProvider({ children }) {
             evidenceId: enrichedEvidence.id,
             ...candidate,
           }));
-          const commandStateKey = evidence.commandKey
-            ? `${key}::${evidence.commandKey}`
-            : "";
+          const existingEvidence = current.evidence[key]
+            || (targetId === current.activeTargetId ? current.evidence[itemId] : null)
+            || [];
+          const commandResultStates = commandResultStatesAfterEvidence(
+            current.commandResultStates,
+            targetId,
+            itemId,
+            enrichedEvidence,
+            existingEvidence,
+          );
           return {
             ...current,
             discoveries: [...current.discoveries, ...newDiscoveries],
@@ -297,10 +312,7 @@ export function WorkspaceProvider({ children }) {
               ...current.completed,
               [key]: false,
             },
-            commandResultStates: commandStateKey ? {
-              ...(current.commandResultStates || {}),
-              [commandStateKey]: RESULT_STATES.REVIEW,
-            } : current.commandResultStates,
+            commandResultStates,
           };
         });
       },
@@ -308,15 +320,25 @@ export function WorkspaceProvider({ children }) {
         update((current) => {
           const key = getItemStateKey(current, itemId);
           const removed = getScopedItemValue(current.evidence, current, itemId, []).find((entry) => entry.id === evidenceId);
-          const commandStateKey = removed?.commandKey
-            ? getCommandResultStateKey(current, itemId, removed.commandKey)
+          const resultReference = commandResultReference(removed);
+          const commandStateKey = removed?.commandKey && resultReference
+            ? getTargetCommandResultStateKey(removed.targetId || current.activeTargetId, itemId, removed.commandKey, resultReference)
             : "";
+          const remainingEvidence = getScopedItemValue(current.evidence, current, itemId, [])
+            .filter((entry) => entry.id !== evidenceId);
+          const stillBacked = commandStateKey && remainingEvidence.some((entry) => (
+            entry.commandKey === removed.commandKey
+            && commandResultReference(entry) === resultReference
+            && entry.substantive !== false
+          ));
+          const commandResultStates = { ...(current.commandResultStates || {}) };
+          if (commandStateKey && !stillBacked) delete commandResultStates[commandStateKey];
           return {
             ...current,
             discoveries: current.discoveries.filter((entry) => entry.evidenceId !== evidenceId || entry.status === "confirmed"),
             evidence: {
               ...current.evidence,
-              [key]: getScopedItemValue(current.evidence, current, itemId, []).filter((entry) => entry.id !== evidenceId),
+              [key]: remainingEvidence,
             },
             resultStates: {
               ...current.resultStates,
@@ -326,10 +348,7 @@ export function WorkspaceProvider({ children }) {
               ...current.completed,
               [key]: false,
             },
-            commandResultStates: commandStateKey ? {
-              ...(current.commandResultStates || {}),
-              [commandStateKey]: RESULT_STATES.REVIEW,
-            } : current.commandResultStates,
+            commandResultStates,
           };
         });
       },
@@ -374,29 +393,32 @@ export function WorkspaceProvider({ children }) {
       },
       updateTarget(id, patch) {
         update((current) => {
+          const safePatch = normalizeTargetPatch(current.targets, id, patch);
           const existing = current.targets.find((target) => target.id === id);
-          const updated = existing ? { ...existing, ...patch } : null;
+          const updated = existing ? { ...existing, ...safePatch } : null;
           const updatedFlagSettings = updated ? normalizeFlagSettings(updated) : null;
           return {
             ...current,
             variables: current.activeTargetId === id ? {
               ...current.variables,
-              ...(patch.name !== undefined ? { targetName: patch.name } : {}),
-              ...(patch.domain !== undefined ? { domain: patch.domain, baseDn: domainToBaseDn(patch.domain) } : {}),
-              ...(updated && (patch.labType !== undefined || patch.userFlagName !== undefined || patch.rootFlagName !== undefined) ? {
+              ...(safePatch.name !== undefined ? { targetName: safePatch.name } : {}),
+              ...(safePatch.slug !== undefined ? { targetSlug: safePatch.slug } : {}),
+              ...(safePatch.domain !== undefined ? { domain: safePatch.domain, baseDn: domainToBaseDn(safePatch.domain) } : {}),
+              ...(updated && (safePatch.labType !== undefined || safePatch.userFlagName !== undefined || safePatch.rootFlagName !== undefined) ? {
                 userFlagName: updatedFlagSettings.userFlagName,
                 rootFlagName: updatedFlagSettings.rootFlagName,
               } : {}),
             } : current.variables,
             targets: current.targets.map((target) => (target.id === id ? {
               ...target,
-              ...patch,
+              ...safePatch,
               ...(updatedFlagSettings || {}),
               commandContext: {
                 ...(target.commandContext || {}),
                 ...pickMachineVariables({
-                  ...(patch.name !== undefined ? { targetName: patch.name } : {}),
-                  ...(patch.domain !== undefined ? { domain: patch.domain, baseDn: domainToBaseDn(patch.domain) } : {}),
+                  ...(safePatch.name !== undefined ? { targetName: safePatch.name } : {}),
+                  ...(safePatch.slug !== undefined ? { targetSlug: safePatch.slug } : {}),
+                  ...(safePatch.domain !== undefined ? { domain: safePatch.domain, baseDn: domainToBaseDn(safePatch.domain) } : {}),
                   ...(updatedFlagSettings ? {
                     userFlagName: updatedFlagSettings.userFlagName,
                     rootFlagName: updatedFlagSettings.rootFlagName,
@@ -666,6 +688,19 @@ export function WorkspaceProvider({ children }) {
           };
         });
       },
+      deleteCommandHistoryEntry(commandId) {
+        update((current) => {
+          if (!commandId) return current;
+          const hasLinkedEvidence = Object.values(current.evidence || {}).some((entries) => (
+            Array.isArray(entries) && entries.some((entry) => entry.commandRunId === commandId)
+          ));
+          if (hasLinkedEvidence) return current;
+          return {
+            ...current,
+            commandHistory: current.commandHistory.filter((entry) => entry.id !== commandId),
+          };
+        });
+      },
       updateProfile(patch) {
         update((current) => ({ ...current, profile: { ...(current.profile ?? {}), ...patch } }));
       },
@@ -677,6 +712,18 @@ export function WorkspaceProvider({ children }) {
           if (!current.activeTargetId) return current;
           const scope = getActiveScope(current);
           return { ...current, reports: { ...current.reports, [scope]: { ...(current.reports[scope] ?? {}), ...patch } } };
+        });
+      },
+      updateTargetReport(targetId, patch) {
+        update((current) => {
+          if (!targetId || !current.targets.some((target) => target.id === targetId)) return current;
+          return {
+            ...current,
+            reports: {
+              ...current.reports,
+              [targetId]: { ...(current.reports[targetId] ?? {}), ...patch },
+            },
+          };
         });
       },
       updateParserSetting(type, enabled) {

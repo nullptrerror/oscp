@@ -30,8 +30,12 @@ test("SPN TGS cracking generates Hashcat and John commands", () => {
   assert.match(hashcat.value, /mode=19600/);
   assert.match(hashcat.value, /mode=19700/);
   assert.match(hashcat.value, /hashcat-cracked\.txt/);
+  assert.equal((hashcat.value.match(/--potfile-path "\$potfile"/g) || []).length, 2);
+  assert.match(hashcat.value, /potfile="\$loot\/hashcat\.potfile"/);
   assert.match(john.value, /john --format=krb5tgs/);
   assert.match(john.value, /john-cracked\.txt/);
+  assert.equal((john.value.match(/--pot="\$potfile"/g) || []).length, 2);
+  assert.match(john.value, /potfile="\$loot\/john\.pot"/);
 });
 
 test("SPN TGS commands support NT hashes and deduplicate credentials", () => {
@@ -76,7 +80,9 @@ test("parsed Kerberos tickets generate per-user hashes.txt, Hashcat, and John co
   assert.match(commands[0].value, /\$krb5tgs\$23\$\*svc-sql\$CORP\.TEST/);
   assert.match(commands[1].value, /hashcat -m 13100/);
   assert.match(commands[1].value, /directory-lab-CORP\.TEST_svc-sql_tgs_etype23-23/);
+  assert.equal((commands[1].value.match(/--potfile-path "\$potfile"/g) || []).length, 2);
   assert.match(commands[2].value, /john --format=krb5tgs/);
+  assert.equal((commands[2].value.match(/--pot="\$potfile"/g) || []).length, 2);
 });
 
 test("multiple tickets for one user share a mode-specific hashes.txt", () => {

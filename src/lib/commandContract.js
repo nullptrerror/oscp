@@ -3,6 +3,7 @@ import {
   requiredVariable,
   validateVariableValue,
 } from "../data/variableDefinitions.js";
+import { classifyCommandResult, RESULT_CATEGORY_VALUES } from "./resultClassification.js";
 
 export const RUNS_ON = Object.freeze(["lhost", "foothold-linux", "foothold-windows", "pivot"]);
 export const COMMAND_POLICIES = Object.freeze(["exam-core", "restricted", "prohibited", "study-only", "verify-current-policy"]);
@@ -282,6 +283,7 @@ export function createCommandRecord(item, command, index = 0) {
   const inferredStateChange = inferStateChange(command);
   const stateChange = command.stateChange
     || (inferredStateChange === "none" && needsSelectedCredential ? "credential-attempt" : inferredStateChange);
+  const resultCategory = command.resultCategory || classifyCommandResult(item.id, { ...command, key, stateChange });
   const risk = command.risk || inferRisk(policy, stateChange, command);
   const cleanup = command.cleanup || cleanupFor(stateChange, item.id, command);
   const verificationCommand = command.verificationCommand || verificationFor(stateChange, command);
@@ -310,10 +312,11 @@ export function createCommandRecord(item, command, index = 0) {
     value: command.value || command.template,
     expectedPositiveSignal: command.expectedPositiveSignal || expected.positive,
     expectedNegativeSignal: command.expectedNegativeSignal || expected.negative,
-    positiveBranch: command.positiveBranch || "Save the exact output, mark the result needs review, then manually confirm or reject the finding before another card becomes applicable.",
-    negativeBranch: command.negativeBranch || "Save the exact output and choose no finding, command failed, blocked, or needs review; use a listed fallback only after confirming why it applies.",
+    positiveBranch: command.positiveBranch || "Preserve the reviewed output and continue only with a manually selected follow-up whose prerequisites are now satisfied.",
+    negativeBranch: command.negativeBranch || "Preserve the reviewed output and use a listed fallback only when the saved result and its prerequisites justify that narrower check.",
     risk,
     stateChange,
+    resultCategory,
     warning: command.warning || warningFor(stateChange, risk),
     evidence: command.evidence || ["Exact rendered command", "Timestamp and selected target", "Relevant raw output", "Operator result state and conclusion"],
     sideEffects: command.sideEffects || (stateChange === "none" ? "May create normal protocol traffic and service logs." : warningFor(stateChange, risk)),
@@ -364,7 +367,7 @@ export function auditCommandRecord(record) {
   const warnings = [];
   const requiredFields = [
     "id", "title", "purpose", "runsOn", "applicability", "prerequisites", "requiredVariables", "template",
-    "expectedPositiveSignal", "expectedNegativeSignal", "positiveBranch", "negativeBranch", "risk", "stateChange",
+    "expectedPositiveSignal", "expectedNegativeSignal", "positiveBranch", "negativeBranch", "risk", "stateChange", "resultCategory",
     "evidence", "sideEffects", "verificationCommand", "cleanup", "fallback", "policy",
   ];
   for (const field of requiredFields) {
@@ -374,6 +377,13 @@ export function auditCommandRecord(record) {
   if (!COMMAND_POLICIES.includes(record.policy)) errors.push(`${record.id}: invalid policy ${record.policy}`);
   if (!COMMAND_RISKS.includes(record.risk)) errors.push(`${record.id}: invalid risk ${record.risk}`);
   if (!STATE_CHANGES.includes(record.stateChange)) errors.push(`${record.id}: invalid stateChange ${record.stateChange}`);
+  if (!RESULT_CATEGORY_VALUES.includes(record.resultCategory) || record.resultCategory === "mixed") errors.push(`${record.id}: invalid resultCategory ${record.resultCategory}`);
+  if (record.sessionRole !== undefined && !["general", "machine-log"].includes(record.sessionRole)) errors.push(`${record.id}: invalid sessionRole ${record.sessionRole}`);
+  if (record.terminalBehavior !== undefined && !["one-shot", "interactive-shell", "existing-session-only"].includes(record.terminalBehavior)) errors.push(`${record.id}: invalid terminalBehavior ${record.terminalBehavior}`);
+  if (record.requiresExistingSession && record.requiresNewSession) errors.push(`${record.id}: cannot require both a new and an existing terminal session`);
+  if (record.terminalBehavior === "interactive-shell" && !record.requiresNewSession) errors.push(`${record.id}: interactive-shell behavior must require a new terminal session`);
+  if (record.terminalBehavior === "existing-session-only" && !record.requiresExistingSession) errors.push(`${record.id}: existing-session-only behavior must require an existing terminal session`);
+  if (record.requiresExplicitSession && !record.requiresExistingSession) errors.push(`${record.id}: explicit terminal selection requires an existing terminal session`);
   if (record.policy !== "exam-core" && record.executionEnabled) errors.push(`${record.id}: ${record.policy} commands cannot be executable`);
   const contractText = [record.template, record.verificationCommand, record.cleanupCommand, record.cleanup?.command].filter(Boolean).join("\n");
   for (const name of extractCommandVariables(contractText)) {

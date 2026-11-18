@@ -14,12 +14,14 @@ export function buildSprayCommands(workspace, selectedAccount) {
       key: `spray-output-directory-${selectedAccount.id}`,
       label: "Prepare the target-scoped spray evidence directory",
       value: `mkdir -p "${root}"`,
+      resultCategory: "preparation",
       requiresSelectedCredential: true,
     },
     {
       key: isHash ? `spray-one-hash-${selectedAccount.id}` : `spray-one-password-${selectedAccount.id}`,
       label: `${isHash ? "Test one selected NT hash" : "Spray one selected password"} with jitter — lockout risk`,
       value: `nxc smb {{rhost}} -u "${usersFile}" ${isHash ? "-H" : "-p"} ${shellQuote(secret)} --continue-on-success --jitter {{sprayJitter}} --log "${root}/selected-credential.log"`,
+      resultCategory: "access",
       requiresSelectedCredential: true,
       prerequisites: [
         "Select exactly one saved credential for this machine.",

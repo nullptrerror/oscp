@@ -35,6 +35,7 @@ export function buildSmbDownloadCommands(accounts = [], variables = {}) {
     {
       key: "smb-download-guest",
       label: "Download every readable share — guest / anonymous",
+      resultCategory: "discovery",
       value: downloadBody({
         folder: "guest",
         listCommand: "{ smbclient -g -L '//{{rhost}}' -N 2>/dev/null || smbclient -g -L '//{{rhost}}' -U 'guest%' 2>/dev/null; }",
@@ -44,6 +45,7 @@ export function buildSmbDownloadCommands(accounts = [], variables = {}) {
     {
       key: "smb-download-directory-guest",
       label: "Download one directory — guest / anonymous",
+      resultCategory: "discovery",
       value: singleDirectoryBody({ folder: "guest", guest: true }),
     },
   ];
@@ -75,6 +77,7 @@ export function buildSmbDownloadCommands(accounts = [], variables = {}) {
     commands.push({
       key: `smb-download-${account.id ?? folder}`,
       label: `Download every readable share — ${domain ? `${domain}\\` : ""}${username}`,
+      resultCategory: "discovery",
       requiresSelectedCredential: true,
       value: downloadBody({
         folder,
@@ -85,6 +88,7 @@ export function buildSmbDownloadCommands(accounts = [], variables = {}) {
     commands.push({
       key: `smb-download-directory-${account.id ?? folder}`,
       label: `Download one directory — ${domain ? `${domain}\\` : ""}${username}`,
+      resultCategory: "discovery",
       requiresSelectedCredential: true,
       value: singleDirectoryBody({ folder, auth: `-U ${credential}${hashFlag}` }),
     });

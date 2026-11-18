@@ -61,13 +61,13 @@ export function buildSpnTgsCommands(accounts = [], variables = {}) {
     commands.push({
       key: `spn-tgs-hashcat-${account.id ?? folder}`,
       label: `Crack saved TGS hashes with Hashcat — ${identity}`,
-      value: `loot="${loot}"; hashes="$loot/hashes.txt"; test -s "$hashes" || { echo "No TGS hashes found at $hashes"; exit 1; }; if grep -qF '$krb5tgs$23$' "$hashes"; then mode=13100; elif grep -qF '$krb5tgs$17$' "$hashes"; then mode=19600; elif grep -qF '$krb5tgs$18$' "$hashes"; then mode=19700; else echo 'Unsupported TGS format'; exit 1; fi; test -f /usr/share/wordlists/rockyou.txt || sudo gzip -dk /usr/share/wordlists/rockyou.txt.gz; hashcat -m "$mode" "$hashes" /usr/share/wordlists/rockyou.txt --session "{{targetSlug}}-${folder}-tgs"; hashcat -m "$mode" "$hashes" --show | tee "$loot/hashcat-cracked.txt"`,
+      value: `loot="${loot}"; hashes="$loot/hashes.txt"; potfile="$loot/hashcat.potfile"; test -s "$hashes" || { echo "No TGS hashes found at $hashes"; exit 1; }; if grep -qF '$krb5tgs$23$' "$hashes"; then mode=13100; elif grep -qF '$krb5tgs$17$' "$hashes"; then mode=19600; elif grep -qF '$krb5tgs$18$' "$hashes"; then mode=19700; else echo 'Unsupported TGS format'; exit 1; fi; test -f /usr/share/wordlists/rockyou.txt || sudo gzip -dk /usr/share/wordlists/rockyou.txt.gz; hashcat -m "$mode" "$hashes" /usr/share/wordlists/rockyou.txt --potfile-path "$potfile" --session "{{targetSlug}}-${folder}-tgs"; hashcat -m "$mode" "$hashes" --potfile-path "$potfile" --show | tee "$loot/hashcat-cracked.txt"`,
     });
 
     commands.push({
       key: `spn-tgs-john-${account.id ?? folder}`,
       label: `Crack saved TGS hashes with John — ${identity}`,
-      value: `loot="${loot}"; hashes="$loot/hashes.txt"; test -s "$hashes" || { echo "No TGS hashes found at $hashes"; exit 1; }; test -f /usr/share/wordlists/rockyou.txt || sudo gzip -dk /usr/share/wordlists/rockyou.txt.gz; john --format=krb5tgs --wordlist=/usr/share/wordlists/rockyou.txt "$hashes"; john --format=krb5tgs --show "$hashes" | tee "$loot/john-cracked.txt"`,
+      value: `loot="${loot}"; hashes="$loot/hashes.txt"; potfile="$loot/john.pot"; test -s "$hashes" || { echo "No TGS hashes found at $hashes"; exit 1; }; test -f /usr/share/wordlists/rockyou.txt || sudo gzip -dk /usr/share/wordlists/rockyou.txt.gz; john --format=krb5tgs --pot="$potfile" --wordlist=/usr/share/wordlists/rockyou.txt "$hashes"; john --format=krb5tgs --pot="$potfile" --show "$hashes" | tee "$loot/john-cracked.txt"`,
     });
   }
 
@@ -118,14 +118,14 @@ export function buildKerberosTicketCommands(workspace) {
       commands.push({
         key: `kerberos-ticket-hashcat-${suffix}`,
         label: `Hashcat ${details.type} — ${identity}`,
-        value: `loot="${loot}"; hashes="$loot/hashes.txt"; test -s "$hashes" || { echo "Run the save command first: $hashes"; exit 1; }; test -f /usr/share/wordlists/rockyou.txt || sudo gzip -dk /usr/share/wordlists/rockyou.txt.gz; hashcat -m ${details.hashcatMode} "$hashes" /usr/share/wordlists/rockyou.txt --session "${targetName}-${suffix}"; hashcat -m ${details.hashcatMode} "$hashes" --show | tee "$loot/hashcat-cracked.txt"`,
+        value: `loot="${loot}"; hashes="$loot/hashes.txt"; potfile="$loot/hashcat.potfile"; test -s "$hashes" || { echo "Run the save command first: $hashes"; exit 1; }; test -f /usr/share/wordlists/rockyou.txt || sudo gzip -dk /usr/share/wordlists/rockyou.txt.gz; hashcat -m ${details.hashcatMode} "$hashes" /usr/share/wordlists/rockyou.txt --potfile-path "$potfile" --session "${targetName}-${suffix}"; hashcat -m ${details.hashcatMode} "$hashes" --potfile-path "$potfile" --show | tee "$loot/hashcat-cracked.txt"`,
       });
     }
 
     commands.push({
       key: `kerberos-ticket-john-${suffix}`,
       label: `John ${details.type} — ${identity}`,
-      value: `loot="${loot}"; hashes="$loot/hashes.txt"; test -s "$hashes" || { echo "Run the save command first: $hashes"; exit 1; }; test -f /usr/share/wordlists/rockyou.txt || sudo gzip -dk /usr/share/wordlists/rockyou.txt.gz; john --format=${details.johnFormat} --wordlist=/usr/share/wordlists/rockyou.txt "$hashes"; john --format=${details.johnFormat} --show "$hashes" | tee "$loot/john-cracked.txt"`,
+      value: `loot="${loot}"; hashes="$loot/hashes.txt"; potfile="$loot/john.pot"; test -s "$hashes" || { echo "Run the save command first: $hashes"; exit 1; }; test -f /usr/share/wordlists/rockyou.txt || sudo gzip -dk /usr/share/wordlists/rockyou.txt.gz; john --format=${details.johnFormat} --pot="$potfile" --wordlist=/usr/share/wordlists/rockyou.txt "$hashes"; john --format=${details.johnFormat} --pot="$potfile" --show "$hashes" | tee "$loot/john-cracked.txt"`,
     });
   }
 

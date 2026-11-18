@@ -3,9 +3,12 @@ import assert from "node:assert/strict";
 import {
   appendTargetItemEntry,
   buildTargetCommandEntry,
+  commandResultStatesAfterEvidence,
   createDefaultWorkspace,
   deleteMachineData,
   domainToBaseDn,
+  getCommandRunResultStateKey,
+  getCommandRunResultStateValue,
   getCommandResultStateKey,
   getCommandResultStateValue,
   getItemStateKey,
@@ -13,6 +16,7 @@ import {
   getTargetItemStateKey,
   importMachineData,
   MACHINE_VARIABLE_KEYS,
+  normalizeTargetPatch,
   normalizeWorkspace,
   pickMachineVariables,
   renderCommand,
@@ -87,6 +91,70 @@ test("command result keys are target and command scoped", () => {
   assert.equal(getCommandResultStateValue({ [key]: RESULT_STATES.NO_FINDING }, workspace, "pivot-playbook", "pivot.direct-route"), RESULT_STATES.NO_FINDING);
 });
 
+test("rerun result keys keep each saved command outcome independent", () => {
+  const workspace = createDefaultWorkspace();
+  workspace.activeTargetId = "target-a";
+  const failedKey = getCommandRunResultStateKey(workspace, "svc-smb", "list-shares", "run:attempt-one");
+  const confirmedKey = getCommandRunResultStateKey(workspace, "svc-smb", "list-shares", "run:attempt-two");
+  const states = {
+    [failedKey]: RESULT_STATES.FAILED,
+    [confirmedKey]: RESULT_STATES.CONFIRMED,
+  };
+
+  assert.notEqual(failedKey, confirmedKey);
+  assert.equal(getCommandRunResultStateValue(states, workspace, "svc-smb", "list-shares", "run:attempt-one"), RESULT_STATES.FAILED);
+  assert.equal(getCommandRunResultStateValue(states, workspace, "svc-smb", "list-shares", "run:attempt-two"), RESULT_STATES.CONFIRMED);
+});
+
+test("legacy command classifications are frozen onto their historical result before a rerun", () => {
+  const workspace = normalizeWorkspace({
+    version: WORKSPACE_VERSION,
+    activeTargetId: "target-a",
+    targets: [{ id: "target-a", name: "target-a" }],
+    evidence: {
+      "target-a::svc-smb": [{ id: "old-evidence", commandRunId: "old-run", commandKey: "list-shares", content: "Sharename Public" }],
+    },
+    commandResultStates: {
+      "target-a::svc-smb::list-shares": RESULT_STATES.CONFIRMED,
+    },
+  });
+  const oldKey = getCommandRunResultStateKey(workspace, "svc-smb", "list-shares", "run:old-run");
+
+  assert.equal(workspace.commandResultStates[oldKey], RESULT_STATES.CONFIRMED);
+  assert.equal(workspace.commandResultStates["target-a::svc-smb::list-shares"], undefined);
+
+  const newEvidence = { id: "new-evidence", commandRunId: "new-run", commandKey: "list-shares", content: "Connection refused" };
+  workspace.commandResultStates = commandResultStatesAfterEvidence(
+    workspace.commandResultStates,
+    "target-a",
+    "svc-smb",
+    newEvidence,
+    workspace.evidence["target-a::svc-smb"],
+  );
+  workspace.evidence["target-a::svc-smb"].push(newEvidence);
+
+  assert.equal(getCommandRunResultStateValue(workspace.commandResultStates, workspace, "svc-smb", "list-shares", "run:old-run"), RESULT_STATES.CONFIRMED);
+  assert.equal(getCommandRunResultStateValue(workspace.commandResultStates, workspace, "svc-smb", "list-shares", "run:new-run"), RESULT_STATES.REVIEW);
+});
+
+test("later final evidence resets an already classified snapshot from the same run", () => {
+  const workspace = createDefaultWorkspace();
+  workspace.activeTargetId = "target-a";
+  const exactKey = getCommandRunResultStateKey(workspace, "svc-smb", "list-shares", "run:shared-run");
+  const snapshot = { id: "snapshot", commandRunId: "shared-run", commandKey: "list-shares", content: "Partial output" };
+  workspace.commandResultStates[exactKey] = RESULT_STATES.CONFIRMED;
+
+  const next = commandResultStatesAfterEvidence(
+    workspace.commandResultStates,
+    "target-a",
+    "svc-smb",
+    { id: "final", commandRunId: "shared-run", commandKey: "list-shares", content: "Connection failed", exitCode: 1 },
+    [snapshot],
+  );
+
+  assert.equal(next[exactKey], RESULT_STATES.REVIEW);
+});
+
 test("normalization rejects invalid states and derives completion from the result state", () => {
   const restored = normalizeWorkspace({
     version: WORKSPACE_VERSION,
@@ -114,6 +182,15 @@ test("filesystem slugs are non-empty and unique for Unicode and duplicate names"
     targets: [{ id: "one", name: "Same" }, { id: "two", name: "Same" }],
   });
   assert.deepEqual(restored.targets.map((target) => target.slug), ["same", "same-2"]);
+});
+
+test("target folder slug edits remain safe and unique without colliding with the current machine", () => {
+  const targets = [{ id: "forest", slug: "forest" }, { id: "active", slug: "active" }];
+  assert.deepEqual(normalizeTargetPatch(targets, "forest", { slug: "10.129.95.210" }), { slug: "10.129.95.210" });
+  assert.deepEqual(normalizeTargetPatch(targets, "forest", { slug: "Forest dated run" }), { slug: "forest-dated-run" });
+  assert.deepEqual(normalizeTargetPatch(targets, "forest", { slug: "active" }), { slug: "active-2" });
+  const untouched = { domain: "htb.local" };
+  assert.equal(normalizeTargetPatch(targets, "forest", untouched), untouched);
 });
 
 test("sensitive web and upload context is machine scoped", () => {

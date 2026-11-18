@@ -54,6 +54,10 @@ test("AS-REP request and offline cracking remain separate operator steps", () =>
   assert.match(john.template, /asrep\.hashes/);
   assert.match(hashcat.template, /'\{\{wordlist\}\}'/);
   assert.match(john.template, /--wordlist='\{\{wordlist\}\}'/);
+  assert.equal((hashcat.template.match(/--potfile-path "\$potfile"/g) || []).length, 2);
+  assert.equal((john.template.match(/--pot="\$potfile"/g) || []).length, 2);
+  assert.match(hashcat.template, /\{\{workspaceRoot\}\}\/\{\{targetSlug\}\}\/loot\/kerberos\/asrep/);
+  assert.match(john.template, /\{\{workspaceRoot\}\}\/\{\{targetSlug\}\}\/loot\/kerberos\/asrep/);
   assert.doesNotMatch(hashcat.template, /sudo|gzip|rockyou/);
   assert.doesNotMatch(john.template, /sudo|gzip|rockyou/);
 });

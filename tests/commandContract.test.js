@@ -34,6 +34,17 @@ test("every static command is a complete structured record with stable IDs", () 
   }
 });
 
+test("default command branches describe post-review handling without reopening classification", () => {
+  const record = createCommandRecord({ id: "test-default-branches", title: "Default branches" }, {
+    label: "Run one bounded check",
+    value: "true",
+  });
+
+  assert.match(record.positiveBranch, /reviewed output/iu);
+  assert.match(record.negativeBranch, /reviewed output/iu);
+  assert.doesNotMatch(`${record.positiveBranch} ${record.negativeBranch}`, /needs review/iu);
+});
+
 test("typed rendering quotes hostile-but-valid data without changing its value", () => {
   const secret = "S p(a)'ss;$HOME—雪";
   const rendered = renderCommandTemplate("tool -u '{{user}}' -p '{{password}}' --host {{rhost}}", {
@@ -136,6 +147,72 @@ test("broad Nmap vuln-category scans require current-policy verification and are
   assert.equal(record.policy, "verify-current-policy");
   assert.equal(record.executionEnabled, false);
   assert.equal(record.instructional, true);
+});
+
+test("privileged Nmap evidence is returned to the operator with private permissions", () => {
+  const scans = ALL_ITEMS
+    .flatMap((item) => item.commands)
+    .filter((command) => /\bsudo nmap\b/u.test(command.template) && /\s-o(?:A|N|X)\s/u.test(command.template));
+
+  assert.deepEqual(scans.map((command) => command.label).sort(), [
+    "Focused UDP",
+    "Focused scan",
+    "Full TCP",
+    "Top UDP",
+  ]);
+
+  for (const command of scans) {
+    assert.equal(command.stateChange, "local-evidence", command.id);
+    assert.equal(command.policy, "exam-core", command.id);
+    assert.match(command.template, /scan_status=\$\?/u, command.id);
+    assert.match(command.template, /sudo chown -- "\$\(id -u\):\$\(id -g\)"/u, command.id);
+    assert.match(command.template, /chmod 600 --/u, command.id);
+    assert.doesNotMatch(command.template, /\*|chown[^;]*(?:\/scans\b|\$base\b(?!\.))/u, command.id);
+    assert.match(command.template, /test "\$scan_status" -eq 0 && test "\$owner_status" -eq 0$/u, command.id);
+    if (/\s-oA\s/u.test(command.template)) {
+      for (const suffix of ["nmap", "gnmap", "xml"]) {
+        assert.match(command.template, new RegExp(`"\\$\\{base\\}\\.${suffix}"`, "u"), command.id);
+      }
+    } else {
+      assert.match(command.template, /sudo chown[^;]*"\$output" && chmod 600 -- "\$output"/u, command.id);
+    }
+
+    const rendered = renderCommandRecord(command, {
+      workspaceRoot: "/tmp/Field notes/o'connor—雪",
+      targetSlug: "forest-2026",
+      rhost: "192.0.2.10",
+      tcpPorts: "53,88,445",
+      udpPorts: "53,123",
+    });
+    assert.equal(rendered.runnable, true, command.id);
+    assert.match(rendered.command, /o'"'"'connor—雪/u, command.id);
+    assert.match(rendered.command, /sudo chown -- "\$\(id -u\):\$\(id -g\)"/u, command.id);
+  }
+});
+
+test("terminal routing metadata is audited as one coherent lifecycle", () => {
+  const item = { id: "test-terminal", title: "Terminal" };
+  const invalid = createCommandRecord(item, {
+    label: "Invalid reusable shell",
+    value: "true",
+    sessionRole: "untracked-role",
+    terminalBehavior: "interactive-shell",
+    requiresExistingSession: true,
+    requiresNewSession: true,
+  });
+  const errors = auditCommandRecord(invalid).errors.join("\n");
+  assert.match(errors, /invalid sessionRole untracked-role/u);
+  assert.match(errors, /cannot require both a new and an existing terminal session/u);
+
+  const orphanedCleanup = createCommandRecord(item, {
+    label: "Invalid cleanup route",
+    value: "exit",
+    terminalBehavior: "existing-session-only",
+    requiresExplicitSession: true,
+  });
+  const cleanupErrors = auditCommandRecord(orphanedCleanup).errors.join("\n");
+  assert.match(cleanupErrors, /existing-session-only behavior must require an existing terminal session/u);
+  assert.match(cleanupErrors, /explicit terminal selection requires an existing terminal session/u);
 });
 
 test("command catalog contains no magic placeholders", () => {

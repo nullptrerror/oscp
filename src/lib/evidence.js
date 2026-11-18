@@ -72,6 +72,8 @@ const kerberosHashFromToken = (token) => {
   return cracked?.[1] || token;
 };
 
+const RAW_ASREP_PAYLOAD = /^[a-f0-9]+\$[a-f0-9]+$/i;
+
 export function parseEvidence(content = "", filename = "", { userFlagName = "local.txt", rootFlagName = "proof.txt" } = {}) {
   const text = String(content);
   const discoveries = [];
@@ -109,7 +111,7 @@ export function parseEvidence(content = "", filename = "", { userFlagName = "loc
   for (const match of text.matchAll(/\$krb5tgs\$(\d+)\$\*?([^$*:\s]+)\$([^$*\s]+)\$[^\s]+/gi)) {
     add("kerberos-ticket", kerberosHashFromToken(match[0]), { username: match[2], domain: match[3], ticket: "TGS", etype: match[1] });
   }
-  for (const match of text.matchAll(/\$krb5asrep\$(\d+)\$([^@:\s]+)@([^:\s]+):[^\s]+/gi)) {
+  for (const match of text.matchAll(/\$krb5asrep\$(\d+)\$([^@:\s]+)@([^:\s]+):([a-f0-9]+\$[a-f0-9]+)/gi)) {
     add("kerberos-ticket", kerberosHashFromToken(match[0]), { username: match[2], domain: match[3], ticket: "AS-REP", etype: match[1] });
   }
   for (const match of text.matchAll(/\$krb5asrep\$(17|18)\$([^$:\s]+)\$([^$\s]+)\$[^\s]+/gi)) {
@@ -145,12 +147,38 @@ export function parseEvidence(content = "", filename = "", { userFlagName = "loc
         || cracked[1].match(/^\$krb5asrep\$\d+\$([^@$:\s]+)(?:@|\$)/i);
       if (principal) add("credential", `${principal[1]}:${cracked[2]}`, { username: principal[1], secret: cracked[2], source: filename || "Kerberos crack" });
     }
+    const johnAsrep = cracked
+      ? null
+      : line.match(/^\$krb5asrep\$(\d+)\$([^@:\s]+)@([^:\s]+):(\S+)$/i);
+    if (johnAsrep && !RAW_ASREP_PAYLOAD.test(johnAsrep[4])) {
+      add("credential", `${johnAsrep[2]}:${johnAsrep[4]}`, {
+        domain: johnAsrep[3],
+        username: johnAsrep[2],
+        secret: johnAsrep[4],
+        source: filename || "Kerberos crack",
+      });
+    }
     const labeledNtHash = line.match(/\b(?:ntlm|nt[ _-]?hash|nthash)\s*[:=]\s*([a-f0-9]{32})\b/i);
     if (labeledNtHash) add("ntlm-hash", labeledNtHash[1].toLowerCase());
-    const secretsDump = line.match(/^([^:\s]+):\d+:([a-f0-9]{32}):([a-f0-9]{32}):::/i);
-    if (secretsDump) add("ntlm-hash", secretsDump[3].toLowerCase(), { username: secretsDump[1] });
+    const secretsDump = line.match(/^([^:\s]+):(\d+):([a-f0-9]{32}):([a-f0-9]{32}):::\s*$/i);
+    if (secretsDump) {
+      const principal = secretsDump[1];
+      const identity = principal.match(/^(?:(.+)\\)?([^\\]+)$/);
+      const domain = identity?.[1];
+      const username = identity?.[2] || principal;
+      const secret = secretsDump[4].toLowerCase();
+      add("ntlm-hash", secret, { domain, username });
+      add("credential", `${principal}:${secret}`, {
+        domain,
+        username,
+        secret,
+        source: filename || "command output",
+      });
+    }
+    const secretsDumpHeader = /\bdomain\\uid:rid:lmhash:nthash\b/i.test(line);
+    const kerberosKey = /^\s*(?:[A-Za-z0-9_.-]+\\)?[A-Za-z0-9.$_-]+:(?:aes(?:128|256)-cts-hmac-sha1-96|des-cbc-[a-z0-9-]+):[a-f0-9]+\s*$/i.test(line);
     const explicit = line.match(/\b([A-Za-z0-9_.-]+)\\([A-Za-z0-9.$_-]+):([^\s]+)\b/);
-    if (explicit && !/STATUS_LOGON_FAILURE|STATUS_ACCOUNT_LOCKED_OUT/i.test(line)) {
+    if (!secretsDump && !secretsDumpHeader && !kerberosKey && explicit && !/STATUS_LOGON_FAILURE|STATUS_ACCOUNT_LOCKED_OUT/i.test(line)) {
       add("credential", `${explicit[1]}\\${explicit[2]}:${explicit[3]}`, { domain: explicit[1], username: explicit[2], secret: explicit[3], source: filename || "command output" });
     }
     const user = line.match(/^\s*(?:user(?:name)?|samaccountname)\s*[:=]\s*\[?([^\]\s,;]+)\]?/i);
@@ -186,6 +214,13 @@ export function discoveriesForChecklistItem(itemId, discoveries, { lhost = "" } 
 
 export function formatDiscovery(discovery) {
   if (discovery.type === "hostname") return `hostname: ${discovery.value}${discovery.address ? ` -> ${discovery.address}` : ""}`;
+  if (discovery.type === "credential") {
+    const identity = [discovery.domain, discovery.username].filter(Boolean).join("\\")
+      || discovery.username
+      || String(discovery.value || "").split(":", 1)[0]
+      || "recovered secret";
+    return `credential: ${identity}`;
+  }
   if (discovery.type !== "port") return `${discovery.type}: ${discovery.value}`;
   return `port: ${discovery.value}/${discovery.protocol || "?"} ${discovery.state || "open"}${discovery.service ? ` ${discovery.service}` : ""}`;
 }

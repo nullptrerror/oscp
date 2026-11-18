@@ -97,8 +97,22 @@ const CHECKLIST_SOURCE = [
         title: "Create a target workspace",
         detail: "Keep raw scans and evidence separate from working files.",
         commands: [
-          { label: "Create folders", value: "root='{{workspaceRoot}}/{{targetSlug}}'; mkdir -p \"$root\"/{scans,web,loot,exploits,notes} && find \"$root\" -mindepth 1 -maxdepth 1 -type d -printf '%f\\n' | sort" },
-          { label: "Start command log", value: "script -a '{{workspaceRoot}}/{{targetSlug}}/notes/terminal.log'" },
+          { label: "Create folders", value: "root='{{workspaceRoot}}/{{targetSlug}}'; umask 077; mkdir -p \"$root\"/{scans,web,loot,exploits,notes}; chmod 700 \"$root\"; find \"$root\" -mindepth 1 -exec chmod go-rwx {} +; find \"$root\" -mindepth 1 -maxdepth 1 -type d -printf '%f\\n' | sort" },
+          {
+            label: "Start command log",
+            purpose: "Start one reusable interactive Kali shell whose complete transcript is appended to this machine's private evidence log.",
+            runsOn: "lhost",
+            resultCategory: "preparation",
+            sessionRole: "machine-log",
+            terminalBehavior: "interactive-shell",
+            requiresNewSession: true,
+            stateChange: "local-evidence",
+            risk: "low",
+            verificationCommand: "test -f '{{workspaceRoot}}/{{targetSlug}}/notes/terminal.log' && test -w '{{workspaceRoot}}/{{targetSlug}}/notes/terminal.log'",
+            cleanup: { required: true, command: "exit", note: "Run the matching Stop terminal log card in this exact machine-log tab." },
+            sideEffects: "Keeps one interactive local shell running and appends its terminal transcript until that shell exits.",
+            value: "script -a '{{workspaceRoot}}/{{targetSlug}}/notes/terminal.log'",
+          },
         ],
       },
       {
@@ -139,7 +153,7 @@ const CHECKLIST_SOURCE = [
         id: "recon-tcp-all",
         title: "Scan all TCP ports",
         commands: [
-          { label: "Full TCP", value: "sudo nmap -Pn -n -p- --min-rate 2000 --max-retries 2 -oA '{{workspaceRoot}}/{{targetSlug}}/scans/tcp-all' {{rhost}}" },
+          { label: "Full TCP", value: "base='{{workspaceRoot}}/{{targetSlug}}/scans/tcp-all'; sudo nmap -Pn -n -p- --min-rate 2000 --max-retries 2 -oA \"$base\" {{rhost}}; scan_status=$?; owner_status=0; for artifact in \"${base}.nmap\" \"${base}.gnmap\" \"${base}.xml\"; do if test -e \"$artifact\"; then sudo chown -- \"$(id -u):$(id -g)\" \"$artifact\" && chmod 600 -- \"$artifact\" || owner_status=1; fi; done; test \"$scan_status\" -eq 0 && test \"$owner_status\" -eq 0" },
           { label: "Extract ports", value: "grep -oP '\\d+/open' '{{workspaceRoot}}/{{targetSlug}}/scans/tcp-all.gnmap' | cut -d/ -f1 | paste -sd, -" },
         ],
       },
@@ -147,7 +161,7 @@ const CHECKLIST_SOURCE = [
         id: "recon-tcp-detail",
         title: "Fingerprint open TCP services",
         commands: [
-          { label: "Focused scan", value: "sudo nmap -Pn -n -sCV -p {{tcpPorts}} -oA {{workspaceRoot}}/{{targetSlug}}/scans/tcp-detail {{rhost}}" },
+          { label: "Focused scan", value: "base='{{workspaceRoot}}/{{targetSlug}}/scans/tcp-detail'; sudo nmap -Pn -n -sCV -p {{tcpPorts}} -oA \"$base\" {{rhost}}; scan_status=$?; owner_status=0; for artifact in \"${base}.nmap\" \"${base}.gnmap\" \"${base}.xml\"; do if test -e \"$artifact\"; then sudo chown -- \"$(id -u):$(id -g)\" \"$artifact\" && chmod 600 -- \"$artifact\" || owner_status=1; fi; done; test \"$scan_status\" -eq 0 && test \"$owner_status\" -eq 0" },
           { label: "Vulnerability hints", value: "nmap -Pn -n --script vuln -p {{tcpPorts}} -oN {{workspaceRoot}}/{{targetSlug}}/scans/tcp-vuln.txt {{rhost}}" },
         ],
       },
@@ -155,8 +169,8 @@ const CHECKLIST_SOURCE = [
         id: "recon-udp",
         title: "Check common UDP services",
         commands: [
-          { label: "Top UDP", value: "sudo nmap -Pn -n -sU --top-ports 100 --open -oA '{{workspaceRoot}}/{{targetSlug}}/scans/udp-top100' {{rhost}}" },
-          { label: "Focused UDP", value: "sudo nmap -Pn -n -sU -sV -p {{udpPorts}} -oN {{workspaceRoot}}/{{targetSlug}}/scans/udp-detail.txt {{rhost}}" },
+          { label: "Top UDP", value: "base='{{workspaceRoot}}/{{targetSlug}}/scans/udp-top100'; sudo nmap -Pn -n -sU --top-ports 100 --open -oA \"$base\" {{rhost}}; scan_status=$?; owner_status=0; for artifact in \"${base}.nmap\" \"${base}.gnmap\" \"${base}.xml\"; do if test -e \"$artifact\"; then sudo chown -- \"$(id -u):$(id -g)\" \"$artifact\" && chmod 600 -- \"$artifact\" || owner_status=1; fi; done; test \"$scan_status\" -eq 0 && test \"$owner_status\" -eq 0" },
+          { label: "Focused UDP", value: "output='{{workspaceRoot}}/{{targetSlug}}/scans/udp-detail.txt'; sudo nmap -Pn -n -sU -sV -p {{udpPorts}} -oN \"$output\" {{rhost}}; scan_status=$?; owner_status=0; if test -e \"$output\"; then sudo chown -- \"$(id -u):$(id -g)\" \"$output\" && chmod 600 -- \"$output\" || owner_status=1; fi; test \"$scan_status\" -eq 0 && test \"$owner_status\" -eq 0" },
         ],
       },
       {
@@ -597,8 +611,8 @@ const CHECKLIST_SOURCE = [
         commands: [
           { label: "AS-REP tracked users into target loot", value: "users_file=\"{{workspaceRoot}}/{{targetSlug}}/loot/users.txt\"; loot=\"{{workspaceRoot}}/{{targetSlug}}/loot/kerberos/asrep\"; test -s \"$users_file\" || { echo \"[-] Build the target users file from Findings first\"; exit 1; }; mkdir -p \"$loot\"; impacket-GetNPUsers '{{domain}}/' -dc-ip {{rhost}} -usersfile \"$users_file\" -no-pass -format hashcat -outputfile \"$loot/asrep.hashes\" | tee \"$loot/enumeration.txt\"" },
           { label: "Verify selected AS-REP cracking wordlist", value: "test -r '{{wordlist}}' && wc -l '{{wordlist}}'" },
-          { label: "Crack saved AS-REP hashes with Hashcat", value: "loot='{{workspaceRoot}}/{{targetSlug}}/loot/kerberos/asrep'; hashes=\"$loot/asrep.hashes\"; test -s \"$hashes\" || { echo \"No AS-REP hashes found at $hashes\"; exit 1; }; hashcat -m 18200 \"$hashes\" '{{wordlist}}' --session '{{targetSlug}}-asrep'; hashcat -m 18200 \"$hashes\" --show | tee \"$loot/hashcat-cracked.txt\"" },
-          { label: "Crack saved AS-REP hashes with John", value: "loot='{{workspaceRoot}}/{{targetSlug}}/loot/kerberos/asrep'; hashes=\"$loot/asrep.hashes\"; test -s \"$hashes\" || { echo \"No AS-REP hashes found at $hashes\"; exit 1; }; john --format=krb5asrep --wordlist='{{wordlist}}' \"$hashes\"; john --format=krb5asrep --show \"$hashes\" | tee \"$loot/john-cracked.txt\"" },
+          { label: "Crack saved AS-REP hashes with Hashcat", value: "loot='{{workspaceRoot}}/{{targetSlug}}/loot/kerberos/asrep'; hashes=\"$loot/asrep.hashes\"; potfile=\"$loot/hashcat.potfile\"; test -s \"$hashes\" || { echo \"No AS-REP hashes found at $hashes\"; exit 1; }; hashcat -m 18200 \"$hashes\" '{{wordlist}}' --potfile-path \"$potfile\" --session '{{targetSlug}}-asrep'; hashcat -m 18200 \"$hashes\" --potfile-path \"$potfile\" --show | tee \"$loot/hashcat-cracked.txt\"" },
+          { label: "Crack saved AS-REP hashes with John", value: "loot='{{workspaceRoot}}/{{targetSlug}}/loot/kerberos/asrep'; hashes=\"$loot/asrep.hashes\"; potfile=\"$loot/john.pot\"; test -s \"$hashes\" || { echo \"No AS-REP hashes found at $hashes\"; exit 1; }; john --format=krb5asrep --pot=\"$potfile\" --wordlist='{{wordlist}}' \"$hashes\"; john --format=krb5asrep --pot=\"$potfile\" --show \"$hashes\" | tee \"$loot/john-cracked.txt\"" },
         ],
       },
       {
@@ -671,9 +685,9 @@ const CHECKLIST_SOURCE = [
         id: "creds-crack",
         title: "Try the common Kali wordlist",
         commands: [
-          { label: "Prepare rockyou", value: "if test ! -f /usr/share/wordlists/rockyou.txt; then sudo gzip -dk /usr/share/wordlists/rockyou.txt.gz; fi; test -r /usr/share/wordlists/rockyou.txt && wc -l /usr/share/wordlists/rockyou.txt" },
-          { label: "Hashcat", value: "hashcat -m {{hashMode}} '{{hashesFile}}' /usr/share/wordlists/rockyou.txt --status --session '{{targetSlug}}'" },
-          { label: "John", value: "john --wordlist=/usr/share/wordlists/rockyou.txt '{{hashesFile}}' && john --show '{{hashesFile}}'" },
+          { label: "Prepare rockyou", value: "if test ! -f /usr/share/wordlists/rockyou.txt; then sudo gzip -dk /usr/share/wordlists/rockyou.txt.gz; fi; test -r /usr/share/wordlists/rockyou.txt && wc -l /usr/share/wordlists/rockyou.txt", resultCategory: "preparation" },
+          { label: "Hashcat", value: "loot='{{workspaceRoot}}/{{targetSlug}}/loot/credentials/cracking'; potfile=\"$loot/hashcat.potfile\"; mkdir -p \"$loot\"; hashcat -m {{hashMode}} '{{hashesFile}}' /usr/share/wordlists/rockyou.txt --potfile-path \"$potfile\" --status --session '{{targetSlug}}-credentials'; hashcat -m {{hashMode}} '{{hashesFile}}' --potfile-path \"$potfile\" --show | tee \"$loot/hashcat-cracked.txt\"" },
+          { label: "John", value: "loot='{{workspaceRoot}}/{{targetSlug}}/loot/credentials/cracking'; potfile=\"$loot/john.pot\"; mkdir -p \"$loot\"; john --pot=\"$potfile\" --wordlist=/usr/share/wordlists/rockyou.txt '{{hashesFile}}'; john --pot=\"$potfile\" --show '{{hashesFile}}' | tee \"$loot/john-cracked.txt\"" },
         ],
       },
       {
@@ -748,7 +762,18 @@ const CHECKLIST_SOURCE = [
         title: "Record cleanup and reset points",
         detail: "List uploaded files, changed configuration, created accounts, services, scheduled tasks, routes, and tunnels.",
         commands: [
-          { label: "Stop terminal log", value: "exit" },
+          {
+            label: "Stop terminal log",
+            purpose: "Exit the reusable recorded shell that owns this machine's transcript, flushing the log before report generation.",
+            runsOn: "lhost",
+            resultCategory: "cleanup",
+            sessionRole: "machine-log",
+            terminalBehavior: "existing-session-only",
+            requiresExistingSession: true,
+            requiresExplicitSession: true,
+            verificationCommand: "test -s '{{workspaceRoot}}/{{targetSlug}}/notes/terminal.log'",
+            value: "exit",
+          },
           { label: "Remove an owned Ligolo route", stateChange: "network-route", cleanup: { required: false, command: "", note: "This card is the cleanup action." }, verificationCommand: "ip route show {{internalSubnet}}", value: "sudo ip route del {{internalSubnet}} dev {{pivotInterface}}" },
           { label: "Delete an owned Ligolo interface", stateChange: "network-route", cleanup: { required: false, command: "", note: "This card is the cleanup action; remove its owned routes first." }, verificationCommand: "ip -br link show {{pivotInterface}}", value: "sudo ip link del {{pivotInterface}}" },
         ],

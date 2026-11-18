@@ -1,6 +1,13 @@
 import { useEffect, useRef } from "react";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { confirmedDiscoveries, discoveryContext, PARSER_TAGS, guidanceForDiscoveries, visibleDiscoveries } from "../lib/evidence";
+import { resultCategoryLabel, resultStateOptions } from "../lib/resultClassification";
+import {
+  commandResultReference,
+  COMPLETING_RESULT_STATES,
+  getCommandRunResultStateValue,
+  latestCommandResultReference,
+} from "../lib/workspace";
 import TerminalOutput from "./TerminalOutput";
 
 const discoveryLabels = Object.fromEntries(PARSER_TAGS.map((entry) => [entry.type, entry.label]));
@@ -15,9 +22,11 @@ const proofCommand = (target, kind) => {
   return `hostname; whoami; id; ip addr; find ${root} -name '${filename}' -print -exec cat {} \\; 2>/dev/null`;
 };
 
-export default function EvidenceList({ entries, itemId }) {
+export default function EvidenceList({ entries, itemId, resultCategory = "validation" }) {
   const { workspace, actions } = useWorkspace();
   const listRef = useRef(null);
+  const latestReference = latestCommandResultReference(entries);
+  const resultOptions = resultStateOptions(resultCategory);
   useEffect(() => {
     const collapse = () => listRef.current?.querySelectorAll("details[open]").forEach((entry) => entry.removeAttribute("open"));
     window.addEventListener("fieldnotes:collapse-terminal-results", collapse);
@@ -27,6 +36,22 @@ export default function EvidenceList({ entries, itemId }) {
   return (
     <div className="evidence-list" ref={listRef}>
       {entries.map((entry) => {
+        const resultReference = commandResultReference(entry);
+        const resultState = entry.commandKey && resultReference
+          ? getCommandRunResultStateValue(
+            workspace.commandResultStates,
+            workspace,
+            itemId,
+            entry.commandKey,
+            resultReference,
+            "",
+            { allowLegacy: resultReference === latestReference },
+          )
+          : "";
+        const hasSubstantiveResult = entries.some((candidate) => (
+          candidate.substantive !== false
+          && commandResultReference(candidate) === resultReference
+        ));
         const discoveries = visibleDiscoveries(entry.discoveries, {
           settings: workspace.parserSettings,
           ignored: workspace.ignoredDiscoveries,
@@ -48,6 +73,26 @@ export default function EvidenceList({ entries, itemId }) {
             {entry.logPath && <code className="evidence-path">{entry.logPath}</code>}
             {entry.dataUrl && <img className="evidence-image" src={entry.dataUrl} alt={entry.label} />}
             {entry.content && <TerminalOutput content={entry.content} />}
+            {entry.commandKey && resultReference && (
+              <label className="command-step-result evidence-result-state">
+                <span>Saved run result · {resultCategoryLabel(resultCategory)}</span>
+                <select
+                  value={resultState}
+                  onChange={(event) => actions.setCommandResultState(itemId, entry.commandKey, event.target.value, resultReference)}
+                >
+                  <option value="" disabled>Classify this saved result after review…</option>
+                  {resultOptions.map((option) => (
+                    <option
+                      value={option.value}
+                      key={option.value}
+                      disabled={!hasSubstantiveResult && COMPLETING_RESULT_STATES.has(option.value)}
+                    >
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             {flags.map((flag) => {
               const command = proofCommand(target, flag.kind);
               return (

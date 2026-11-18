@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { describeCommand, exactCommandRunCount } from "../lib/commandInsights";
 import { renderCommandRecord, renderCommandTemplate } from "../lib/commandContract";
-import { RESULT_STATES } from "../lib/workspace";
+import { resultCategoryLabel, resultStateOptions } from "../lib/resultClassification";
+import { commandResultReference, RESULT_STATES } from "../lib/workspace";
 import CommandResultPanel from "./CommandResultPanel";
 
-export default function CommandBlock({ command, variables, onCopy, itemId, commandKey, evidence, resultState = "", onResultStateChange, expandedResultsKey, onExpandedResultsChange, commandHistory, targetId, targetName }) {
+export default function CommandBlock({ command, variables, onCopy, itemId, commandKey, evidence, resultReference = "", resultState = "", onResultStateChange, expandedResultsKey, onExpandedResultsChange, commandHistory, targetId, targetName }) {
   const [copied, setCopied] = useState(false);
   const [contextError, setContextError] = useState("");
   const [stepStateError, setStepStateError] = useState("");
@@ -13,13 +14,17 @@ export default function CommandBlock({ command, variables, onCopy, itemId, comma
   const runCount = exactCommandRunCount(commandHistory, rendered.command, { targetId, targetName });
   const cleanup = command.cleanupCommand ? renderCommandTemplate(command.cleanupCommand, variables).command : "";
   const verification = command.verificationCommand ? renderCommandTemplate(command.verificationCommand, variables).command : "";
-  const substantiveEvidence = evidence.filter((entry) => entry.substantive !== false);
+  const substantiveEvidence = evidence.filter((entry) => (
+    entry.substantive !== false && commandResultReference(entry) === resultReference
+  ));
   const copyableInstruction = command.policy === "exam-core"
     && Boolean(command.terminal)
     && rendered.missing.length === 0
     && Object.keys(rendered.invalid || {}).length === 0;
   const copyable = rendered.runnable || copyableInstruction;
   const terminalWorkspaceRunnable = rendered.runnable || copyableInstruction;
+  const resultCategory = command.resultCategory || "validation";
+  const resultOptions = resultStateOptions(resultCategory);
 
   const copy = async () => {
     if (!targetId) {
@@ -45,7 +50,7 @@ export default function CommandBlock({ command, variables, onCopy, itemId, comma
       return;
     }
     setStepStateError("");
-    onResultStateChange?.(state);
+    onResultStateChange?.(state, resultReference);
   };
 
   return (
@@ -61,18 +66,15 @@ export default function CommandBlock({ command, variables, onCopy, itemId, comma
         <span><strong>Risk</strong>{command.risk}</span>
         <span><strong>Policy</strong>{command.policy}</span>
         <span><strong>Change</strong>{command.stateChange}</span>
+        <span><strong>Activity</strong>{resultCategoryLabel(resultCategory)}</span>
         {command.routeOwner && <span><strong>Route owner</strong>{command.routeOwner}</span>}
         {command.direction && <span><strong>Direction</strong>{command.direction}</span>}
       </div>
       <label className="command-step-result">
-        <span>Step result</span>
-        <select value={resultState} onChange={(event) => updateStepResult(event.target.value)}>
-          <option value="" disabled>Classify after review…</option>
-          <option value={RESULT_STATES.REVIEW}>Needs review</option>
-          <option value={RESULT_STATES.CONFIRMED}>Finding confirmed</option>
-          <option value={RESULT_STATES.NO_FINDING}>No finding</option>
-          <option value={RESULT_STATES.FAILED}>Command failed</option>
-          <option value={RESULT_STATES.BLOCKED}>Blocked</option>
+        <span>Step result · {resultCategoryLabel(resultCategory)}</span>
+        <select value={resultState} onChange={(event) => updateStepResult(event.target.value)} disabled={!resultReference}>
+          <option value="" disabled>{resultReference ? `Classify the latest saved ${resultCategoryLabel(resultCategory).toLowerCase()} result…` : "Save a result before classifying this step…"}</option>
+          {resultOptions.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}
         </select>
       </label>
       {stepStateError && <p className="command-warning">{stepStateError}</p>}
@@ -115,6 +117,18 @@ export default function CommandBlock({ command, variables, onCopy, itemId, comma
         disabledReason={command.disabledReason || (command.executionEnabled === false ? `${command.policy} command is instructional only.` : "")}
         runsOn={command.runsOn}
         terminal={command.terminal || ""}
+        sessionRole={command.sessionRole || ""}
+        terminalBehavior={command.terminalBehavior || "one-shot"}
+        requiresExistingSession={Boolean(command.requiresExistingSession)}
+        requiresNewSession={Boolean(command.requiresNewSession)}
+        requiresExplicitSession={Boolean(command.requiresExplicitSession)}
+        resultCategory={resultCategory}
+        reportContext={{
+          resultCategory,
+          purpose: command.purpose,
+          positiveBranch: command.positiveBranch,
+          negativeBranch: command.negativeBranch,
+        }}
         targetId={targetId}
         targetName={targetName}
         entries={evidence}
